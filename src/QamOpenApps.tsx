@@ -72,6 +72,11 @@ export const OpenAppsStrip: FC<{ notify: (t: string) => void; after: () => void 
         <Chip compact icon={ICONS2.terminal} onClick={() => { after(); window.setTimeout(() => { if (!openBigKeyboard()) notify("No se pudo abrir el teclado grande"); }, 350); }}>Teclado</Chip>
         <Chip compact icon={ICONS2.refresh} onClick={() => void desktopRepair().then((r) => notify(r.ok ? (r.fixed?.length ? `Reparado: ${r.fixed.join(", ")}` : "Nada que reparar") : `No se pudo reparar: ${r.error ?? "?"}`)).catch(() => notify("No se pudo reparar"))}>Reparar</Chip>
       </Row>
+      {touch !== null && touch.on && touch.full && (
+        <Row gap={6}>
+          <Chip compact active={touch.text} onClick={() => void padTouch(null, null, !touch.text).then((p) => { setTouch(p); notify(p.text ? "Al tocar un texto se abre el teclado" : "Teclado al tocar texto: no"); })}>{touch.text ? "Tocar texto abre el teclado: sí" : "Tocar texto abre el teclado: no"}</Chip>
+        </Row>
+      )}
     </Card>
   );
 };

@@ -27,8 +27,8 @@ export interface PadState { ok: boolean; on: boolean; active: boolean; devices: 
 export const desktopKey = callable<[text: string | null, key: string | null, mods?: string[] | null], { ok: boolean; wid?: string | null; error?: string | null }>("desktop_key");
 export const desktopCursor = callable<[on?: boolean | null], { ok: boolean; on: boolean }>("desktop_cursor");
 export const desktopAnim = callable<[on?: boolean | null], { ok: boolean; on: boolean }>("desktop_anim");
-export type TouchState = { ok: boolean; on: boolean; full: boolean };
-export const padTouch = callable<[on?: boolean | null, full?: boolean | null], TouchState>("pad_touch");
+export type TouchState = { ok: boolean; on: boolean; full: boolean; text: boolean };
+export const padTouch = callable<[on?: boolean | null, full?: boolean | null, text?: boolean | null], TouchState>("pad_touch");
 
 /** Táctil de las apps de escritorio: «no» → «scroll» (dedo = rueda, dos dedos = zoom) → «completo» (toque, mantener y arrastrar propios). */
 export const touchLabel = (t: { on: boolean; full: boolean }): string => (!t.on ? "no" : t.full ? "completo" : "scroll");

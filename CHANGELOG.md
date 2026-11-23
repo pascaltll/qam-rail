@@ -1,5 +1,12 @@
 # Cambios
 
+## dev.60
+
+- **Táctil completo, más fino:** el clic cae donde **acaba** el dedo (antes, donde empezó: cerrar una pestaña era difícil); **mantener 0,45 s abre el menú contextual en ese momento**, sin esperar a soltar; **seleccionar = toque y, enseguida, arrastrar** (como el trackpad); dos toques seguidos = doble clic (palabra); un toque que solo frena la inercia no hace clic.
+- **Dos dedos tocando un instante = teclado grande** (en «scroll» y en «completo»).
+- **Tocar un campo de texto abre el teclado (opcional):** chip «Tocar texto abre el teclado» (en modo completo, apagado por defecto). Mira el cursor que X muestra justo tras el toque y, si es el de texto, abre el teclado. Ojo: el cursor de texto también sale sobre el texto normal de una página, así que a veces abrirá el teclado sin necesidad; se cierra con B.
+- **Desplazamiento más de tableta:** menos fricción en la inercia, y `px` en `touch-scroll.json` (por defecto 34) para ajustar cuánto recorre el dedo por cada paso de rueda. Nuevo `scripts/firefox-touch.sh`: pone Firefox en modo táctil (barra de pestañas y botones grandes) y la rueda al 60 %, para que cada paso sea más fino (`--quitar` lo deshace).
+
 ## dev.59
 
 - **Táctil completo (opcional):** el chip de Inicio pasa a **Táctil: no → scroll → completo**. En «completo» agarramos la pantalla táctil mientras haya una app de escritorio delante (se suelta al instante si se abre el panel o el teclado grande, y el núcleo la suelta sola si el plugin se cierra) y la traducimos nosotros, así gamescope ya no manda además su propio clic/arrastre —que era lo que seleccionaba texto a la vez que se desplazaba—: **toque = clic**, **mantener quieto 0,45 s = clic derecho**, **mantener y arrastrar = seleccionar/arrastrar de verdad**, **arrastrar = desplazar con inercia** (un toque que solo frena la inercia no hace clic), dos dedos = zoom/desplazar. Mientras está agarrada, Steam no recibe el toque (por ejemplo el deslizamiento desde el borde); el botón Steam sigue funcionando. `pad.log`: «táctil: agarrada/soltada», «toque → clic», «mantener → clic derecho», «mantener + arrastrar → selección» (máx. 40 líneas).

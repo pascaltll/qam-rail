@@ -174,13 +174,55 @@ def full():
     return f
 
 acts = fingerF(full(), [(960, 540)] * 6)   # toque corto
-assert [a[0] for a in acts if a[0] != "log"] == ["move", "down", "up"] and acts[0][1:] == (960, 540) and acts[1][1] == 1, acts
-acts = fingerF(full(), [(960, 540)] * 40)   # ~0,66 s quieto: clic derecho
-assert [a[:2] for a in acts if a[0] in ("down", "up")] == [("down", 3), ("up", 3)], acts
-f = full()   # mantener y luego arrastrar: pulsa, mueve y suelta el botón izquierdo (seleccionar)
-acts = fingerF(f, [(500, 500)] * 30 + [(500 + 30 * i, 500) for i in range(1, 12)])
-kinds = [a[0] for a in acts if a[0] != "log"]
-assert kinds[0:2] == ["move", "down"] and kinds[-1] == "up" and kinds.count("move") >= 5 and ("down", 1) in acts and ("up", 1) in acts, acts
+assert [a[0] for a in acts if a[0] not in ("log", "tap")] == ["move", "down", "up"] and acts[0][1:] == (960, 540) and acts[1][1] == 1, acts
+# mantener quieto 0,45 s: el menú contextual sale YA (con el dedo aún apoyado), no al soltar
+f = full()
+t_ = 0.0
+f.feed(EV_ABS, q.ABS_MT_SLOT, 0, t_); f.feed(EV_ABS, q.ABS_MT_TRACKING_ID, 1, t_)
+got = []
+for i in range(40):
+    f.feed(EV_ABS, q.ABS_MT_POSITION_X, 960, i / 60); f.feed(EV_ABS, q.ABS_MT_POSITION_Y, 540, i / 60); f.feed(EV_SYN, 0, 0, i / 60); f.poll(i / 60)
+    got += [a for a in f.take_actions() if a[0] in ("down", "up")]
+    if i < 20:
+        assert got == [], (i, got)
+assert got == [("down", 3), ("up", 3)], got
+f.feed(EV_ABS, q.ABS_MT_TRACKING_ID, -1, 1.0); f.feed(EV_SYN, 0, 0, 1.0)
+assert [a for a in f.take_actions() if a[0] in ("down", "up")] == []   # al soltar no hay más clics
+# …y moverse después de salir el menú no desplaza ni hace nada
+# toque + (enseguida) arrastrar = seleccionar; dos toques seguidos = dos clics (doble clic)
+f = full()
+acts = fingerF(f, [(500, 500)] * 4, t0=0.0)
+assert [a[0] for a in acts if a[0] in ("down", "up")] == ["down", "up"]
+acts = fingerF(f, [(500, 500)] + [(500 + 30 * i, 500) for i in range(1, 12)], t0=0.2)
+kinds = [a[0] for a in acts if a[0] in ("down", "up", "move")]
+assert kinds[0:2] == ["move", "down"] and kinds[-1] == "up" and kinds.count("move") >= 5 and ("down", 1) in acts, acts
+f = full()
+fingerF(f, [(500, 500)] * 4, t0=0.0)
+acts = fingerF(f, [(505, 502)] * 4, t0=0.2)
+assert [a[0] for a in acts if a[0] in ("down", "up")] == ["down", "up"] and any("doble" in str(a) for a in acts), acts
+# un toque lejos del anterior o pasado el tiempo no es «segundo»
+f = full()
+fingerF(f, [(500, 500)] * 4, t0=0.0)
+acts = fingerF(f, [(900, 500)] + [(900 + 30 * i, 500) for i in range(1, 12)], t0=0.2)   # lejos: es desplazar
+assert [a for a in acts if a[0] in ("down", "up")] == [], acts
+# la posición del clic es la FINAL del dedo, no la del primer instante
+f = full()
+acts = fingerF(f, [(500, 500), (504, 503), (508, 505), (508, 505)])
+assert acts[0] == ("move", 508, 505), acts
+# dos dedos que se tocan un instante y se sueltan = teclado
+for fl in (False, True):
+    k = q.TouchScroll((0, 1920), (0, 1080), (1920, 1080)); k.full = fl
+    for s_ in (0, 1):
+        k.feed(EV_ABS, q.ABS_MT_SLOT, s_, 0.0); k.feed(EV_ABS, q.ABS_MT_TRACKING_ID, 20 + s_, 0.0)
+    for i in range(4):
+        for s_ in (0, 1):
+            k.feed(EV_ABS, q.ABS_MT_SLOT, s_, i / 60)
+            k.feed(EV_ABS, q.ABS_MT_POSITION_X, 800 + 200 * s_, i / 60); k.feed(EV_ABS, q.ABS_MT_POSITION_Y, 500, i / 60)
+        k.feed(EV_SYN, 0, 0, i / 60)
+    for s_ in (0, 1):
+        k.feed(EV_ABS, q.ABS_MT_SLOT, s_, 0.1); k.feed(EV_ABS, q.ABS_MT_TRACKING_ID, -1, 0.1)
+    k.feed(EV_SYN, 0, 0, 0.1)
+    assert ("kb",) in k.take_actions(), fl
 f = full()   # arrastrar sin mantener: desplaza, NO pulsa botones ni mueve el puntero
 acts = fingerF(f, [(500, 800 - 17 * i) for i in range(21)])
 assert acts == [], acts
@@ -192,11 +234,10 @@ acts = fingerF(f, [(960, 540)] * 6, t0=5.0)
 assert [a for a in acts if a[0] in ("down", "up")] == [], acts
 # si se abre el panel en mitad de una selección, se suelta el botón
 f = full()
-f.feed(EV_ABS, q.ABS_MT_SLOT, 0, 0); f.feed(EV_ABS, q.ABS_MT_TRACKING_ID, 1, 0)
-for i in range(30):
-    f.feed(EV_ABS, q.ABS_MT_POSITION_X, 500, i / 60); f.feed(EV_ABS, q.ABS_MT_POSITION_Y, 500, i / 60); f.feed(EV_SYN, 0, 0, i / 60); f.poll(i / 60)
-for i in range(1, 8):
-    f.feed(EV_ABS, q.ABS_MT_POSITION_X, 500 + 30 * i, 1.0); f.feed(EV_SYN, 0, 0, 1.0 + i / 60)
+fingerF(f, [(500, 500)] * 4, t0=0.0)
+f.feed(EV_ABS, q.ABS_MT_SLOT, 0, 0.2); f.feed(EV_ABS, q.ABS_MT_TRACKING_ID, 1, 0.2)
+for i in range(0, 8):
+    f.feed(EV_ABS, q.ABS_MT_POSITION_X, 500 + 30 * i, 0.2 + i / 60); f.feed(EV_ABS, q.ABS_MT_POSITION_Y, 500, 0.2 + i / 60); f.feed(EV_SYN, 0, 0, 0.2 + i / 60)
 assert f.drag
 f.take_actions(); f.abort()
 assert f.take_actions() == [("up", 1)] and not f.down

@@ -209,13 +209,16 @@ class Plugin:
             why = ""
             res = dict(cfg["map"]) if isinstance(cfg.get("map"), dict) else {}
             res["full"] = bool(cfg.get("full", False))
+            res["text"] = bool(cfg.get("text", False))
+            if isinstance(cfg.get("px"), (int, float)):
+                res["px"] = cfg["px"]
         tag = why or ("activo, modo completo" if res and res.get("full") else "activo, modo scroll")
         if tag != getattr(self, "_touch_why", None):
             self._touch_why = tag
             self._pad_log("táctil: " + (f"en pausa — {why}" if why else tag))
         return res
 
-    async def pad_touch(self, on=None, full=None) -> dict:
+    async def pad_touch(self, on=None, full=None, text=None) -> dict:
         """Táctil en las apps de escritorio: «on» (scroll con el dedo y gestos de dos dedos) y «full» (toque, mantener y arrastrar los hacemos nosotros)."""
         cfg = dict(self._touch_file())
         changed = False
@@ -223,6 +226,8 @@ class Plugin:
             cfg["on"], changed = bool(on), True
         if full is not None:
             cfg["full"], changed = bool(full), True
+        if text is not None:
+            cfg["text"], changed = bool(text), True
         if changed:
             try:
                 with open(_path("touch-scroll.json"), "w", encoding="utf-8") as fh:
@@ -230,7 +235,7 @@ class Plugin:
                 self._touch_cache = None
             except OSError:
                 pass
-        return {"ok": qam_pad is not None, "on": bool(cfg.get("on", True)), "full": bool(cfg.get("full", False))}
+        return {"ok": qam_pad is not None, "on": bool(cfg.get("on", True)), "full": bool(cfg.get("full", False)), "text": bool(cfg.get("text", False))}
 
     async def _pad_env(self) -> tuple:
         _prefix, seen = await self._user_session()

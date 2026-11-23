@@ -317,6 +317,32 @@ class XOut:
     def move(self, dx: int, dy: int) -> None:
         self.xt.XTestFakeRelativeMotionEvent(self.dpy, int(dx), int(dy), 0)
 
+    def cursor_name(self) -> str | None:
+        """Nombre del cursor que X muestra ahora («text» sobre un campo de texto…), o None. XFixes se carga la primera vez que se pide."""
+        try:
+            if not hasattr(self, "_fx"):
+                lib = ctypes.util.find_library("Xfixes")
+                self._fx = ctypes.CDLL(lib or "libXfixes.so.3") if lib else None
+                if self._fx:
+                    class _Img(ctypes.Structure):
+                        _fields_ = [("x", ctypes.c_short), ("y", ctypes.c_short), ("width", ctypes.c_ushort), ("height", ctypes.c_ushort),
+                                    ("xhot", ctypes.c_ushort), ("yhot", ctypes.c_ushort), ("serial", ctypes.c_ulong),
+                                    ("pixels", ctypes.POINTER(ctypes.c_ulong)), ("atom", ctypes.c_ulong), ("name", ctypes.c_char_p)]
+                    self._fx.XFixesGetCursorImage.restype = ctypes.POINTER(_Img)
+                    self._fx.XFixesGetCursorImage.argtypes = [ctypes.c_void_p]
+            if not self._fx:
+                return None
+            p = self._fx.XFixesGetCursorImage(self.dpy)
+            if not p:
+                return None
+            try:
+                n = p.contents.name
+                return n.decode("utf-8", "replace") if n else None
+            finally:
+                self.x11.XFree(ctypes.cast(p, ctypes.c_void_p))
+        except Exception:  # noqa: BLE001
+            return None
+
     def move_abs(self, x: int, y: int) -> None:
         self.xt.XTestFakeMotionEvent(self.dpy, -1, int(x), int(y), 0)
 
@@ -430,18 +456,22 @@ class TouchScroll:
     La pantalla del Ally es vertical y gamescope la gira: la correspondencia ejes del táctil → pantalla se aprende comparando lo que se mueve el dedo
     con lo que se mueve el puntero (que gamescope mueve con el mismo toque); mientras no se aprende se supone según la forma de la pantalla."""
 
-    CLICK_PX = 34.0   # recorrido del dedo por cada «clic» de rueda
+    CLICK_PX = 34.0   # recorrido del dedo por cada «clic» de rueda (ajustable: «px» en touch-scroll.json)
     DEAD_PX = 12.0    # por debajo es un toque, no un arrastre
-    FLING_MIN = 450.0  # px/s al soltar para que haya inercia
-    FRICTION = 3.2
+    FLING_MIN = 380.0  # px/s al soltar para que haya inercia
+    FRICTION = 2.6     # menos fricción: se desliza más, como en una tableta
 
-    def __init__(self, rx: tuple, ry: tuple, screen: tuple, forced: dict | None = None):
+    def __init__(self, rx: tuple, ry: tuple, screen: tuple, forced: dict | None = None, px: float | None = None):
+        if px:
+            self.CLICK_PX = max(8.0, min(120.0, float(px)))
         self.lo = (rx[0], ry[0])
         self.span = (max(1, rx[1] - rx[0]), max(1, ry[1] - ry[0]))
         self.full = False            # modo completo: el toque lo traducimos nosotros (clic, clic derecho, arrastrar para seleccionar)
         self.actions: list = []      # ("move", x, y) · ("down"/"up", botón) · ("log", texto)
-        self.hold = False
+        self.hold = False            # ya se mandó el clic derecho de «mantener»
         self.drag = False
+        self.second = False          # este dedo es el segundo toque seguido: arrastrar = seleccionar, soltar = doble clic
+        self.last_tap = (-9.0, 0, 0)  # instante y posición (px de pantalla) del último clic
         self.t_down = 0.0
         self.suppress = False
         self.screen = (max(1, screen[0]), max(1, screen[1]))
@@ -540,6 +570,8 @@ class TouchScroll:
             self.down = False
             self.g = None
         if n == 0:
+            if self.multi and self.g and self.g["mode"] is None and now - self.g["t"] < 0.3:   # dos dedos que apenas se mueven y se sueltan enseguida
+                self.actions.append(("kb",))
             self._touch(False, now)
             self.multi = False
             self.g = None
@@ -559,10 +591,11 @@ class TouchScroll:
                 self.poll(now)
                 if self.drag:
                     self.actions.append(("up", 1))
-                elif not self.moved and not self.suppress:
-                    x, y = self.to_abs(*self.start)
-                    self.actions += [("move", x, y), ("down", 3 if self.hold else 1), ("up", 3 if self.hold else 1),
-                                     ("log", f"{'mantener → clic derecho' if self.hold else 'toque → clic'} en {x},{y}")]
+                elif not self.moved and not self.suppress and not self.hold:
+                    x, y = self.to_abs(*(self.last or self.start))   # la posición final del dedo: es donde apuntaba
+                    self.actions += [("move", x, y), ("down", 1), ("up", 1),
+                                     ("log", f"{'doble toque → clic' if self.second else 'toque → clic'} en {x},{y}"), ("tap", x, y)]
+                    self.last_tap = (now, x, y)
             if self.moved and not self.drag:
                 self._learn()
                 if max(abs(self.vel[0]), abs(self.vel[1])) >= self.FLING_MIN:
@@ -582,7 +615,13 @@ class TouchScroll:
             self.start = self.last = cur
             self.ptr0 = ptr
             self.t = now
+            if self.full:
+                x, y = self.to_abs(*cur)
+                lt, lx, ly = self.last_tap
+                self.second = now - lt <= 0.35 and ((x - lx) ** 2 + (y - ly) ** 2) ** 0.5 <= 70
             return (0, 0)
+        if self.hold:
+            return (0, 0)   # ya salió el menú contextual: el resto de este dedo no hace nada
         sx, sy = self.to_screen(cur[0] - self.last[0], cur[1] - self.last[1])
         tx, ty = self.to_screen(cur[0] - self.start[0], cur[1] - self.start[1])
         self.last = cur
@@ -594,10 +633,10 @@ class TouchScroll:
             if (tx * tx + ty * ty) ** 0.5 < self.DEAD_PX:
                 return (0, 0)
             self.moved = True
-            if self.full and self.hold:   # mantener y arrastrar = seleccionar / arrastrar de verdad
+            if self.full and self.second:   # toque y, enseguida, arrastrar = seleccionar / arrastrar de verdad
                 self.drag = True
                 x, y = self.to_abs(*self.start)
-                self.actions += [("move", x, y), ("down", 1), ("log", f"mantener + arrastrar → selección desde {x},{y}")]
+                self.actions += [("move", x, y), ("down", 1), ("log", f"toque + arrastrar → selección desde {x},{y}")]
             sx, sy = tx, ty   # lo recorrido hasta pasar la zona muerta cuenta
         if self.drag:
             x, y = self.to_abs(*cur)
@@ -635,9 +674,11 @@ class TouchScroll:
         return a
 
     def poll(self, now: float) -> None:
-        """Llamado cada fotograma: un dedo quieto el tiempo suficiente pasa a «mantenido»."""
-        if self.full and self.down and not self.moved and not self.hold and self.start is not None and now - self.t_down >= self.HOLD_S:
+        """Cada fotograma: un dedo quieto 0,45 s abre el menú contextual (clic derecho) YA, sin esperar a soltar, como en el móvil."""
+        if self.full and self.down and not self.moved and not self.hold and not self.suppress and self.start is not None and now - self.t_down >= self.HOLD_S:
             self.hold = True
+            x, y = self.to_abs(*(self.last or self.start))
+            self.actions += [("move", x, y), ("down", 3), ("up", 3), ("log", f"mantener → menú contextual en {x},{y}")]
 
     PINCH_PX = 46.0   # variación de la distancia entre los dedos por cada paso de zoom
     LOCK_PX = 22.0    # lo que hay que moverse para decidir si el gesto de dos dedos es zoom o desplazamiento
@@ -705,6 +746,7 @@ class PadRunner:
         self._ts: dict = {}         # event → TouchScroll
         self._tnoted: set = set()
         self._tlogged = 0
+        self._text_at = 0.0
         self._grabbed: dict = {}
         self.event = event or (lambda ev, **d: None)   # caja negra: pad.activo, pad.inactivo, qam.combo
         self.mapper = PadMapper()
@@ -803,7 +845,8 @@ class PadRunner:
                     self._tnoted.add(ev)
                     self.log(f"táctil: no se pudo abrir {ev} ({d['name']}): {e}")
                 continue
-            self._ts[ev] = TouchScroll(rx, ry, self._x.screen_size(), self.touch_fn() or None)
+            cfg = self.touch_fn() or {}
+            self._ts[ev] = TouchScroll(rx, ry, self._x.screen_size(), cfg or None, cfg.get("px"))
             self._tfds[ev] = fd
             loop.add_reader(fd, self._tread, ev)
             self.log(f"táctil: leyendo {ev} «{d['name']}» ejes {rx} × {ry}, pantalla {self._x.screen_size()}")
@@ -859,6 +902,11 @@ class PadRunner:
                 self._x.button(a[1], True)
             elif a[0] == "up":
                 self._x.button(a[1], False)
+            elif a[0] == "kb":
+                self.log("táctil: dos dedos → teclado grande")
+                self.event("kb.combo")
+            elif a[0] == "tap":
+                self._text_at = time.monotonic() + 0.15   # mirar luego qué cursor hay: si es de texto y está activado, se abre el teclado
             elif a[0] == "log" and self._tlogged < 40:
                 self._tlogged += 1
                 self.log("táctil: " + a[1])
@@ -1065,6 +1113,12 @@ class PadRunner:
                         full = bool(cfg) and bool(cfg.get("full"))
                         for ts in self._ts.values():
                             ts.full = full
+                        if self._text_at and now >= self._text_at:
+                            self._text_at = 0.0
+                            nm = (self._x.cursor_name() or "") if cfg and cfg.get("text") else ""
+                            if nm.endswith("text") or nm.endswith("xterm") or nm.endswith("ibeam"):
+                                self.log(f"táctil: cursor «{nm}» tras el toque → teclado grande")
+                                self.event("kb.combo")
                         if self._tfds:
                             self._grab(full)   # si el panel o el teclado se abren (cfg None) se suelta al instante
                         for ts in self._ts.values():   # inercia tras soltar el dedo
