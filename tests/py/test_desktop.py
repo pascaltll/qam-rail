@@ -90,6 +90,15 @@ def _t054_x():
     assert [x["id"] for x in d.windows_to_tag(w, {"0x38000aa", "0x380002c", "0x3800010"}, {"firefox"})] == ["0x38000aa", "0x380002c"]
 
 
+def _t054_base():
+    assert d.parse_baselayer("GAMESCOPECTRL_BASELAYER_APPID(CARDINAL) = 413091, 769") == [413091, 769]
+    assert d.parse_baselayer("GAMESCOPECTRL_BASELAYER_APPID:  not found.") == []
+    g = d.app_gameid("flatpak:x")
+    assert g == d.app_gameid("flatpak:x") and g != d.app_gameid("flatpak:y") and 1_100_000_000 <= g < 2_000_000_000
+    assert d.baselayer_with([413091, 769], g) == [g, 413091, 769] and d.baselayer_with([g, 769], g) == [g, 769]
+    assert d.baselayer_without([g, 413091, 769], g) == [413091, 769]
+
+
 def _t054():
     import qam_desktop as D
     w = lambda c: "/usr/bin/" + c
@@ -123,3 +132,4 @@ def _t054():
 _t054()
 _t054_exec()
 _t054_x()
+_t054_base()

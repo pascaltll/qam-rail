@@ -886,3 +886,8 @@ Compartido: `~/homebrew/qam-apps` (mismo esquema de manifiestos) y la carpeta `s
 **Pendiente [H].** Comprobar que la ventana se muestra en gamescope al lanzar así (si no, habrá que lanzar por Steam o con variables de gamescope); `DISPLAY=:0`; Flatpak como usuario desde root.
 
 **Pruebas.** `tests/py/test_desktop.py` (`_t054`), `tests/v054.test.ts`.
+
+
+### 59.x Capa base de gamescope (dev.9)
+
+Hallazgo: poner `STEAM_GAME=1` no bastaba; Steam fija en la raíz de X `GAMESCOPECTRL_BASELAYER_APPID` (ej. `413091, 769`), y gamescope muestra la primera app de la lista que tenga ventana (769 = interfaz de Steam). Solución: cada app de escritorio marca sus ventanas con `STEAM_GAME = app_gameid(clave)` (1 100 000 000 + sha1[:7] mod 900 000 000, estable, ≠ 769) y `_base_layer(on=True)` la antepone con `xprop -root -f GAMESCOPECTRL_BASELAYER_APPID 32c -set ...` (`baselayer_with`). Tras etiquetar se reafirma cada 5 iteraciones del sondeo (Steam puede reescribirla). `desktop_minimize`, `desktop_stop` y `desktop_kill` la quitan (`baselayer_without`, `_base_off`). El QAM, al ser BrowserView de Steam, sigue por encima. Log: `desktop-tag.log` (`capa base +gid: [antes] → [después]`). Estado: sin verificar en el equipo.

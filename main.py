@@ -640,7 +640,19 @@ class Plugin:
         """Cierra la app que abrió QAM Rail (para su unidad: termina todos sus procesos)."""
         unit = self._desk_unit(key) + ".service"
         code, out = await self._systemctl_user("stop", unit)
+        await self._base_off(key)
         return {"ok": code == 0, "error": out.strip().splitlines()[-1][:120] if code and out.strip() else None}
+
+    async def _base_off(self, key: str) -> None:
+        """Quita la app de la capa base de gamescope (al cerrarla) para que vuelva a verse Steam."""
+        if qam_desktop is None:
+            return
+        try:
+            prefix, seen = await self._user_session()
+            self._xauth = seen.get("XAUTHORITY") or None
+            await self._base_layer(prefix, seen.get("DISPLAY") or ":0", key, False)
+        except Exception:
+            pass
 
     async def _x_run(self, prefix: list, display: str, *cmd: str) -> tuple[int, str, str]:
         env_extra = [f"DISPLAY={display}"]
@@ -673,6 +685,18 @@ class Plugin:
             return []
         return qam_desktop.parse_xwininfo(out)
 
+    async def _base_layer(self, prefix: list, display: str, key: str, on: bool) -> None:
+        """Steam decide qué app muestra gamescope con la propiedad GAMESCOPECTRL_BASELAYER_APPID de la raíz (p. ej. «413091, 769»: la primera con ventana).
+        Poner la nuestra delante la muestra por encima de Steam (el QAM sigue encima); quitarla vuelve a Steam."""
+        gid = qam_desktop.app_gameid(key)
+        rc, out, err = await self._x_run(prefix, display, "xprop", "-root", qam_desktop.BASELAYER)
+        cur = qam_desktop.parse_baselayer(out) if rc == 0 else []
+        new = qam_desktop.baselayer_with(cur, gid) if on else qam_desktop.baselayer_without(cur, gid)
+        if new == cur:
+            return
+        rc2, _o, err2 = await self._x_run(prefix, display, "xprop", "-root", "-f", qam_desktop.BASELAYER, "32c", "-set", qam_desktop.BASELAYER, ", ".join(str(x) for x in new))
+        self._tag_log(f"  capa base {'+' if on else '-'}{gid}: {cur} → {new} (código {rc2} {err2.strip()[:80]})")
+
     async def _desk_tag(self, key: str, prefix: list, display: str, before: set) -> None:
         """Game Mode (gamescope) solo muestra ventanas con la propiedad STEAM_GAME: se la ponemos a las ventanas nuevas de la app durante ~20 s."""
         known = self._desk_classes.setdefault(str(key), set())
@@ -689,9 +713,12 @@ class Plugin:
                     continue
                 done.add(w["id"])
                 known.update(c for c in w["classes"] if c)
-                rc, _o, err = await self._x_run(prefix, display, "xprop", "-id", w["id"], "-f", "STEAM_GAME", "32c", "-set", "STEAM_GAME", "1")
+                rc, _o, err = await self._x_run(prefix, display, "xprop", "-id", w["id"], "-f", "STEAM_GAME", "32c", "-set", "STEAM_GAME", str(qam_desktop.app_gameid(key)))
                 _rc2, chk, _e = await self._x_run(prefix, display, "xprop", "-id", w["id"], "STEAM_GAME")
                 self._tag_log(f"  {w['id']} {w['classes']} {w['w']}x{w['h']}: xprop código {rc} {err.strip()[:100]} → {chk.strip()[:60]}")
+                await self._base_layer(prefix, display, key, True)
+            if done and i % 5 == 4:
+                await self._base_layer(prefix, display, key, True)  # Steam puede reescribir la lista: se vuelve a poner delante
 
     async def desktop_minimize(self, key: str) -> dict:
         """Minimizar: quita STEAM_GAME a las ventanas de la app; gamescope deja de mostrarlas y vuelve Steam. La app sigue abierta («Abrir» la vuelve a mostrar)."""
@@ -699,21 +726,16 @@ class Plugin:
             return {"ok": False}
         prefix, seen = await self._user_session()
         display = seen.get("DISPLAY") or ":0"
-        known = self._desk_classes.get(str(key), set())
-        n = 0
-        for w in qam_desktop.windows_to_tag(await self._x_windows(prefix, display), set(), known):
-            if not known:
-                break
-            rc, _o, err = await self._x_run(prefix, display, "xprop", "-id", w["id"], "-remove", "STEAM_GAME")
-            self._tag_log(f"minimizar {w['id']}: código {rc} {err.strip()[:80]}")
-            n += 1 if rc == 0 else 0
-        return {"ok": n > 0, "windows": n, "error": None if n else "no encontré su ventana"}
+        self._xauth = seen.get("XAUTHORITY") or None
+        await self._base_layer(prefix, display, key, False)
+        return {"ok": True}
 
     async def desktop_kill(self, key: str) -> dict:
         """Forzar el cierre: SIGKILL a todos los procesos de la app."""
         unit = self._desk_unit(key) + ".service"
         await self._systemctl_user("kill", "--signal=SIGKILL", unit)
         code, out = await self._systemctl_user("stop", unit)
+        await self._base_off(key)
         return {"ok": code == 0, "error": out.strip().splitlines()[-1][:120] if code and out.strip() else None}
 
     async def desktop_run(self, key: str) -> dict:

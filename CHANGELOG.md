@@ -9,7 +9,8 @@ Apps › pestaña «Steam»: apps de escritorio del equipo (Flatpak, AppImage, s
 - **Ventana visible en Game Mode:** gamescope solo muestra ventanas con la propiedad X `STEAM_GAME`; tras abrir (~20 s) se pone `STEAM_GAME=1` a las ventanas nuevas (grandes) de la app con `xwininfo`/`xprop`. [H] probado a mano con Firefox por Carlos (herramientas presentes); el automático sin verificar.
 - **Menú de la app** (mantener pulsado ~0,65 s en táctil, o X con el mando, sobre un icono del cajón/Inicio o una fila de Apps › Steam): Mostrar · Minimizar (quita `STEAM_GAME`: Steam vuelve a verse y la app sigue abierta) · Cerrar (SIGTERM a la unidad) · Forzar cierre (SIGKILL). Las abiertas llevan «●» en el cajón. `desktop_minimize`, `desktop_kill`.
 - El menú también sale en las apps de QAM (MiniTube…): su manifiesto puede declarar `controls` (`show`, `minimize`, `close`, `kill` → argumentos del lanzador); MiniTube lleva `open`/`mini`/`close`/`kill`. `apps_control(id, acción)`.
-- Diagnóstico de ventanas: `desktop-tag.log` (qué ventanas vio, resultado de `xprop`).
+- **Capa base de gamescope (dev.9):** Steam elige qué app se ve con la propiedad raíz `GAMESCOPECTRL_BASELAYER_APPID` (p. ej. `413091, 769`: la primera con ventana gana; 769 = Steam). Cada app de escritorio lleva su propio número en `STEAM_GAME` (`app_gameid`) y se antepone a esa lista (Steam queda de reserva; el QAM sigue encima). Se reafirma cada ~3 s tras abrir; Minimizar/Cerrar/Forzar la quitan. [H] sin verificar en el equipo.
+- Diagnóstico de ventanas: `desktop-tag.log` (qué ventanas vio, resultado de `xprop`, líneas `capa base +/-`).
 - «Agregar a QAM» pone la app en Apps (y en la fila de Inicio) de este panel, con su icono, y se abre desde ahí. **No se crea nada en Steam.** `desktop-pins.json`.
 - Flatpak: se quitan las marcas `@@u`/`@@`/`--file-forwarding` del `Exec` (sin archivos no hacen falta).
 - Navegadores Chromium con `--start-fullscreen`; Firefox no (no hay opción fiable).

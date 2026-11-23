@@ -275,3 +275,27 @@ def windows_to_tag(now: list, before_ids: set, known_classes: set, min_size: int
         if w["id"] not in before_ids or (cls & known_classes):
             pick.append(w)
     return pick
+
+
+BASELAYER = "GAMESCOPECTRL_BASELAYER_APPID"
+
+
+def app_gameid(key: str) -> int:
+    """Número de app propio (≠ 769 y ≠ el de ningún juego real) con el que se marca la ventana de una app de escritorio. Estable por clave."""
+    import hashlib
+    return 1_100_000_000 + int(hashlib.sha1(str(key).encode()).hexdigest()[:7], 16) % 900_000_000
+
+
+def parse_baselayer(text: str) -> list:
+    """`xprop -root GAMESCOPECTRL_BASELAYER_APPID` → lista de números (la primera app con ventana es la que gamescope muestra)."""
+    m = re.search(r"=\s*([0-9,\s]+)\s*$", (text or "").strip())
+    return [int(x) for x in re.findall(r"\d+", m.group(1))] if m else []
+
+
+def baselayer_with(cur: list, appid: int) -> list:
+    """Nuestra app primero y lo que Steam tenía después (Steam queda de reserva)."""
+    return [appid] + [x for x in cur if x != appid]
+
+
+def baselayer_without(cur: list, appid: int) -> list:
+    return [x for x in cur if x != appid]
