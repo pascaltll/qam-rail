@@ -7,7 +7,7 @@ import ctypes.util
 import os
 
 PREFIX = "qam-"       # nombre de nuestro cursor: lo que ya empieza así ya está cambiado
-SIZE = 32
+SIZE = 64  # el doble que antes: el puntero de la Xbox se ve grande en pantalla
 
 
 class _Img(ctypes.Structure):

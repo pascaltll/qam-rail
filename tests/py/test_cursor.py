@@ -14,12 +14,12 @@ def t_formato():
             h = struct.unpack("<9I", d[pos:pos + 36])
             assert h[0] == 36 and h[2] == sub and h[4] == h[5] == sub
             assert pos + 36 + h[4] * h[5] * 4 <= len(d)
-            # el centro es opaco y la esquina transparente
+            # la esquina de abajo a la derecha es transparente y la de la punta (hotspot) lleva dibujo
             px = d[pos + 36:pos + 36 + h[4] * h[5] * 4]
+            assert px[3] == 0 and px[-1] == 0
             if kind != "text":
-                mid = (sub // 2) * sub + sub // 2
-                assert px[mid * 4 + 3] == 255
-            assert px[3] == 0
+                assert h[6] == h[7] and 0 < h[6] < sub // 3
+                assert px[(h[7] * sub + h[6] + 1) * 4 + 3] > 150
 
 def t_instala():
     with tempfile.TemporaryDirectory() as t:

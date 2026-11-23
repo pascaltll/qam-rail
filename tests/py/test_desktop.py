@@ -184,7 +184,7 @@ H: Handlers=event9 js1
     m = pad.PadMapper()
     assert m.feed_button(304, True) == [("button", 1, True)] and m.feed_button(304, False) == [("button", 1, False)]
     assert m.feed_button(305, True) == [("key", "alt+Left")] and m.feed_button(305, False) == []
-    assert m.feed_button(310, True) == [("key", "ctrl+shift+Tab")] and m.feed_button(311, True) == [("key", "ctrl+Tab")]
+    assert m.feed_button(310, True) == [("key", "ctrl+Prior")] and m.feed_button(311, True) == [("key", "ctrl+Next")]
     assert m.feed_button(999, True) == []
     # cruceta como botones y como hat, con repetición
     assert m.feed_button(545, True, 0.0) == [("key", "Down")]

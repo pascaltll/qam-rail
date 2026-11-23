@@ -141,6 +141,15 @@ feed("event16", 316, 1); feed("event16", 316, 0)
 assert evs == ["kb.combo", "kb.combo"], evs
 feed("event16", 316, 1); feed("event16", 316, 0)   # sin Y reciente no hay combo
 assert evs == ["kb.combo", "kb.combo"], evs
+# Select + Y abre el teclado sin Esc ni Ctrl+L; Select solo hace Esc al soltarlo
+r._x.acts.clear(); evs.clear(); r._mode_until = 0.0; r._y_at = 0.0; r._last_key.clear()
+feed("event16", 314, 1); feed("event16", 308, 1); feed("event16", 308, 0); feed("event16", 314, 0)
+assert evs == ["kb.combo"] and not r._x.acts, (evs, r._x.acts)
+feed("event16", 314, 1)
+assert not r._x.acts
+feed("event16", 314, 0)
+assert [a for a in r._x.acts if a == ("k", "Escape")], r._x.acts
+evs.clear(); evs += ["kb.combo", "kb.combo"]
 assert qam_pad.KEYS["LB"] == "ctrl+Prior" and qam_pad.KEYS["RB"] == "ctrl+Next"
 
 

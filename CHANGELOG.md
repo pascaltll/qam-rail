@@ -1,5 +1,11 @@
 # Cambios
 
+## dev.50
+
+- **Select + Y abre/cierra el teclado grande** sin pasar por el botón Steam (así no aparece un instante el menú de Steam). Select ya no manda Esc al pulsarlo sino al soltarlo, y solo si no se usó con Y. Steam + Y sigue valiendo.
+- **Puntero al doble de tamaño** (64 px en lugar de 32).
+- Pruebas de Python puestas al día con el puntero hueco y con LB/RB (Ctrl+Re Pág / Ctrl+Av Pág).
+
 ## dev.49
 
 - **Steam + Y no abría el teclado:** en tu `pad.log` Steam avisa de su botón *después* de la Y («308 pulsado/soltado, 316 pulsado/soltado»), así que el backend nunca veía a Steam pulsado con la Y y no salía `kb.combo`. Ahora también cuenta Y seguida de Steam en menos de 1 s (la Y ya habrá mandado Ctrl+L a la app; es un efecto menor). Steam + Y en el orden contrario sigue valiendo.

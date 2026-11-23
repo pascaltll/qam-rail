@@ -355,6 +355,8 @@ class PadRunner:
         self._dup_noted = False
         self._mode_down = False
         self._mode_until = 0.0
+        self._sel_down = False      # Select mantenido: con Y abre el teclado; solo (al soltar) hace Esc
+        self._sel_used = False
         self._y_at = 0.0            # última pulsación de Y suelta (Steam avisa de su botón al soltarlo, tras la Y)
 
     def stop(self) -> None:
@@ -401,6 +403,7 @@ class PadRunner:
 
     def _close(self) -> None:
         self._mode_down, self._mode_until = False, 0.0
+        self._sel_down = self._sel_used = False
         loop = asyncio.get_event_loop()
         for ev, (fd, _r) in list(self._fds.items()):
             try:
@@ -455,6 +458,24 @@ class PadRunner:
                         elif code == 308 and self._mode_down:
                             self.event("kb.combo")   # Steam + Y: el usuario pidió el teclado grande
                         continue  # Steam + botón (abrir el QAM, capturas…): no es un clic para la app
+                    if code == 314:
+                        # Select no manda Esc al pulsarlo sino al soltarlo, y solo si no se usó de combinación
+                        if val == 1:
+                            self._sel_down, self._sel_used = True, False
+                        else:
+                            self._sel_down = False
+                            if not self._sel_used:
+                                acts = self.mapper.feed_button(314, True, now)
+                        if self._logged < 60:
+                            self._logged += 1
+                            self.log(f"mando: botón 314 {'pulsado' if val else 'soltado'} ({ev})")
+                        for a in acts:
+                            apply_action(self._x, a)
+                        continue
+                    if code == 308 and val == 1 and self._sel_down:
+                        self._sel_used = True
+                        self.event("kb.combo")   # Select + Y: el teclado grande, sin pasar por el botón Steam
+                        continue
                     if code == 308 and val == 1:
                         self._y_at = now
                     if self._logged < 60:
