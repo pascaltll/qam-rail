@@ -36,4 +36,9 @@ with tempfile.TemporaryDirectory() as t:
     # sin estable de respaldo no hay a dónde volver: sigue en dev
     os.remove(os.path.join(P, "qam-rail", "plugin.json")); C._write_count(D, 5)
     assert C.boot_guard(D, SD, P) is False and C.active(SD, P) == "dev"
+    # una versión nueva empieza de cero (los fallos de la anterior no cuentan)
+    mk(t, "qam-rail"); C.write_flag(SD, "dev"); C._write_count(D, 5)
+    assert C.boot_guard(D, SD, P, "0.53.0-dev.2") is False and C.active(SD, P) == "dev" and C._read_count(D) == 1
+    C.boot_guard(D, SD, P, "0.53.0-dev.2"); assert C.boot_guard(D, SD, P, "0.53.0-dev.2") is True  # misma versión: sí cuenta
+    C.write_flag(SD, "dev"); assert C.boot_guard(D, SD, P, "0.53.0-dev.3") is False and C._read_count(D) == 1  # otra versión: reinicia
 print("TODO OK")

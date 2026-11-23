@@ -80,9 +80,22 @@ def _write_count(dev_settings_dir: str, n: int) -> None:
         fh.write(str(n))
 
 
-def boot_guard(dev_settings_dir: str, sdir: str, plugins_dir: str) -> bool:
+def boot_guard(dev_settings_dir: str, sdir: str, plugins_dir: str, version: str | None = None) -> bool:
     """Se llama al arrancar el backend de dev SOLO si dev es el activo. Cuenta el arranque; si ya hubo MAX_FAILS sin confirmar,
-    vuelve a la estable (si existe) y deja un aviso. Devuelve True si hizo la vuelta."""
+    vuelve a la estable (si existe) y deja un aviso. Devuelve True si hizo la vuelta.
+    Una versión distinta de la última vista empieza de cero: los fallos de la versión anterior no cuentan contra la nueva."""
+    if version is not None:
+        vp = os.path.join(dev_settings_dir, "ultima-version")
+        try:
+            with open(vp, encoding="utf-8") as fh:
+                seen = fh.read().strip()
+        except OSError:
+            seen = None
+        if seen != version:
+            os.makedirs(dev_settings_dir, exist_ok=True)
+            with open(vp, "w", encoding="utf-8") as fh:
+                fh.write(version)
+            _write_count(dev_settings_dir, 0)
     n = _read_count(dev_settings_dir)
     if n >= MAX_FAILS and installed(plugins_dir, "stable"):
         write_flag(sdir, "stable")

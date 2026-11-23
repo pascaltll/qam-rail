@@ -101,7 +101,7 @@ class Plugin:
             pass
         try:  # canales (0.53): si este es dev y está activo, cuenta el arranque (la red de seguridad vuelve a estable tras 2 fallidos)
             if qam_channel is not None and _me() == "dev" and _active() == "dev":
-                if qam_channel.boot_guard(decky.DECKY_PLUGIN_SETTINGS_DIR, _chan_dir(), _plugins_dir()):
+                if qam_channel.boot_guard(decky.DECKY_PLUGIN_SETTINGS_DIR, _chan_dir(), _plugins_dir(), str(getattr(decky, "DECKY_PLUGIN_VERSION", "") or "")):
                     decky.logger.warning("QAM Rail Dev: 2 arranques sin confirmar, vuelvo a la versión estable")
         except Exception as exc:  # noqa: BLE001
             decky.logger.error(f"canal: {exc}")
