@@ -1,5 +1,9 @@
 # Cambios
 
+## dev.58 (en curso)
+
+- **Scroll táctil — permiso:** el log de dev.57 mostró la causa: `/dev/input/event5` (la pantalla táctil) es `root:input` 660 y el plugin corre como tu usuario, así que no podía leerla («Permission denied»). Nuevo `scripts/touch-permiso.sh`: instala una regla de udev con `uaccess` para las pantallas táctiles (solo lectura, se aplica al momento y sobrevive a reinicios; `--quitar` la retira). `install.sh` la instala una vez si falta.
+
 ## dev.57
 
 - **Scroll táctil, diagnóstico:** `pad.log` anota ahora «táctil: activo» o «táctil: en pausa — motivo» (ajuste apagado, o panel/teclado grande figurando abiertos) cada vez que cambia, y cualquier error al buscar la pantalla táctil, que ya no puede parar el lector del mando. La detección se comprobó con el bloque real de la pantalla del Ally (`NVTK0603:00 0603:F200`, `event5`).

@@ -149,6 +149,7 @@ fi
 if [[ "${NO_RESTART:-0}" == "1" ]]; then
   echo "NO_RESTART=1: no se reinicia Decky."
 else
+  [[ -x "$(dirname "$0")/touch-permiso.sh" && ! -f /etc/udev/rules.d/71-qam-rail-touch.rules ]] && "$(dirname "$0")/touch-permiso.sh" || true   # permiso de lectura del táctil (una vez)
   echo "Reiniciando Decky (plugin_loader)…"
   sudo systemctl restart plugin_loader
 fi
