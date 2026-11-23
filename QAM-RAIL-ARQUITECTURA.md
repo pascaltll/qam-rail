@@ -895,3 +895,49 @@ Hallazgo: poner `STEAM_GAME=1` no bastaba; Steam fija en la raíz de X `GAMESCOP
 ### 59.y STEAM_OVERLAY (dev.10)
 
 Volcado comparado (`dump-gs.sh`, Firefox vs juego con QAM abierto): ventana `Steam Big Picture Mode` (steamwebhelper): `STEAM_OVERLAY` 0 con Firefox, 1 con el QAM sobre un juego; `GAMESCOPE_FOCUSED_APP` pasa a 769. Prueba manual [V]: `xprop -id <ventana> -f STEAM_OVERLAY 32c -set STEAM_OVERLAY 1` tapa Firefox con la interfaz de Steam; con 0 se ve Firefox. `desktop_overlay(on)` (backend) lo sube al montar `PilotPanel` si hay apps de escritorio en marcha y lo restaura al desmontar (`_ov_prev`). Riesgos [H]: Steam puede reescribir la propiedad; el fondo de Steam no es transparente sin un juego conocido, así que la app puede quedar oculta mientras el panel está abierto; el teclado sin comprobar.
+
+
+## 60. Apps de escritorio: de dev.11 a dev.44 (resumen de arquitectura)
+
+Esta sección sustituye al historial detallado (que sigue en `CHANGELOG.md`). Describe cómo encajan las piezas hoy. Etiquetas: [V] verificado en el equipo, [H] hipótesis/sin verificar.
+
+### 60.1 Ciclo de vida de una app (`main.py`, `py_modules/qam_desktop.py`)
+- **Lanzar**: `desktop_run` → `launch_plan` → `systemd-run --user` con unidad `qam-desk-<hash>` (Decky corre como root; la sesión de usuario se obtiene de `systemd --user` y se cachea 60 s, `_user_session`). Apps de QAM (`apps_run`) se lanzan con `DISPLAY/XAUTHORITY/WAYLAND_DISPLAY` de la sesión y, si Decky es root, con `runuser` (dev.15).
+- **Marcar ventanas**: bucle de etiquetado (`xwininfo`/`xprop`) pone `STEAM_GAME = app_gameid(clave)` en las ventanas grandes nuevas; las apps de QAM se reconocen por `_NET_WM_PID` (dev.12) y `_claims` impide que dos apps se lleven la misma ventana. Steam/mangoapp/gamescope nunca se marcan.
+- **Mostrar**: antepone el gid a `GAMESCOPECTRL_BASELAYER_APPID` (§59.x) y se reafirma ~3 s. **Minimizar** quita `STEAM_GAME` y el gid; **Cerrar** = SIGTERM a la unidad (y a los dueños de ventanas marcadas, nunca PID < 100); **Forzar** = SIGKILL; navegadores Flatpak: `flatpak kill`.
+- **Overlay** (`desktop_overlay`, §59.y): sube `STEAM_OVERLAY=1` mientras el panel o el teclado están abiertos; al cerrar siempre vuelve a 0 (dev.24). La animación en curso se cancela al subirlo (dev.35).
+- **Ajuste a pantalla** (`_fit_window(wid, key)`, dev.40): si la ventana es menor que la pantalla, la redimensiona (gamescope la centra, no se puede posicionar). Los navegadores (`is_browser_key`) se saltan este ajuste (dev.43).
+- **Pantalla completa automática** (`_auto_fs`, dev.42): para claves en `AUTO_FS` (Stremio) se espera 3,5 s, se da foco y se manda F11 una vez por ventana (`_fs_done`). Stremio (shell Flatpak nuevo) rechaza `--fullscreen` (dev.41). [H] F11 sin verificar.
+- **Descarga limpia** (`_unload_clean`, dev.44): al descargar el plugin se quitan de la capa base los gids de las apps reclamadas y se baja el overlay (`asyncio.wait_for(…, 4)`), para no dejar a Steam debajo de una app sin dueño. [H] hipótesis sobre las pantallas negras tras instalar una dev con apps abiertas.
+- **Abierta** = unidad activa, `flatpak ps` o ventana marcada viva (apps que delegan, p. ej. KDE Connect). `desktop_running` se comparte entre peticiones y vale 1,5 s (dev.28).
+
+### 60.2 Mando como ratón y teclado (`py_modules/qam_pad.py`, dev.26–27, 32–33)
+- Lee los `js` de `/proc/bus/input/devices` y emite con XTest por ctypes (`XOut`: `screen_size`, `geometry`, `resize`, `focus`, `type_char`, `key`, `flush`; `NAMED_KEYS` incluye F11).
+- Mapeo: stick izq = cursor, der = scroll, A clic, X clic derecho, L3 central, B atrás, Y barra de direcciones, LB/RB pestañas, cruceta flechas (repite), LT/RT Re/Av Pág, Start Intro, Select Esc, R3 zoom 100 %.
+- Con Steam sostenido (y 0,5 s después) los botones se ignoran (dev.33); `pad.log` detecta la doble entrada del mismo botón por dos `event*` y cuenta una (dev.32).
+
+### 60.3 Teclado (dev.34–40)
+- Teclado de Steam (`VirtualKeyboardManager.ShowVirtualKeyboard`) funciona pero queda debajo; se sube `STEAM_OVERLAY` mientras `m_bIsVirtualKeyboardShowing` (dev.34).
+- Teclado propio en español: panel (`PanelKeyboard`, `src/QamKeyboard.tsx`) y ruta transparente `/qam-rail/teclado` (`BigKeyboardPage`, que solo envuelve a `PanelKeyboard onClose`). Backend `desktop_key`: foco X a la ventana de delante y XTest, resolviendo tecla+nivel por carácter (ñ, ¿, @, €…).
+- dev.40: teclas de 32 px (`Chip compact`), atajos y navegación plegados bajo «Más». Mando: X = ⌫, Start = Intro, Menú = espacio, B = cerrar (`Focusable` con `onSecondaryButton/onOptionsButton/onMenuButton/onCancel`); ⌫ y flechas repiten al mantener (`src/keyRepeat.ts`, `createRepeater(fn, 380, 55)`); foco inicial en la tecla «g». Cada botón deja «mando: …» en `keyboard.log`.
+- **Privacidad**: nada de lo escrito llega a ningún registro; solo «N carácter(es)» y teclas con nombre (dev.38, con prueba).
+
+### 60.4 Puntero estilo Xbox (dev.40)
+`scripts/cursor_xbox.py` genera el tema Xcursor `qam-xbox` (cabecera `Xcur`, TOC tipo `0xfffd0002`, ARGB premultiplicado; tamaños 24/32/48/64; flecha, mano y texto). `scripts/cursor-xbox.sh` lo instala en `~/.local/share/icons` y fija con `flatpak override --user` `XCURSOR_THEME/SIZE/PATH` para Firefox, Edge y Chrome (`--quitar` revierte). [H] efecto en gamescope sin verificar.
+
+### 60.5 Organización de Apps › Steam (`src/deskOrg.ts`, dev.19 y 43)
+Función pura `buildSections(apps, running, favKeys, recentKeys, folds)` → `{open, favs, recent, groups[{group, apps, collapsed}]}`; cada app sale una vez, `pushRecent` guarda las últimas 5, los grupos van en orden fijo (Navegadores, Multimedia, Juegos y emuladores, Herramientas, Oficina, Desarrollo, otros, Otras) y arrancan plegados si tienen más de `FOLD_OVER = 5`. `QamDesktopApps.tsx` guarda recientes y plegados en `localStorage` (`qr.deskRecent`, `qr.deskFolds`, con try/catch). Cada app es una sola parada del mando: A abre/muestra, X o pulsación larga abre el menú.
+
+### 60.6 Caja negra y diagnóstico (dev.38–39)
+- `timeline.log` (JSON por línea, 300 KB) y vigilante (1 s con apps o interfaz abiertas, 4 s sin ellas, sin lanzar procesos) que anota `anomalia` + `contexto`: `app_oculta_sin_ui`, `overlay_sin_ui`, `ventana_pequena` (la única que se autorrepara), `teclado_sin_overlay`, `qam_no_aparece`.
+- «Reparar» (`desktop_repair`): ventanas a pantalla completa y overlay a 0 si lo subimos nosotros; no cierra apps.
+- `scripts/logs.sh` empaqueta todos los registros en `~/qam-logs-<fecha>.tgz` (sin títulos de ventana). Registros útiles: `desktop-tag.log`, `desktop-run.log`, `keyboard.log`, `pad.log`, `updates.log`, `timeline.log`.
+
+### 60.7 Actualizaciones (dev.29–31)
+Las comprobaciones de actualización de apps dejan resultado visible y línea en `updates.log`. La causa real de «no aparecen actualizaciones» era `CERTIFICATE_VERIFY_FAILED`: las peticiones a GitHub usan el paquete de certificados del sistema (`/etc/pki/tls/certs/ca-bundle.crt`, `/etc/ssl/certs/…`) o certifi, siempre con verificación. `apps_uninstall` ya no da por buena la desinstalación si la carpeta sigue.
+
+### 60.8 Pruebas
+`npx tsc --noEmit`; `npx vitest run` (323 pasan en dev.43/44); `python3 tests/py/test_*.py` (todas «TODO OK»); `bash tests/sh/test_scripts.sh`. Las pruebas del backend sustituyen el módulo `decky`; `_claims` es una propiedad sobre `_claims_v`. Pruebas añadidas: `test_stremio.py`, `test_unload.py`, `test_cursor.py`, `test_anim.py`, `test_blackbox.py`, `keyRepeat.test.ts`, `deskOrg.test.ts`, `bigKeyboard.test.ts`.
+
+### 60.9 Abierto / por verificar
+Causa de las pantallas negras tras actualizar con apps abiertas; Firefox/Edge sin ventana en dev.40–42 (mitigado en dev.43, faltan `desktop-tag.log`/`desktop-run.log`); F11 en Stremio; cursor Xbox en gamescope; mapeo X/Start/Menú con mando real; Forgeinator dev («no está instalada» y clic/Tab espurio al pulsar el atajo de QAM: parche `forgeinator-sdl-chord.patch` pendiente de confirmar). Diferido: perfil de mando por app, búsqueda de apps con el teclado grande, congelar apps, poda de gids obsoletos al arrancar, insignia de actualizaciones en Inicio.
