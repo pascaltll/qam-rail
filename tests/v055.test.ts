@@ -1,4 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+
+vi.mock("@decky/api", () => ({ callable: () => async () => ({}) }));
 
 import { solid } from "../src/color";
 import { missing } from "../src/deskIcons";
