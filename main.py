@@ -1316,17 +1316,28 @@ class Plugin:
         cmd = ["bash", os.path.join(app["path"], app["launch"]), *shlex.split(str(args or ""))]
         before: set = set()
         prefix: list = []
+        seen: dict = {}
         display = ":0"
         tag = qam_desktop is not None and not str(args or "").strip()
-        if tag:  # abrir sin argumentos: si la app crea una ventana X (Forgeinator, pygame), gamescope solo la muestra con STEAM_GAME
-            try:
-                prefix, seen = await self._user_session()
-                display = seen.get("DISPLAY") or ":0"
-                self._xauth = seen.get("XAUTHORITY") or None
+        try:
+            prefix, seen = await self._user_session()
+            display = seen.get("DISPLAY") or ":0"
+            self._xauth = seen.get("XAUTHORITY") or None
+            if tag:  # abrir sin argumentos: si la app crea una ventana X (Forgeinator, pygame), gamescope solo la muestra con STEAM_GAME
                 before = {w["id"] for w in await self._x_windows(prefix, display)}
-            except Exception:
-                tag = False
-        await asyncio.create_subprocess_exec(*cmd, cwd=app["path"], env=self._user_env(), stdin=asyncio.subprocess.DEVNULL,
+        except Exception:
+            tag = False
+        # La app necesita la pantalla de la sesión (sin DISPLAY una app gráfica arranca «a ciegas»: Forgeinator corría sin ventana).
+        gfx = {"DISPLAY": display}
+        for k in ("XAUTHORITY", "WAYLAND_DISPLAY"):
+            if seen.get(k):
+                gfx[k] = seen[k]
+        env = self._user_env()
+        env.update(gfx)
+        native = (app.get("controls") or {}).get("close") == "@"
+        if prefix and native:  # Decky corre como root: las apps con ventana se lanzan como el usuario de la sesión
+            cmd = [*prefix, *[f"{k}={v}" for k, v in gfx.items()], *cmd]
+        await asyncio.create_subprocess_exec(*cmd, cwd=app["path"], env=env, stdin=asyncio.subprocess.DEVNULL,
                                              stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL, start_new_session=True)
         if tag:
             self._qam_keys.add(f"qam:{app_id}")
