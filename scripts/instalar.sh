@@ -7,6 +7,11 @@
 # Instala en ~/homebrew/plugins/qam-rail (ajustes en ~/homebrew/settings/qam-rail, apps en ~/homebrew/qam-apps).
 set -uo pipefail
 
+# Freno contra bucles: si «install.sh» fuera en realidad una copia de este mismo script, se llamaría a sí mismo sin fin.
+if [[ -n "${QAM_INSTALAR_ACTIVO:-}" ]]; then
+  echo "Error: el «install.sh» de esta carpeta es una copia de instalar.sh (no el instalador). Bórralo y vuelve a ejecutar." >&2; exit 1
+fi
+export QAM_INSTALAR_ACTIVO=1
 REPO="${QAM_REPO:-pascaltll/qam-rail}"
 HB="${HOMEBREW_DIR:-$HOME/homebrew}"
 DOCTOR=0; BETA=""
@@ -49,7 +54,7 @@ if [[ $DOCTOR -eq 1 ]]; then echo "Revisión terminada (--doctor: no se instaló
 # ---- instalar: usa el install.sh de al lado o el de la misma release; él verifica el SHA-256 del zip ----
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || echo .)"
 INST="$HERE/install.sh"
-if [[ ! -f "$INST" ]]; then
+if [[ ! -f "$INST" ]] || ! grep -q 'pick_release' "$INST"; then   # no existe o no es el install.sh de QAM Rail (p. ej. uno antiguo)
   TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
   echo "Bajando install.sh de la release…"
   curl -fsSL --proto '=https' -o "$TMP/install.sh" "https://github.com/$REPO/releases/latest/download/install.sh" || { echo "No se pudo bajar install.sh." >&2; exit 1; }

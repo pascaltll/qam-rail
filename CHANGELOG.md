@@ -1,5 +1,9 @@
 # Cambios
 
+## 0.52.1
+
+- `instalar.sh`: freno contra bucles (si `install.sh` era una copia de `instalar.sh`, se llamaba a sí mismo sin fin) y comprobación de que `install.sh` es el instalador real; si no lo es, lo baja de la release.
+
 ## 0.52.0
 - **QAM Rail se actualiza desde el QAM:** Más › Actualizaciones (buscar, instalar con confirmación, «Volver a X», canal estable/beta). Verifica SHA-256 (obligatorio), guarda copia (últimas 3), cambia la carpeta por renombrado y reinicia Decky.
 - `scripts/instalar.sh`: primera instalación en un dispositivo nuevo (revisa Decky, Panel de Control, `wpctl`, `bluetoothctl`, `nmcli`, `flatpak`…; `--doctor` solo revisa).
