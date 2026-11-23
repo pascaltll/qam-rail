@@ -54,7 +54,7 @@ const StoreRow: FC<{ p: StorePlugin; state: ReturnType<typeof stateOf>; ver: str
         <div style={{ ...small, fontSize: 11, maxHeight: 30, overflow: "hidden" }}>{p.description}</div>
       </div>
       <span style={{ fontSize: 11, fontWeight: 700, padding: "4px 8px", borderRadius: 10, whiteSpace: "nowrap",
-        background: state === "available" ? COLORS.accent : state === "update" ? "#3b82f6" : COLORS.track, color: state === "available" ? COLORS.onAccent : COLORS.text }}>{label}</span>
+        background: state === "available" ? COLORS.accent : state === "update" ? COLORS.blue : COLORS.track, color: state === "available" ? COLORS.onAccent : COLORS.text }}>{label}</span>
     </Focusable>
   );
 };
@@ -103,7 +103,7 @@ export const StoreColumn: FC<{ onClose: () => void; notify: (t: string) => void;
             ))}
           </Focusable>
         )}
-        {err && <div style={{ ...small, color: "#ff9a9a" }}>No se pudo cargar la tienda ({err}).</div>}
+        {err && <div style={{ ...small, color: COLORS.dangerSoft }}>No se pudo cargar la tienda ({err}).</div>}
         {err && <Chip onClick={onOpenDeckyStore}>Abrir la tienda de Decky</Chip>}
         {shown.slice(0, limit).map((p) => (
           <StoreRow key={String(p.id)} p={p} state={stateOf(p, installed, updates)} ver={installed.get(p.name) ?? ""} onAction={() => void act(p)} />

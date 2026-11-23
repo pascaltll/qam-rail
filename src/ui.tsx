@@ -15,7 +15,12 @@ export const COLORS = {
   get accent() { return currentPalette().accent; },
   get onAccent() { return currentPalette().onAccent; },
   get focus() { return currentPalette().focus; },
+  // Estados: iguales en todos los temas (verde = bien, ámbar = aviso, rojo = error; «Soft» = el mismo color sobre fondo oscuro, para texto).
+  danger: "#e5484d", ok: "#3fbf6f", warn: "#e8b04b", dangerSoft: "#ff9a9a", okSoft: "#7be0a0", info: "#57cbde", blue: "#3b82f6",
 };
+
+/** Escala de radios: pequeño (chips, campos), mediano (fichas, filas) y grande (tarjetas, paneles). */
+export const RADIUS = { sm: 8, md: 12, lg: 16 } as const;
 
 // Con fuentes de emoji al final: los emojis de los mensajes se ven en color en vez de cuadros.
 export const FONT = '"Motiva Sans", "Noto Sans", Arial, Helvetica, sans-serif, "Noto Color Emoji", "Apple Color Emoji", "Segoe UI Emoji", "Twemoji Mozilla"';

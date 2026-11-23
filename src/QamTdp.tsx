@@ -149,7 +149,7 @@ const LearnRow: FC<{ sug: NonNullable<TdpView["suggestion"]>; onForget?: () => v
   const known = done || sug.learning;
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 10, minHeight: 32 }}>
-      <Icon d={done ? "M5 12l5 5 9-10" : "M4 20V10M10 20V4M16 20v-8"} size={16} color={done ? "#3fbf6f" : COLORS.muted} />
+      <Icon d={done ? "M5 12l5 5 9-10" : "M4 20V10M10 20V4M16 20v-8"} size={16} color={done ? COLORS.ok : COLORS.muted} />
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ ...small, fontSize: 12, color: COLORS.text, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
           {done ? `Aprendido · zona ${sug.floor}–${sug.ceil} W` : sug.learning ? "Aprendiendo este juego" : "Se aprende jugando"}
@@ -177,8 +177,8 @@ const MenuZones: FC<{ min: number; max: number }> = ({ min, max }) => {
   const pct = (x: number) => `${Math.max(0, Math.min(100, ((x - min) / Math.max(1, max - min)) * 100))}%`;
   return (
     <div title="Panel: ahorro / fluido" style={{ position: "relative", height: 4, borderRadius: 2, background: COLORS.track, overflow: "hidden", marginTop: -2 }}>
-      <div style={{ position: "absolute", left: 0, width: pct(tz.ecoW + 0.5), top: 0, bottom: 0, background: "#e8b04b" }} />
-      <div style={{ position: "absolute", left: pct(tz.fluidW - 0.5), right: 0, top: 0, bottom: 0, background: "#3fbf6f" }} />
+      <div style={{ position: "absolute", left: 0, width: pct(tz.ecoW + 0.5), top: 0, bottom: 0, background: COLORS.warn }} />
+      <div style={{ position: "absolute", left: pct(tz.fluidW - 0.5), right: 0, top: 0, bottom: 0, background: COLORS.ok }} />
     </div>
   );
 };

@@ -59,7 +59,7 @@ export const HomeGame: FC<{
   return (
     <>
       <div style={{ display: "flex", alignItems: "center", gap: 10, height: 34 }}>
-        <div style={{ width: 34, height: 34, borderRadius: 12, background: "#3b82f6", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+        <div style={{ width: 34, height: 34, borderRadius: 12, background: COLORS.blue, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
           <Icon d="M6 12h4M8 10v4M15 11h.01M18 13h.01M7 6h10a4 4 0 0 1 4 4v4a4 4 0 0 1-4 4h-1l-2-2h-4l-2 2H7a4 4 0 0 1-4-4v-4a4 4 0 0 1 4-4z" size={19} color="#fff" />
         </div>
         <div style={{ flexGrow: 1, minWidth: 0, fontSize: 15, fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{game.name}</div>

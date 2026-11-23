@@ -47,7 +47,7 @@ const GuestCard: FC<{ name: string; avatar: string | null; example?: boolean; pr
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 6, padding: "8px 10px", borderRadius: 14, boxShadow: `inset 0 0 0 1px ${COLORS.track}` }}>
       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-        <Avatar f={{ name, avatar }} dot="#57cbde" size={28} />
+        <Avatar f={{ name, avatar }} dot={COLORS.info} size={28} />
         <div style={{ flex: 1, minWidth: 0, fontSize: 13, fontWeight: 600 }}>{name}{example ? <span style={{ ...small, fontSize: 11 }}> · ejemplo</span> : null}</div>
         <Chip grow={false} onClick={proto}>Quitar</Chip>
       </div>
@@ -81,7 +81,7 @@ export const RemotePlayView: FC<{ game: RunningGame | null; notify: (t: string) 
             <GuestCard name="Invitado" avatar={null} example proto={proto} />
             <Label>Invitar</Label>
             {online.length ? online.map((f) => (
-              <PersonRow key={f.accountId} name={f.name} avatar={f.avatar} sub={f.gameName || "En línea"} action="Invitar" onTap={proto} dot="#57cbde" />
+              <PersonRow key={f.accountId} name={f.name} avatar={f.avatar} sub={f.gameName || "En línea"} action="Invitar" onTap={proto} dot={COLORS.info} />
             )) : <div style={small}>Ningún amigo en línea ahora.</div>}
             <Row gap={8}>
               <Chip icon="M10 14a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1M14 10a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1" onClick={proto}>Enlace de invitado</Chip>

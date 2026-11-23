@@ -96,7 +96,7 @@ export const QamAppOptions: FC<{ id: string; notify: (t: string) => void; onClos
     <Card title={`${a.name} · opciones`} right={<span style={small}>{a.version ? `v${a.version}` : "sin versión"}</span>}>
       <Status m={m} />
       <div style={{ ...small, fontSize: 11 }}>{a.external ? "Usa su carpeta propia. " : ""}{a.deducido ? "Datos deducidos (sin qam-app.json). " : ""}{a.check?.errors?.length ? "Revisar su manifiesto. " : ""}</div>
-      {m.gh[a.id]?.state === "error" && <div style={{ ...small, fontSize: 11, color: "#e5484d" }}>No se pudo comprobar las actualizaciones: {m.gh[a.id]?.error ?? "?"}</div>}
+      {m.gh[a.id]?.state === "error" && <div style={{ ...small, fontSize: 11, color: COLORS.danger }}>No se pudo comprobar las actualizaciones: {m.gh[a.id]?.error ?? "?"}</div>}
       <Focusable style={{ display: "flex", flexDirection: "column", gap: 6 }}>
         <Row gap={6}>
           {update && <Chip compact active icon={ICONS2.refresh} onClick={() => m.install(update.zip)}>Actualizar a {update.version}</Chip>}

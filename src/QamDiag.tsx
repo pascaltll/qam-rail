@@ -37,14 +37,14 @@ type Zip = { path: string; files: string[] } | null;
 const when = (f: string) => { const d = new Date(f); return Number.isNaN(d.getTime()) ? f : d.toLocaleString([], { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }); };
 
 /** Semáforo de pruebas: verde = bien, ámbar = con avisos, rojo = falló, gris = sin hacer o saltada. */
-const LIGHT: Record<SuiteStep["status"], string> = { pending: "#5b6170", running: "#7cc4ff", ok: "#3fbf6f", warn: "#f5c542", error: "#ff6b6b", skipped: "#5b6170" };
+const LIGHT: Record<SuiteStep["status"], string> = { pending: "#5b6170", running: "#7cc4ff", ok: COLORS.ok, warn: "#f5c542", error: "#ff6b6b", skipped: "#5b6170" };
 const Lights: FC<{ steps: Array<{ id: string; label: string; status: SuiteStep["status"]; detail?: string }>; title: string }> = ({ steps, title }) => {
   const okN = steps.filter((x) => x.status === "ok").length;
   return (
     <Focusable data-qr="item" style={{ display: "flex", flexDirection: "column", gap: 3, padding: "8px 10px", borderRadius: 14, background: COLORS.track }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, fontWeight: 700 }}>
         <span style={{ flex: 1 }}>{title}</span>
-        <span style={{ color: okN === steps.length ? "#3fbf6f" : COLORS.muted }}>{okN}/{steps.length} bien</span>
+        <span style={{ color: okN === steps.length ? COLORS.ok : COLORS.muted }}>{okN}/{steps.length} bien</span>
       </div>
       {steps.map((st) => (
         <div key={st.id} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, lineHeight: "17px" }}>
@@ -83,7 +83,7 @@ const STEP_ICON: Record<string, string> = {
   fluidez: "M3 12h4l3-8 4 16 3-8h4",
   decky: "M4 4h16v16H4zM9 9h6v6H9z",
 };
-const DOT: Record<string, string> = { ok: "#3fbf6f", warn: "#e8b04b", error: "#e5484d", running: "#5fb8ff", skipped: "#6b7280", pending: "transparent" };
+const DOT: Record<string, string> = { ok: COLORS.ok, warn: COLORS.warn, error: COLORS.danger, running: "#5fb8ff", skipped: "#6b7280", pending: "transparent" };
 const SingleTests: FC = () => {
   const [, t] = useState(0);
   useEffect(() => suiteSubscribe(() => t((x) => x + 1)), []);
@@ -225,10 +225,10 @@ const RowView: FC<{ r: FluencyRow; best: boolean }> = ({ r, best }) => (
   <div style={{ display: "flex", flexDirection: "column", gap: 2, padding: "6px 0", borderTop: `1px solid ${COLORS.track}` }}>
     <div style={{ display: "flex", gap: 8, fontSize: 13, fontWeight: 700 }}>
       <span style={{ width: 70 }}>{r.watts} W{r.appliedW !== null && Math.abs(r.appliedW - r.watts) >= 0.5 ? ` (${n(r.appliedW, 1)})` : ""}</span>
-      {r.error ? <span style={{ color: "#ff9a9a", fontWeight: 500 }}>{r.error}</span> : (
+      {r.error ? <span style={{ color: COLORS.dangerSoft, fontWeight: 500 }}>{r.error}</span> : (
         <>
           <span style={{ flex: 1 }}>Sección {n(r.switchMed)} ms</span>
-          <span style={{ flex: 1, color: best ? "#7be0a0" : COLORS.text }}>Reposo {n(r.idle.fps)} fps</span>
+          <span style={{ flex: 1, color: best ? COLORS.okSoft : COLORS.text }}>Reposo {n(r.idle.fps)} fps</span>
         </>
       )}
     </div>
@@ -316,7 +316,7 @@ export const DiagView: FC<{ onBack: () => void; notify: (t: string) => void; log
             <Chip active onClick={() => void runFluency(false, log)}>Completa (5, ≈ 2 min)</Chip>
           </Row>
         )}
-        {(s.phase === "error" || s.phase === "cancelled") && <div style={{ ...small, color: "#ff9a9a" }}>{s.step}</div>}
+        {(s.phase === "error" || s.phase === "cancelled") && <div style={{ ...small, color: COLORS.dangerSoft }}>{s.step}</div>}
         {s.rows.length > 0 && (
           <Focusable data-qr="item" style={{ display: "flex", flexDirection: "column" }}>
             {s.rows.map((r) => <RowView key={r.watts} r={r} best={!!r.idle?.fps && r.idle.fps === bestFps} />)}

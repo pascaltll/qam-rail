@@ -41,7 +41,7 @@ export const BenchView: FC<{ log: (m: string) => void; onBack: () => void }> = (
             <span style={{ width: 40 }}>W</span><span style={{ width: 50 }}>Rend.</span><span style={{ width: 52 }}>pts/W</span><span style={{ width: 54 }}>Consumo</span><span>Temp</span>
           </div>
           {rows.map((r) => (
-            <div key={r.watts} style={{ display: "flex", fontSize: 13, fontWeight: r.perWatt === best && best > 0 ? 700 : 500, color: r.error ? "#ff9a9a" : COLORS.text }}>
+            <div key={r.watts} style={{ display: "flex", fontSize: 13, fontWeight: r.perWatt === best && best > 0 ? 700 : 500, color: r.error ? COLORS.dangerSoft : COLORS.text }}>
               <span style={{ width: 40 }}>{r.watts}</span>
               <span style={{ width: 50 }}>{r.pct === null ? "—" : `${r.pct}%`}</span>
               <span style={{ width: 52 }}>{fmt(r.perWatt)}</span>
@@ -52,7 +52,7 @@ export const BenchView: FC<{ log: (m: string) => void; onBack: () => void }> = (
           {!running && best > 0 && <div style={{ fontSize: 11, color: COLORS.muted, marginTop: 4 }}>Negrita = mejor eficiencia (pts/W). {st.saved ? "Guardado en la carpeta de ajustes (bench)." : ""}</div>}
         </Focusable>
       )}
-      {st.phase === "error" && <div style={{ ...cardStyle, fontSize: 12, color: "#ff9a9a" }}>{st.message}</div>}
+      {st.phase === "error" && <div style={{ ...cardStyle, fontSize: 12, color: COLORS.dangerSoft }}>{st.message}</div>}
     </>
   );
 };

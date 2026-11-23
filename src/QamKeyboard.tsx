@@ -80,7 +80,7 @@ export const PanelKeyboard: FC<{ notify?: (t: string) => void; onClose?: () => v
       onCancel={onClose ? (e: CustomEvent) => { e.stopPropagation(); onClose(); } : undefined} onCancelActionDescription={onClose ? "Cerrar teclado" : undefined}
       style={{ display: "flex", flexDirection: "column", gap: GAP }}>
       <div style={{ minHeight: 30, padding: "3px 14px", borderRadius: 12, background: COLORS.track, fontSize: 14, fontFamily: "monospace", display: "flex", alignItems: "center", gap: 12 }}>
-        <div style={{ flex: 1, minWidth: 0, overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis", color: err ? "#e5484d" : COLORS.text }}>
+        <div style={{ flex: 1, minWidth: 0, overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis", color: err ? COLORS.danger : COLORS.text }}>
           {err || buf || <span style={{ color: COLORS.muted }}>Lo que escribas aparece aquí y se manda a la app</span>}
           {!err && <span style={{ color: COLORS.muted }}>▏</span>}
         </div>

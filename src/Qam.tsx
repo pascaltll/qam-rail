@@ -695,7 +695,7 @@ const RailButton: FC<{
       style={{ position: "relative", width: 42, height: 42, borderRadius: 16, display: "flex", alignItems: "center", justifyContent: "center", background: active ? COLORS.accent : "transparent", transition: "background 180ms ease", outline: focused ? `2px solid ${COLORS.focus}` : "2px solid transparent", outlineOffset: 1 }}
     >
       <Icon d={s.icon} size={24} color={active ? COLORS.onAccent : COLORS.muted} />
-      {badge > 0 && <span style={{ position: "absolute", top: 2, right: 2, minWidth: 16, height: 16, padding: "0 4px", boxSizing: "border-box", borderRadius: 8, background: "#e5484d", color: "#fff", fontSize: 10, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" }}>{badge > 9 ? "9+" : badge}</span>}
+      {badge > 0 && <span style={{ position: "absolute", top: 2, right: 2, minWidth: 16, height: 16, padding: "0 4px", boxSizing: "border-box", borderRadius: 8, background: COLORS.danger, color: "#fff", fontSize: 10, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" }}>{badge > 9 ? "9+" : badge}</span>}
     </Focusable>
   );
 };

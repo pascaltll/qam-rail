@@ -8,7 +8,7 @@ import { sc } from "./steam";
 import { audioMute, audioReset, audioSetDefault, audioState, audioVolume, shortName, sortOutputs, type AudioNode, type AudioState } from "./audio";
 import { crumb } from "./crumbs";
 import { small } from "./QamSections";
-import { Chip, ICONS2, Icon, Segments, ToggleRow, XSlider } from "./ui";
+import { Chip, ICONS2, Icon, Segments, ToggleRow, XSlider, COLORS } from "./ui";
 import { autoTvOn, setAutoTv } from "./audioTv";
 import { useVisible } from "./visible";
 
@@ -70,7 +70,7 @@ export const AudioControls: FC<{ notify: (t: string) => void }> = ({ notify }) =
     <>
       {st?.crudo_activo && (
         <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 10px", borderRadius: 12, background: "rgba(232,176,75,0.15)" }}>
-          <Icon d={ICONS2.speaker} size={18} color="#e8b04b" />
+          <Icon d={ICONS2.speaker} size={18} color={COLORS.warn} />
           <div style={{ flex: 1, minWidth: 0, fontSize: 12 }}>Los altavoces suenan sin su ecualizador (lo cambió QAM Rail 0.34).</div>
           <Chip grow={false} onClick={() => { crumb("audio: restaurar salida del sistema"); void audioReset().then((r) => { notify(r.ok ? "Sonido restaurado" : "No se pudo restaurar"); load(); }); }}>Restaurar</Chip>
         </div>

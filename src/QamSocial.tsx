@@ -67,7 +67,7 @@ const FriendRow: FC<{ f: Friend; sub?: string; right?: ReactNode; onOpen: () => 
         <div style={{ fontSize: 14, fontWeight: f.unread ? 700 : 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{f.name}</div>
         <div style={{ ...small, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", color: f.appid ? "#a8d672" : COLORS.muted }}>{sub ?? statusText(f)}</div>
       </div>
-      {f.voice && <Icon d={PHONE} size={16} color="#7be0a0" />}
+      {f.voice && <Icon d={PHONE} size={16} color={COLORS.okSoft} />}
       <Badge n={f.unread} />
       {right}
     </Focusable>
@@ -77,8 +77,8 @@ const FriendRow: FC<{ f: Friend; sub?: string; right?: ReactNode; onOpen: () => 
 const PHONE = "M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2";
 // Mi estado: punto de color + icono + texto (antes una ficha que cambiaba de texto al tocarla, sin pista de qué era).
 export const STATES: Array<{ s: Persona; label: string; note: string; color: string; icon: string }> = [
-  { s: Persona.Online, label: "En línea", note: "tus amigos te ven conectado", color: "#57cbde", icon: "M12 7a5 5 0 1 0 0 10 5 5 0 0 0 0-10z" },
-  { s: Persona.Away, label: "Ausente", note: "conectado, pero no estás", color: "#e8b04b", icon: "M20 14A8 8 0 1 1 10 4a6.5 6.5 0 0 0 10 10z" },
+  { s: Persona.Online, label: "En línea", note: "tus amigos te ven conectado", color: COLORS.info, icon: "M12 7a5 5 0 1 0 0 10 5 5 0 0 0 0-10z" },
+  { s: Persona.Away, label: "Ausente", note: "conectado, pero no estás", color: COLORS.warn, icon: "M20 14A8 8 0 1 1 10 4a6.5 6.5 0 0 0 10 10z" },
   { s: Persona.Invisible, label: "Invisible", note: "te ven desconectado; tú lo ves todo", color: "#8b929a", icon: "M3 3l18 18M10.6 6.1A9.8 9.8 0 0 1 12 6c5 0 8.5 4 9.5 6a12 12 0 0 1-3 3.6M6.6 6.6C4.6 7.9 3.2 9.8 2.5 12c1 2 4.5 6 9.5 6 1.6 0 3-.4 4.3-1" },
 ];
 export const stateInfo = (p: Persona) => STATES.find((x) => x.s === p) ?? STATES[0];
@@ -234,7 +234,7 @@ const GroupRow: FC<{ g: Group; onOpen: () => void }> = ({ g, onOpen }) => {
           {[g.online ? `${g.online} en línea` : null, g.rooms.length ? `${g.rooms.length} salas` : null, g.voiceChannels.length ? `${g.voiceChannels.length} de voz` : null].filter(Boolean).join(" · ") || "Grupo"}
         </div>
       </div>
-      {inVoice && <Icon d={PHONE} size={16} color="#7be0a0" />}
+      {inVoice && <Icon d={PHONE} size={16} color={COLORS.okSoft} />}
       <Badge n={g.unread} />
     </Focusable>
   );
@@ -557,7 +557,7 @@ export const VoiceBar: FC<{ notify: (t: string) => void }> = ({ notify }) => {
       ))}
       {v.active && (
         <div style={{ ...cardStyle, flexDirection: "row", alignItems: "center", gap: 8, padding: "6px 10px", background: "#1f3b2c", flexShrink: 0 }}>
-          <Icon d={PHONE} size={18} color="#7be0a0" />
+          <Icon d={PHONE} size={18} color={COLORS.okSoft} />
           <div style={{ flexGrow: 1, minWidth: 0, fontSize: 13, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
             {v.connecting ? "Conectando…" : v.withName ? `En llamada con ${v.withName}` : v.group ? "En una sala de voz" : "En llamada"}
           </div>

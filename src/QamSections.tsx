@@ -632,9 +632,9 @@ export const PanelSaver: FC = () => {
   const now = tierOf(w, t);
   const choice = tierChoice();
   const NOW: Record<string, { label: string; color: string; icon: string }> = {
-    ahorro: { label: "Modo ahorro", color: "#e8b04b", icon: "M12 3c4 4 6 7 6 10a6 6 0 0 1-12 0c0-3 2-6 6-10z" },
+    ahorro: { label: "Modo ahorro", color: COLORS.warn, icon: "M12 3c4 4 6 7 6 10a6 6 0 0 1-12 0c0-3 2-6 6-10z" },
     normal: { label: "Normal", color: COLORS.muted, icon: "M5 12h14" },
-    fluido: { label: "Fluido", color: "#3fbf6f", icon: "M13 3L4 14h7l-1 7 9-11h-7z" },
+    fluido: { label: "Fluido", color: COLORS.ok, icon: "M13 3L4 14h7l-1 7 9-11h-7z" },
   };
   const cur = now ? NOW[now] : null;
   const lg = learned("escritorio"), lj = learned("juego");
