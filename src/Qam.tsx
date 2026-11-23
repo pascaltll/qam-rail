@@ -16,6 +16,7 @@ import { DiagView, FluencyBanner } from "./QamDiag";
 import { AppearanceCard } from "./QamAppearance";
 import { toggleKeyboard } from "./keyboard";
 import { QamAppsCard } from "./QamAppsCard";
+import { QamChannelCard } from "./QamChannel";
 import { QamSelfUpdateCard } from "./QamSelfUpdate";
 import { BluetoothCard, WifiCard } from "./QamNetwork";
 import { DeckyCard, StoreColumn } from "./QamDecky";
@@ -509,6 +510,7 @@ export const QamApp: FC<{ log: (m: string) => void; onNative: (tab?: number) => 
         <>
           <Shortcut icon={<ShortIcon d={MORE_ICON.look} />} label="Apariencia" hint="colores, acento, fluidez del panel" onOpen={() => { setLook(true); window.setTimeout(() => focusBody(), 90); }} />
           <Shortcut icon={<ShortIcon d={MORE_ICON.panel} />} label="Panel de Control" hint="todas sus opciones" onOpen={openPanel} />
+          <QamChannelCard notify={notify} />
           <QamSelfUpdateCard notify={notify} />
           <Label>Sistema</Label>
           <Shortcut icon={<ShortIcon d={ICONS2.sliders} />} label="Ajustes de Steam" onOpen={() => onNative(TAB.settings)} />

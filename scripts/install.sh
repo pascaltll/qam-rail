@@ -6,7 +6,9 @@
 #   ./install.sh --version 0.51.1    una versión concreta de GitHub
 #   ./install.sh --check             solo dice si hay versión nueva (no instala)
 #   ./install.sh 0.8.0 | zip...      zips locales (nombre, ruta o número de versión)
-# Variables: PLUGINS_DIR (~/homebrew/plugins) · BACKUP_DIR (<carpeta>/backups) · KEEP_BACKUPS (5) · NO_RESTART=1 · QAM_REPO (pascaltll/qam-rail)
+#   ./install.sh --dev               el qam-rail-dev-*.zip más nuevo de esta carpeta: instala la versión de DESARROLLO (otra carpeta,
+#                                    qam-rail-dev) y la deja activa. La estable no se toca. Volver a la estable: ./canal.sh estable
+# Variables: CANAL_DIR (~/homebrew/settings/qam-rail-canal) · PLUGINS_DIR (~/homebrew/plugins) · BACKUP_DIR (<carpeta>/backups) · KEEP_BACKUPS (5) · NO_RESTART=1 · QAM_REPO (pascaltll/qam-rail)
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -16,21 +18,22 @@ KEEP_BACKUPS="${KEEP_BACKUPS:-5}"
 REPO="${QAM_REPO:-pascaltll/qam-rail}"
 command -v unzip >/dev/null || { echo "Falta 'unzip'." >&2; exit 1; }
 
-MODE="local"; BETA=0; WANT=""
+MODE="local"; BETA=0; WANT=""; DEV=0
 ARGS=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --latest) MODE="latest" ;;
     --check) MODE="check" ;;
     --beta) BETA=1 ;;
+    --dev) DEV=1 ;;
     --version) MODE="latest"; WANT="${2:?falta la versión}"; shift ;;
-    -h|--help) sed -n '2,10p' "${BASH_SOURCE[0]}"; exit 0 ;;
+    -h|--help) sed -n '2,13p' "${BASH_SOURCE[0]}"; exit 0 ;;
     *) ARGS+=("$1") ;;
   esac
   shift
 done
 
-is_ver() { [[ "$1" =~ ^[0-9]+(\.[0-9]+)*$ ]]; }
+is_ver() { [[ "$1" =~ ^[0-9]+(\.[0-9]+)*(-dev\.[0-9]+)?$ ]]; }
 version_of() { grep -m1 '"version"' "$1/package.json" 2>/dev/null | sed 's/.*: *"\([^"]*\)".*/\1/' || true; }
 locate() {
   local c
@@ -75,7 +78,7 @@ fetch_verified() { # tag url sums name -> ruta del zip verificado
   echo "$d/$name"
 }
 
-TMPS=()
+TMPS=(); INSTALLED_DEV=0
 cleanup() { for t in "${TMPS[@]:-}"; do if [[ -n "$t" ]]; then rm -rf "$t"; fi; done; return 0; }
 trap cleanup EXIT
 
@@ -94,14 +97,15 @@ case "$MODE" in
     ZIPS+=("$(fetch_verified "$tag" "$url" "$sums" "$name")") ;;
   local)
     if [[ ${#ARGS[@]} -eq 0 ]]; then
-      newest="$(ls -t "$PWD"/qam-rail-[0-9]*.zip "$HERE"/qam-rail-[0-9]*.zip 2>/dev/null | grep -v -- '-src-' | head -n1 || true)"
-      [[ -n "$newest" ]] || { echo "No hay qam-rail-N.zip. Usa --latest para bajarlo de GitHub." >&2; exit 1; }
+      pat='qam-rail-[0-9]*.zip'; [[ $DEV == 1 ]] && pat='qam-rail-dev-[0-9]*.zip'
+      newest="$(ls -t "$PWD"/$pat "$HERE"/$pat 2>/dev/null | grep -v -- '-src-' | head -n1 || true)"
+      [[ -n "$newest" ]] || { echo "No hay $pat en esta carpeta.$([[ $DEV == 1 ]] || echo ' Usa --latest para bajarlo de GitHub.')" >&2; exit 1; }
       ZIPS+=("$newest")
     elif [[ ${#ARGS[@]} -eq 2 && "${ARGS[0]}" != *.zip ]] && ! is_ver "${ARGS[0]}" && is_ver "${ARGS[1]}"; then
       ZIPS+=("$(locate "${ARGS[0]}-${ARGS[1]}.zip")")
     else
       for a in "${ARGS[@]}"; do
-        if is_ver "$a"; then ZIPS+=("$(locate "qam-rail-$a.zip")"); else ZIPS+=("$(locate "$a")"); fi
+        if is_ver "$a"; then ZIPS+=("$(locate "qam-rail$([[ $DEV == 1 || "$a" == *-dev.* ]] && echo -dev)-$a.zip")"); else ZIPS+=("$(locate "$a")"); fi
       done
     fi ;;
 esac
@@ -131,7 +135,16 @@ for ZIP in "${ZIPS[@]}"; do
   fi
   $SUDO mkdir -p "$DEST/dist"
   $SUDO cp -r "$SRC"/. "$DEST"/
+  if [[ "$NAME" == "qam-rail-dev" ]]; then INSTALLED_DEV=1; fi
 done
+
+# Si se instaló la de desarrollo, queda activa (la estable se queda en pausa; ./canal.sh estable la devuelve).
+if [[ "${INSTALLED_DEV:-0}" == "1" ]]; then
+  CANAL_DIR="${CANAL_DIR:-$(dirname "$PLUGINS_DIR")/settings/qam-rail-canal}"
+  W=""; [[ -w "$CANAL_DIR" || ! -d "$CANAL_DIR" && -w "$(dirname "$CANAL_DIR")" ]] || W="sudo"
+  $W mkdir -p "$CANAL_DIR"; printf dev | $W tee "$CANAL_DIR/activo" >/dev/null; $W chmod 666 "$CANAL_DIR/activo"; $W chmod 777 "$CANAL_DIR" 2>/dev/null || true
+  echo "Canal activo: dev  (para volver a la estable: ./canal.sh estable)"
+fi
 
 if [[ "${NO_RESTART:-0}" == "1" ]]; then
   echo "NO_RESTART=1: no se reinicia Decky."

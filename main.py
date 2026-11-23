@@ -33,10 +33,33 @@ try:
     import qam_self
 except ImportError:
     qam_self = None
+try:
+    import qam_channel
+except ImportError:
+    qam_channel = None
 
 
 def _home() -> str:
     return getattr(decky, "DECKY_USER_HOME", None) or os.path.expanduser("~")
+
+
+def _plugins_dir() -> str:
+    d = getattr(decky, "DECKY_PLUGIN_DIR", None)
+    return os.path.dirname(d.rstrip(os.sep)) if d else os.path.join(_home(), "homebrew", "plugins")
+
+
+def _me() -> str:
+    """«dev» si este es el plugin qam-rail-dev; «stable» si es qam-rail."""
+    return qam_channel.kind_of(getattr(decky, "DECKY_PLUGIN_DIR", "") or "") if qam_channel else "stable"
+
+
+def _chan_dir() -> str:
+    return qam_channel.state_dir(decky.DECKY_PLUGIN_SETTINGS_DIR)
+
+
+def _active() -> str:
+    """Quién dibuja el QAM. Sin el módulo de canales, este plugin (comportamiento de siempre)."""
+    return qam_channel.active(_chan_dir(), _plugins_dir()) if qam_channel else _me()
 
 
 def _apps_dir() -> str:
@@ -76,7 +99,13 @@ class Plugin:
                 qam_pipeline.clean_staging(_apps_dir())
         except Exception:  # noqa: BLE001
             pass
-        decky.logger.info("QAM Rail listo")
+        try:  # canales (0.53): si este es dev y está activo, cuenta el arranque (la red de seguridad vuelve a estable tras 2 fallidos)
+            if qam_channel is not None and _me() == "dev" and _active() == "dev":
+                if qam_channel.boot_guard(decky.DECKY_PLUGIN_SETTINGS_DIR, _chan_dir(), _plugins_dir()):
+                    decky.logger.warning("QAM Rail Dev: 2 arranques sin confirmar, vuelvo a la versión estable")
+        except Exception as exc:  # noqa: BLE001
+            decky.logger.error(f"canal: {exc}")
+        decky.logger.info(f"QAM Rail listo ({_me()}, activo: {_active()})")
 
     async def _unload(self):
         decky.logger.info("QAM Rail descargado")
@@ -360,6 +389,34 @@ class Plugin:
         asyncio.get_running_loop().create_task(self._apps_install_task(str(source), bool(confirmed), str(sha256 or "")))
         return {"ok": True, "started": True}
 
+    # ---- Canales estable / dev (0.53; py_modules/qam_channel.py) ----
+    async def channel_info(self) -> dict:
+        """Qué plugin soy, cuál es el activo y qué hay instalado. El inactivo no dibuja nada y ofrece activarse."""
+        if qam_channel is None:
+            return {"me": "stable", "active": "stable", "dev_installed": False, "stable_installed": True,
+                    "version": getattr(decky, "DECKY_PLUGIN_VERSION", None), "notice": None}
+        me, act = _me(), _active()
+        return {"me": me, "active": act, "dev_installed": qam_channel.installed(_plugins_dir(), "dev"),
+                "stable_installed": qam_channel.installed(_plugins_dir(), "stable"),
+                "version": getattr(decky, "DECKY_PLUGIN_VERSION", None),
+                "notice": qam_channel.take_notice(_chan_dir()) if me == act else None}
+
+    async def channel_switch(self, target: str) -> dict:
+        """Cambia el plugin activo y reinicia Decky (el otro plugin se queda en pausa)."""
+        if qam_channel is None:
+            return {"ok": False, "error": "no disponible"}
+        r = qam_channel.switch(_chan_dir(), _plugins_dir(), str(target))
+        if r.get("ok"):
+            self._restart_decky_later(3)
+            r["restarting"] = True
+        return r
+
+    async def channel_ok(self) -> bool:
+        """El panel ya está montado y aguantó unos segundos: este arranque cuenta como bueno (solo importa en dev)."""
+        if qam_channel is not None and _me() == "dev":
+            qam_channel.confirm(decky.DECKY_PLUGIN_SETTINGS_DIR)
+        return True
+
     # ---- Auto-actualización de QAM Rail (0.52; py_modules/qam_self.py) ----
     SELF_REPO = "pascaltll/qam-rail"
 
@@ -381,7 +438,7 @@ class Plugin:
         cfg = self._self_cfg()
         bl = qam_self.backups(_path("backups")) if qam_self else []
         return {"version": getattr(decky, "DECKY_PLUGIN_VERSION", None), "channel": "beta" if cfg.get("channel") == "beta" else "stable",
-                "last_check": cfg.get("last_check"), "backup_version": bl[0][1] if bl else None, "repo": self.SELF_REPO}
+                "kind": _me(), "last_check": cfg.get("last_check"), "backup_version": bl[0][1] if bl else None, "repo": self.SELF_REPO}
 
     async def self_set_channel(self, channel: str) -> dict:
         cfg = self._self_cfg()
@@ -391,6 +448,8 @@ class Plugin:
 
     async def self_check(self, force: bool = False) -> dict:
         """¿Hay versión nueva de QAM Rail? Misma regla que las apps: ETag, 6 h salvo force, solo avisa."""
+        if _me() == "dev":
+            return {"state": "off", "error": "versión de desarrollo: se actualiza con install.sh --dev"}
         if qam_updates is None:
             return {"state": "error", "error": "no disponible"}
         cfg = self._self_cfg()
@@ -422,6 +481,8 @@ class Plugin:
         """Descarga la release, la verifica (SHA-256 obligatorio), guarda copia, cambia la carpeta y reinicia Decky."""
         import shutil
         import tempfile
+        if _me() == "dev":
+            return {"ok": False, "error": "la versión dev no se actualiza desde GitHub (usa install.sh --dev)"}
         if qam_self is None or qam_updates is None or qam_pipeline is None:
             return {"ok": False, "error": "no disponible"}
         if getattr(self, "_self_busy", False):
@@ -458,6 +519,8 @@ class Plugin:
 
     async def self_rollback(self) -> dict:
         """Vuelve a la copia de seguridad más reciente y reinicia Decky."""
+        if _me() == "dev":
+            return {"ok": False, "error": "en dev las copias las gestiona install.sh"}
         if qam_self is None:
             return {"ok": False, "error": "no disponible"}
         plugin_dir = getattr(decky, "DECKY_PLUGIN_DIR", None)

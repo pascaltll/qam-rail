@@ -24,3 +24,4 @@ jobs:
             SHA256SUMS
             scripts/install.sh
             scripts/instalar.sh
+            scripts/canal.sh

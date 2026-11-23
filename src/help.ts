@@ -3,6 +3,12 @@
 export interface HelpEntry { title: string; text: string[] }
 
 export const HELP: Record<string, HelpEntry> = {
+  canales: { title: "Versión instalada", text: [
+    "Pueden estar instaladas a la vez dos copias de QAM Rail: la ESTABLE (se actualiza sola desde GitHub) y la de DESARROLLO (la que se prueba antes).",
+    "Solo una dibuja el panel; la otra queda en pausa y no gasta nada. Con la de desarrollo instalada, esa es la que arranca.",
+    "Pasar de una a otra reinicia Decky unos segundos. Desde la terminal: ./canal.sh estable  ·  ./canal.sh dev  ·  ./canal.sh (para ver cuál está activa).",
+    "Red de seguridad: si la de desarrollo no llega a arrancar bien 2 veces seguidas, el panel vuelve solo a la estable y lo avisa.",
+  ] },
   tipo: { title: "Tipo de juego", text: [
     "Dice al panel qué clase de juego es para adaptarse: qué plugins y ajustes quedan a mano.",
     "Simple: 2D, indies, retro. Medio: 3D moderado. Exigente: 3D pesado.",

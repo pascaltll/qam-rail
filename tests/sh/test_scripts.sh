@@ -35,4 +35,20 @@ bash "$S/install.sh" --version 0.51.0 >/dev/null; grep -q 0.51.0 "$T/plug/qam-ra
 echo "0000000000000000000000000000000000000000000000000000000000000000  qam-rail-0.52.0.zip" > SHA256SUMS
 if bash "$S/install.sh" --latest >/dev/null 2>&1; then echo "FALLO: instaló con suma falsa"; exit 1; fi
 grep -q 0.51.0 "$T/plug/qam-rail/package.json" && ok "suma falsa: no instala"
+# ---- canales: dev + estable lado a lado ----
+cd "$T" && mkdir -p dv/plug dv/set dv/zips && cd dv/zips
+mkd() { mkdir -p qam-rail-dev/dist; echo "{\"version\":\"$1\"}" > qam-rail-dev/package.json; echo '{}' > qam-rail-dev/plugin.json; echo js > qam-rail-dev/dist/index.js; zip -qr "qam-rail-dev-$1.zip" qam-rail-dev; rm -rf qam-rail-dev; }
+mk 0.53.0; mkd 0.53.0-dev.1; mkd 0.53.0-dev.2
+export PLUGINS_DIR="$T/dv/plug" CANAL_DIR="$T/dv/set/qam-rail-canal" BACKUP_DIR="$T/dv/bk" NO_RESTART=1; unset QAM_RELEASES_FILE
+bash "$S/install.sh" qam-rail-0.53.0.zip >/dev/null; [[ -f "$PLUGINS_DIR/qam-rail/plugin.json" && ! -d "$PLUGINS_DIR/qam-rail-dev" ]] && ok "estable sola: no crea dev"
+[[ ! -f "$CANAL_DIR/activo" ]] && ok "instalar la estable no toca el canal"
+bash "$S/install.sh" qam-rail-dev-0.53.0-dev.1.zip >/dev/null
+[[ -d "$PLUGINS_DIR/qam-rail" && -d "$PLUGINS_DIR/qam-rail-dev" && "$(cat "$CANAL_DIR/activo")" == dev ]] && ok "dev se instala al lado y queda activa"
+touch -d '1 hour ago' qam-rail-dev-0.53.0-dev.1.zip; bash "$S/install.sh" --dev >/dev/null; grep -q dev.2 "$PLUGINS_DIR/qam-rail-dev/package.json" && ok "--dev elige el zip dev más nuevo"
+bash "$S/install.sh" 0.53.0-dev.1 --dev >/dev/null 2>&1 || true
+[[ "$(bash "$S/canal.sh")" == *"Activa: dev"* ]] && ok "canal.sh: estado"
+bash "$S/canal.sh" estable >/dev/null; [[ "$(cat "$CANAL_DIR/activo")" == estable && "$(bash "$S/canal.sh")" == *"Activa: estable"* ]] && ok "canal.sh estable"
+bash "$S/canal.sh" dev >/dev/null; [[ "$(cat "$CANAL_DIR/activo")" == dev ]] && ok "canal.sh dev"
+rm -rf "$PLUGINS_DIR/qam-rail-dev"; if bash "$S/canal.sh" dev >/dev/null 2>&1; then echo "FALLO: activó dev sin instalar"; exit 1; fi; ok "canal.sh rechaza lo no instalado"
+[[ "$(bash "$S/canal.sh")" == *"Activa: estable"* ]] && ok "bandera a algo no instalado: usa la otra"
 echo "TODO OK"

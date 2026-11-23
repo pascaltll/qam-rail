@@ -830,3 +830,29 @@ Detalle del estándar en `claude/qam-apps-estandar.md`; la pestaña «Steam» (a
 - **Primera instalación (`scripts/instalar.sh`):** una línea con `curl … releases/latest/download/instalar.sh | bash`. Revisa: imprescindible (`curl unzip python3 sha256sum`, no root), Decky (`~/homebrew/plugins`, servicio `plugin_loader`; pista Bazzite: `ujust setup-decky` [H]), recomendado (plugin Panel de Control por `plugin.json`, `wpctl`, `bluetoothctl`, `nmcli`, `rfkill`, `flatpak`, Steam en marcha) y luego instala con `install.sh --latest` (de al lado o de la misma release). `--doctor` solo revisa. Dónde queda todo: plugin `~/homebrew/plugins/qam-rail`; ajustes `~/homebrew/settings/qam-rail`; apps `~/homebrew/qam-apps`.
 - **Dependencias reales:** duras = Decky Loader; blandas (se oculta o avisa esa parte) = Panel de Control (potencia, color, sonido, Auto‑TDP), PipeWire/`wpctl`, BlueZ, NetworkManager, flatpak. QAM Rail no copia código de Panel (solo lo llama).
 - **Pruebas:** `tests/py/test_self.py` (preparar, copia, poda, vuelta atrás), integración con `decky` y red simulados (comprobar → actualizar → volver; sin SHA256SUMS rechaza), `tests/v052.test.ts` (293 en total), y `instalar.sh` instalado de extremo a extremo con un usuario sin privilegios y un release simulado. [H] sin probar en la consola real: que `systemctl restart plugin_loader` desde el backend (root) se ejecute y que `DECKY_PLUGIN_DIR` sea `~/homebrew/plugins/qam-rail`.
+
+
+## 58. Canales estable / dev (0.53)
+
+**Problema.** Probar versiones nuevas en el mismo equipo donde se usa el QAM a diario. Estable = la que se actualiza sola desde GitHub; dev = la que se prueba antes con zips.
+
+**Diseño.** Dos plugins de Decky a la vez, construidos del mismo código:
+
+| | Estable | Dev |
+|---|---|---|
+| Carpeta / nombre | `plugins/qam-rail` / «QAM Rail» | `plugins/qam-rail-dev` / «QAM Rail Dev» |
+| Actualización | GitHub Releases (§53–§57) | zip + `install.sh --dev`; el backend rechaza `self_check/update/rollback` |
+| Ajustes | `settings/qam-rail` | `settings/qam-rail-dev` (separados) |
+| Versión | `0.53.0` | `0.53.0-dev.N` |
+
+Compartido: `~/homebrew/qam-apps` (mismo esquema de manifiestos) y la carpeta `settings/qam-rail-canal/` con `activo` («estable» o «dev») y `aviso`.
+
+**Quién dibuja.** `qam_channel.active()`: la bandera si apunta a algo instalado; sin bandera, dev si está instalada. `install.sh` con un zip dev escribe `dev`; `canal.sh` y el botón del QAM escriben lo pedido. El frontend de cada plugin pide `channel_info()`; si `me != active` no llama a `manager.apply`, no arranca registro de rendimiento, vigilancias de fondo, sesión ni el global `__qamRail`, y su panel de Decky muestra `ChannelPaused` (botón «Activar»). Sin respuesta del backend se comporta como siempre (activo).
+
+**Cambio.** `channel_switch` escribe la bandera y reinicia Decky (`systemctl restart plugin_loader` desligado, 3 s), como la auto-actualización. Terminal: `./canal.sh [estado|estable|dev]`.
+
+**Red de seguridad.** Al arrancar el backend de dev siendo activo se cuenta un arranque en `settings/qam-rail-dev/arranques-sin-confirmar`; el frontend lo pone a 0 con `channel_ok()` 20 s después de asentarse Steam. Con 2 arranques seguidos sin confirmar, el siguiente deja la bandera en `estable` (si la estable existe), escribe un aviso y el panel de dev queda en pausa; la estable muestra el aviso una vez (toast). Sin estable instalada no hay a dónde volver y no se cambia nada.
+
+**Pendiente de verificar en el equipo [H].** Que Decky acepte dos plugins con nombres distintos a la vez; que `DECKY_PLUGIN_SETTINGS_DIR` sea por carpeta (`settings/qam-rail-dev`); que `callable` apunte al backend de cada plugin; que el aviso (toast) salga tras el reinicio.
+
+**Pruebas.** `tests/py/test_channel.py` (activo, cambio, red de seguridad), `tests/sh/test_scripts.sh` (instalar dev al lado, `--dev`, `canal.sh`), `tests/v053.test.ts` (lógica de la UI).

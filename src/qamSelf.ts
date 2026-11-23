@@ -2,7 +2,7 @@ import { callable } from "@decky/api";
 
 import type { GhUpdate } from "./qamApps";
 
-export interface SelfInfo { version: string | null; channel: "stable" | "beta"; last_check: number | null; backup_version: string | null; repo: string; }
+export interface SelfInfo { version: string | null; channel: "stable" | "beta"; kind?: "stable" | "dev"; last_check: number | null; backup_version: string | null; repo: string; }
 export interface SelfResult { ok: boolean; restarting?: boolean; from?: string; to?: string; error?: string; }
 
 export const selfInfo = callable<[], SelfInfo>("self_info");

@@ -28,6 +28,7 @@ export const QamSelfUpdateCard: FC<{ notify: (t: string) => void }> = ({ notify 
   const channel = (c: "stable" | "beta") => void selfSetChannel(c).then((i) => { setInfo(i); void check(true); }, () => null);
 
   const available = upd?.state === "update";
+  if (info?.kind === "dev") return null; // la versión de desarrollo no se actualiza desde GitHub (install.sh --dev); la tarjeta «Versión instalada» explica el resto
   return (
     <Card title="Actualizaciones" help="actualizar">
       <div style={{ ...small, color: busy ? COLORS.text : undefined }}>{busy ?? selfStatus(info, upd, false)}</div>

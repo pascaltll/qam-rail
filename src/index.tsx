@@ -22,13 +22,15 @@ import { setTierContext } from "./powerTiers";
 import { learned } from "./menuStats";
 import { currentPalette } from "./appearance";
 import { situation } from "./situation";
-import { definePlugin } from "@decky/api";
+import { definePlugin, toaster } from "@decky/api";
 import { staticClasses } from "@decky/ui";
 import { useEffect, useState } from "react";
 import { FaThLarge } from "react-icons/fa";
 
 import { AppsPanel } from "./AppsPanel";
 import { DEFAULT_SETTINGS, loadSettings, type Settings } from "./backend";
+import { ChannelPaused } from "./ChannelPaused";
+import { channelInfo, channelOk, isActive, kindName, type ChannelInfo } from "./qamChannel";
 import { createRailManager } from "./manager";
 
 export default definePlugin(() => {
@@ -36,13 +38,25 @@ export default definePlugin(() => {
   const listeners = new Set<(s: Settings) => void>();
   const manager = createRailManager({ getSettings: () => current, setSettings: (s) => publish(s) });
 
+  // Canales (0.53): puede haber dos copias de QAM Rail (estable y dev) y solo una dibuja el QAM. La otra no toca nada ni arranca
+  // lo de fondo; su panel solo ofrece activarse. Sin respuesta del backend se comporta como siempre (activa).
+  let active = false, loaded = false, chan: ChannelInfo | null = null, confirmTimer = 0;
+  const activeP: Promise<boolean> = channelInfo().then((i) => { chan = i; return isActive(i); }, () => true).then((a) => { active = a; return a; });
+  const whenActive = (fn: () => void): void => { void activeP.then((a) => { if (a) fn(); }); };
+  const applyRail = (): void => { if (active && loaded) manager.apply(current.enabled, current.open_on, current.own_qam); };
+
   const publish = (s: Settings): void => {
     current = s;
-    manager.apply(s.enabled, s.open_on, s.own_qam);
+    loaded = true;
+    applyRail();
     listeners.forEach((fn) => fn(s));
   };
 
   void loadSettings().then(publish);
+  whenActive(() => {
+    applyRail();
+    if (chan?.notice) toaster.toast({ title: `QAM Rail (${kindName(chan.me)})`, body: chan.notice });
+  });
   // Lo que pide el escritorio para ir fluido (umbrales de ahorro/fluido): tema Cristal y pantalla externa/4K.
   setTickerSlow(() => lowPower());
   setTierContext(() => {
@@ -52,10 +66,12 @@ export default definePlugin(() => {
     return { glass: !!currentPalette().glass, tv: sit.tv, game, learnedFluidW: l?.fluidW ?? null, learnedSamples: l?.samples ?? 0 };
   });
   // Perfil de pantalla por juego: aplica el de cada juego al entrar y el de Steam al salir (con o sin el panel abierto).
-  const stopPerf = startPerfLog();
+  let stopPerf = (): void => {};
+  whenActive(() => { stopPerf = startPerfLog(); });
   // Lo de fondo arranca cuando Steam ya cargo y se asento (no al encender ni al pasar desde Escritorio).
   let stopMusic = () => {}, stopThemeEco = () => {}, stopDisplay = () => {}, stopGame = () => {};
-  const cancelBoot = whenSettled(() => {
+  const cancelBoot = whenSettled(() => whenActive(() => {
+    confirmTimer = window.setTimeout(() => void channelOk().catch(() => null), 20000); // el arranque aguantó: cuenta como bueno
     const b = bootInfo();
     record("boot", { ms: (b.settledAt ?? Date.now()) - b.loadedAt, d: b.waitedFor.join(",") });
     void sessionBegin(b);
@@ -65,7 +81,7 @@ export default definePlugin(() => {
     offFeatures = onFeaturesChange(syncBackground);
     const off = featuresOff();
     if (off.length) crumb(`aislado (apagado): ${off.join(", ")}`);
-  });
+  }));
   // Cada funcion de fondo se puede apagar (Diagnóstico › Aislar fallos) sin reiniciar Steam.
   let offFeatures = () => {};
   const running = { musica: false, temaEco: false, pantalla: false };
@@ -83,7 +99,7 @@ export default definePlugin(() => {
     }
   }
   // Para depurar desde la consola del CEF: window.__qamRail.diag()
-  (window as unknown as Record<string, unknown>).__qamRail = {
+  const qamApi = {
     diag: () => manager.diag(),
     // Rendimiento: abre/cierra el QAM varias veces y luego JSON.stringify(__qamRail.runs())
     runs: () => manager.probe()?.runs() ?? [],
@@ -139,26 +155,40 @@ export default definePlugin(() => {
     },
   };
 
+  whenActive(() => { (window as unknown as Record<string, unknown>).__qamRail = qamApi; });
+
   const Content = () => {
     const [settings, setSettings] = useState<Settings>(current);
+    const [paused, setPaused] = useState(false);
+    useEffect(() => { void activeP.then((a) => setPaused(!a)); }, []);
     useEffect(() => {
       listeners.add(setSettings);
       return () => {
         listeners.delete(setSettings);
       };
     }, []);
+    if (paused) return <ChannelPaused />;
     return <AppsPanel settings={settings} onSettings={publish} />;
+  };
+
+  const Title = () => {
+    const [t, setT] = useState("Apps");
+    useEffect(() => { void activeP.then(() => { if (chan?.me === "dev") setT("Apps · DEV"); }); }, []);
+    return <div className={staticClasses.Title}>{t}</div>;
   };
 
   return {
     name: "QAM Rail",
-    titleView: <div className={staticClasses.Title}>Apps</div>,
+    titleView: <Title />,
     content: <Content />,
     icon: <FaThLarge />,
     onDismount() {
       cancelBoot();
-      crumb("plugin descargado (cierre limpio)");
-      void sessionEnd();
+      window.clearTimeout(confirmTimer);
+      if (active) {
+        crumb("plugin descargado (cierre limpio)");
+        void sessionEnd();
+      }
       manager.dispose();
     stopDisplay();
     offFeatures();
@@ -166,7 +196,7 @@ export default definePlugin(() => {
     stopMusic();
     stopThemeEco();
     stopGame();
-      delete (window as unknown as Record<string, unknown>).__qamRail;
+      if ((window as unknown as Record<string, unknown>).__qamRail === qamApi) delete (window as unknown as Record<string, unknown>).__qamRail; // no borrar la del otro canal
     },
   };
 });
