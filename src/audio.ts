@@ -26,3 +26,17 @@ export function sortOutputs(l: AudioNode[]): AudioNode[] {
 }
 
 export const audioTrace = callable<[seconds: number], { ok: boolean; segundos: number; muestras: number; cambios: Array<{ s: number; cambios: string[] }>; final?: unknown; pw_top?: string; bluetooth?: string[]; filter_chain?: string; registro?: string[] }>("audio_trace");
+
+/** Puro (probado): lo que se dice bajo la barra de refuerzo (100 % = normal; por encima se amplifica por software). */
+export function boostNote(pct: number): string {
+  if (pct <= 100) return "Normal";
+  if (pct <= 130) return "Más fuerte";
+  if (pct <= 160) return "Fuerte: ojo con los graves";
+  return "Puede distorsionar y forzar los altavoces";
+}
+
+/** Puro (probado): barra de refuerzo, entre 100 y 200 en saltos de 10 (el sistema puede guardar 0,4 o 1,23). */
+export function boostPct(vol: number | null | undefined): number {
+  const p = Math.round(((vol ?? 1) * 100) / 10) * 10;
+  return Math.max(100, Math.min(200, p));
+}

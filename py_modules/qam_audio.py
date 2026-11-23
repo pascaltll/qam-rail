@@ -176,6 +176,20 @@ def choices(st: dict, default_sink: int | None, default_source: int | None, name
             [x["id"] for x in st.get("salidas") or [] if kind_of(x["nombre"]) == "altavoz"] and bool(filt)}
 
 
+VOL_MAX = 2.0  # 200 %: tope del refuerzo por software
+
+
+def clamp_vol(v, mx: float = VOL_MAX) -> float:
+    """Volumen pedido (0..mx). Un valor ilegible o NaN cae a 1.0 (normal) en vez de romper o dejar 0."""
+    try:
+        f = float(v)
+    except (TypeError, ValueError):
+        return 1.0
+    if f != f:
+        return 1.0
+    return max(0.0, min(mx, f))
+
+
 def inspect_id(text: str) -> int | None:
     """id del nodo en la salida de «wpctl inspect» (primera línea: «id 56, type PipeWire:Interface:Node»)."""
     m = re.search(r"^\s*id\s+(\d+)", text or "", re.M)

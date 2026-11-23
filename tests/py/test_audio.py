@@ -126,6 +126,17 @@ Sink #67519
     assert qam_audio.eq_target(links, names) == 149
 
 
+def test_clamp_vol():
+    import qam_audio as a
+    assert a.clamp_vol(0.5) == 0.5
+    assert a.clamp_vol(1.5) == 1.5
+    assert a.clamp_vol(3) == 2.0
+    assert a.clamp_vol(-1) == 0.0
+    assert a.clamp_vol("x") == 1.0
+    assert a.clamp_vol(float("nan")) == 1.0
+
+
 if __name__ == "__main__" and True:
+    test_clamp_vol()
     test_destino_eq_hdmi_con_ids_de_wpctl()
     print("ok hdmi")

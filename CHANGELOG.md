@@ -1,5 +1,10 @@
 # Cambios
 
+## dev.61
+
+- **Refuerzo de volumen (100–200 %):** en la tarjeta «Sonido» hay una barra nueva que sube el nivel del dispositivo por encima de lo normal, para cuando el ecualizador de Panel de Control deja el sonido bajo. Con el ecualizador delante es independiente de la barra de volumen de Steam (esa mueve el EQ; esta, el dispositivo real). Sin ecualizador, mover el volumen de Steam puede devolverlo a 100 %. No aparece con auriculares/Bluetooth (llevan su propio volumen y se oyen de cerca). Por encima de ~160 % avisa de que puede distorsionar. El backend admite hasta 200 % (antes 150 %; el micrófono sigue en 150 %).
+- Colores de estado y escala de radios como tokens (`COLORS.ok/warn/danger/info`, `RADIUS`), sin cambios visibles.
+
 ## dev.60
 
 - **Táctil completo, más fino:** el clic cae donde **acaba** el dedo (antes, donde empezó: cerrar una pestaña era difícil); **mantener 0,45 s abre el menú contextual en ese momento**, sin esperar a soltar; **seleccionar = toque y, enseguida, arrastrar** (como el trackpad); dos toques seguidos = doble clic (palabra); un toque que solo frena la inercia no hace clic.

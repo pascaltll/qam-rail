@@ -2715,7 +2715,8 @@ class Plugin:
 
     async def audio_volume(self, node: int, vol: float) -> dict:
         self._audio_cache = None
-        v = max(0.0, min(1.5, float(vol)))
+        import qam_audio
+        v = qam_audio.clamp_vol(vol)  # 0.61: hasta 2.0 (refuerzo de volumen por software en la salida)
         code, out, err = await self._wpctl("set-volume", str(int(node)), f"{v:.2f}")
         return {"ok": code == 0, "detail": (err or out).strip()[:200]}
 

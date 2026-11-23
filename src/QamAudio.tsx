@@ -5,7 +5,7 @@ import { tickEvery } from "./ticker";
 import { useEffect, useRef, useState, type FC } from "react";
 import { sc } from "./steam";
 
-import { audioMute, audioReset, audioSetDefault, audioState, audioVolume, shortName, sortOutputs, type AudioNode, type AudioState } from "./audio";
+import { audioMute, audioReset, audioSetDefault, audioState, audioVolume, boostNote, boostPct, shortName, sortOutputs, type AudioNode, type AudioState } from "./audio";
 import { crumb } from "./crumbs";
 import { small } from "./QamSections";
 import { Chip, ICONS2, Icon, Segments, ToggleRow, XSlider, COLORS } from "./ui";
@@ -56,6 +56,8 @@ export const AudioControls: FC<{ notify: (t: string) => void }> = ({ notify }) =
   };
   const outs = sortOutputs(st?.salidas ?? []);
   const mic = (st?.entradas ?? []).find((x) => x.activa) ?? st?.entradas?.[0] ?? null;
+  // Refuerzo: en la salida activa que no sean auriculares (el Bluetooth lleva su volumen propio y se oye de cerca).
+  const boostTarget = outs.find((n) => n.activa && n.tipo !== "auriculares" && n.tipo !== "micro") ?? null;
   const pick = (n: AudioNode) => {
     if (n.activa) return;
     crumb(`audio: salida ${shortName(n)}${n.filtro ? " (filtro)" : ""}`);
@@ -89,6 +91,14 @@ export const AudioControls: FC<{ notify: (t: string) => void }> = ({ notify }) =
               onToggle={() => { setAutoTv(!tvAuto); setTvAuto(!tvAuto); }} />
           )}
         </>
+      )}
+      {boostTarget && (
+        <BoostRow node={boostTarget} viaEq={!!st?.eq} notify={notify}
+          onChange={(pct) => {
+            crumb(`audio: refuerzo ${pct} % en ${shortName(boostTarget)}`);
+            if (boostTarget.silenciado) void audioMute(boostTarget.id, false);
+            void audioVolume(boostTarget.id, pct / 100).then((r) => { if (!r.ok) notify("No se pudo cambiar el volumen"); });
+          }} />
       )}
       {mic && (
         <MicRow mic={mic}
@@ -125,6 +135,24 @@ const MicRow: FC<{ mic: AudioNode; onMute: () => void; onVolume: (v: number) => 
     <>
       <ToggleRow icon={mic.silenciado ? ICONS2.micOff : ICONS2.mic} label="Micrófono" on={!mic.silenciado} note={mic.silenciado ? "Silenciado" : "Activo"} onToggle={onMute} />
       <XSlider label="Volumen del micrófono" icon={ICONS2.mic} value={vol} min={0} max={150} step={5} suffix=" %" onChange={change} />
+    </>
+  );
+};
+
+/** Refuerzo de volumen (100–200 %): sube el nivel del dispositivo por encima de lo normal, útil cuando el ecualizador de
+ *  Panel de Control deja el sonido bajo. Con el EQ delante, la barra de Steam mueve el EQ y esta el dispositivo real:
+ *  son independientes. Sin EQ, mover el volumen de Steam puede volver a dejarlo en 100 %. */
+const BoostRow: FC<{ node: AudioNode; viaEq: boolean; notify: (t: string) => void; onChange: (pct: number) => void }> = ({ node, viaEq, onChange }) => {
+  const [pct, setPct] = useState(boostPct(node.volumen));
+  const dragging = useRef(0);
+  useEffect(() => { if (Date.now() > dragging.current) setPct(boostPct(node.volumen)); }, [node.volumen, node.id]);
+  const change = (v: number) => { dragging.current = Date.now() + 1500; setPct(v); onChange(v); };
+  return (
+    <>
+      <XSlider label="Refuerzo de volumen" icon={ICONS2.speaker} value={pct} min={100} max={200} step={10} suffix=" %" onChange={change} />
+      <div style={{ ...small, fontSize: 11, color: pct > 160 ? COLORS.warn : undefined }}>
+        {boostNote(pct)}{pct > 100 && !viaEq ? " · si cambias el volumen de Steam puede volver a 100 %" : ""}
+      </div>
     </>
   );
 };
