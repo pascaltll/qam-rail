@@ -1,0 +1,1429 @@
+"""QAM Rail: backend minimo. Guarda ajustes y favoritos en JSON.
+
+Interruptor de emergencia desde terminal (si el riel diera problemas):
+    touch ~/homebrew/settings/qam-rail/DISABLE   y reiniciar Steam / plugin_loader
+"""
+import asyncio
+import json
+import os
+import re
+import time
+
+import decky
+
+try:
+    import qam_bench
+except ImportError:  # py_modules no cargado: la prueba queda no disponible
+    qam_bench = None
+try:
+    import qam_apps
+    import qam_pipeline
+except ImportError:
+    qam_apps = None
+    qam_pipeline = None
+try:
+    import qam_updates
+except ImportError:
+    qam_updates = None
+try:
+    import qam_desktop
+except ImportError:
+    qam_desktop = None
+
+
+def _home() -> str:
+    return getattr(decky, "DECKY_USER_HOME", None) or os.path.expanduser("~")
+
+
+def _apps_dir() -> str:
+    """Carpeta de apps de QAM Rail, junto a la de plugins de Decky: ~/homebrew/qam-apps/."""
+    return os.path.join(getattr(decky, "DECKY_HOME", None) or os.path.join(_home(), "homebrew"), "qam-apps")
+
+DEFAULTS = {
+    "enabled": True,
+    # "focus": al mover la cruceta sobre un icono se abre su seccion
+    # "select": solo se abre con A o Derecha
+    "open_on": "focus",
+    "favorites": [],
+    # Piloto: panel propio en lugar del QAM de Steam (apagado por defecto)
+    "own_qam": False,
+}
+
+
+def _path(name: str) -> str:
+    return os.path.join(decky.DECKY_PLUGIN_SETTINGS_DIR, name)
+
+
+def _clean(data: dict) -> dict:
+    out = dict(DEFAULTS)
+    out["enabled"] = bool(data.get("enabled", True))
+    out["open_on"] = data.get("open_on") if data.get("open_on") in ("focus", "select") else "focus"
+    out["own_qam"] = bool(data.get("own_qam", False))
+    favs = data.get("favorites", [])
+    out["favorites"] = [int(x) for x in favs if isinstance(x, (int, float)) and not isinstance(x, bool)][:64]
+    return out
+
+
+class Plugin:
+    async def _main(self):
+        os.makedirs(decky.DECKY_PLUGIN_SETTINGS_DIR, exist_ok=True)
+        try:  # restos de una instalacion de app interrumpida
+            if qam_pipeline is not None:
+                qam_pipeline.clean_staging(_apps_dir())
+        except Exception:  # noqa: BLE001
+            pass
+        decky.logger.info("QAM Rail listo")
+
+    async def _unload(self):
+        decky.logger.info("QAM Rail descargado")
+
+    async def get_settings(self) -> dict:
+        try:
+            with open(_path("settings.json"), encoding="utf-8") as fh:
+                data = _clean(json.load(fh))
+        except (OSError, ValueError):
+            data = dict(DEFAULTS)
+        if os.path.exists(_path("OWNQAM")):
+            data["own_qam"] = True   # activar el piloto desde terminal: touch .../OWNQAM
+        if os.path.exists(_path("DISABLE")):
+            data["enabled"] = False  # apaga todo (riel y piloto)
+        return data
+
+    async def set_settings(self, data: dict) -> dict:
+        clean = _clean(data if isinstance(data, dict) else {})
+        tmp = _path("settings.json.tmp")
+        with open(tmp, "w", encoding="utf-8") as fh:
+            json.dump(clean, fh, indent=2)
+        os.replace(tmp, _path("settings.json"))
+        return clean
+
+    # --- Prueba de rendimiento por potencia (ver py_modules/qam_bench.py) ---
+    async def bench_level(self, seconds: float) -> dict:
+        if qam_bench is None:
+            return {"error": "qam_bench no disponible"}
+        try:
+            return await qam_bench.run_level(seconds)
+        except Exception as exc:  # noqa: BLE001 - la prueba nunca debe tumbar el plugin
+            decky.logger.error(f"bench_level: {exc}")
+            return {"error": str(exc)}
+
+    async def diag_save(self, data: dict) -> str:
+        folder = os.path.join(decky.DECKY_PLUGIN_SETTINGS_DIR, "diag")
+        os.makedirs(folder, exist_ok=True)
+        path = os.path.join(folder, "dock-latest.json")
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump(data, fh, indent=2, default=str)
+        return path
+
+    async def diag_write(self, name: str, data: dict) -> str:
+        """Guarda un diagnostico con nombre propio en diag/<nombre>.json (nombre saneado)."""
+        safe = "".join(c for c in str(name) if c.isalnum() or c in "-_")[:60] or "diag"
+        folder = os.path.join(decky.DECKY_PLUGIN_SETTINGS_DIR, "diag")
+        os.makedirs(folder, exist_ok=True)
+        path = os.path.join(folder, f"{safe}.json")
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump(data, fh, indent=2, default=str)
+        return path
+
+    async def perf_append(self, lines: list) -> str:
+        """Registro de rendimiento: una linea JSON por evento en diag/perf-log.jsonl (rota a .1 al pasar de 2 MB)."""
+        folder = os.path.join(decky.DECKY_PLUGIN_SETTINGS_DIR, "diag")
+        os.makedirs(folder, exist_ok=True)
+        path = os.path.join(folder, "perf-log.jsonl")
+        try:
+            if os.path.getsize(path) > 2_000_000:
+                os.replace(path, path + ".1")
+        except OSError:
+            pass
+        with open(path, "a", encoding="utf-8") as fh:
+            for line in (lines if isinstance(lines, list) else [])[:500]:
+                fh.write(json.dumps(line, default=str, separators=(",", ":")) + "\n")
+        return path
+
+    # ---- Informe unificado: una seccion por prueba, siempre la ultima, con fecha y version ----
+    def _informe_path(self) -> str:
+        folder = os.path.join(decky.DECKY_PLUGIN_SETTINGS_DIR, "diag")
+        os.makedirs(folder, exist_ok=True)
+        return os.path.join(folder, "informe.json")
+
+    def _informe_read(self) -> dict:
+        try:
+            with open(self._informe_path(), encoding="utf-8") as fh:
+                data = json.load(fh)
+            if isinstance(data, dict) and isinstance(data.get("secciones"), dict):
+                # 0.22.0 guardaba «fluidezjuego-cargador» (se perdia la @): se separa base y situacion.
+                for k in list(data["secciones"]):
+                    for base in ("entorno", "fluidez", "juego"):
+                        rest = k[len(base):]
+                        if "@" not in k and k.startswith(base) and rest.split("-")[0] in ("escritorio", "juego"):
+                            data["secciones"].setdefault(f"{base}@{rest}", data["secciones"][k])
+                            del data["secciones"][k]
+                            break
+                return data
+        except (OSError, ValueError):
+            pass
+        return {"formato": 1, "secciones": {}, "historial": []}
+
+    def _informe_write(self, data: dict) -> str:
+        path = self._informe_path()
+        data["actualizado"] = time.strftime("%Y-%m-%dT%H:%M:%S")
+        tmp = path + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as fh:
+            json.dump(data, fh, indent=1, default=str, ensure_ascii=False)
+        os.replace(tmp, path)
+        return path
+
+    async def diag_section(self, key: str, data, resumen=None) -> str:
+        """Guarda (sustituye) una seccion del informe. `resumen`, si llega, se anade al historial (max 30)."""
+        key = "".join(c for c in str(key) if c.isalnum() or c in "-_.@")[:60] or "otros"
+        inf = self._informe_read()
+        prev = inf["secciones"].get(key)
+        entry = {
+            "fecha": time.strftime("%Y-%m-%dT%H:%M:%S"),
+            "version": getattr(decky, "DECKY_PLUGIN_VERSION", None),
+            "datos": data,
+        }
+        # Pruebas por situacion (clave con @): se guardan las 5 ultimas de cada una (inicio del juego, jugando...).
+        if "@" in key and isinstance(prev, dict) and "datos" in prev:
+            older = prev.get("anteriores") if isinstance(prev.get("anteriores"), list) else []
+            entry["anteriores"] = ([{k: prev.get(k) for k in ("fecha", "version", "datos")}] + older)[:4]
+        inf["secciones"][key] = entry
+        if resumen is not None:
+            hist = inf.get("historial") if isinstance(inf.get("historial"), list) else []
+            hist.append({"seccion": key, "fecha": inf["secciones"][key]["fecha"], "version": inf["secciones"][key]["version"], "resumen": resumen})
+            inf["historial"] = hist[-30:]
+        return self._informe_write(inf)
+
+    async def diag_index(self) -> dict:
+        """Que hay en el informe: seccion -> fecha y version (sin los datos)."""
+        inf = self._informe_read()
+        return {k: {"fecha": v.get("fecha"), "version": v.get("version"), "veces": 1 + len(v.get("anteriores") or []),
+                    "versiones": sorted({str(x.get("version")) for x in [v, *(v.get("anteriores") or [])]})} for k, v in inf["secciones"].items() if isinstance(v, dict)}
+
+    async def diag_clear(self) -> bool:
+        """Vacia el informe y el registro (conserva el historial de pruebas de fluidez)."""
+        inf = self._informe_read()
+        self._informe_write({"formato": 1, "secciones": {}, "historial": inf.get("historial", [])})
+        for name in ("perf-log.jsonl", "perf-log.jsonl.1"):
+            try:
+                os.remove(os.path.join(decky.DECKY_PLUGIN_SETTINGS_DIR, "diag", name))
+            except OSError:
+                pass
+        return True
+
+    def _migrate_legacy_diag(self) -> None:
+        """Los .json sueltos de versiones anteriores pasan al informe (si no hay ya algo mas nuevo) y a diag/antiguos/."""
+        folder = os.path.join(decky.DECKY_PLUGIN_SETTINGS_DIR, "diag")
+        if not os.path.isdir(folder):
+            return
+        legacy = {"potencia-minima": "potencia-minima", "decky-explorar": "decky", "amigos-diagnostico": "amigos", "dock-latest": "dock"}
+        inf = self._informe_read()
+        moved = False
+        for fname in sorted(os.listdir(folder)):
+            stem, ext = os.path.splitext(fname)
+            if ext != ".json" or stem == "informe":
+                continue
+            key = legacy.get(stem) or ("fluidez" if stem.startswith("perf-bench-") else None)
+            path = os.path.join(folder, fname)
+            if key:
+                try:
+                    with open(path, encoding="utf-8") as fh:
+                        data = json.load(fh)
+                    fecha = time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(os.path.getmtime(path)))
+                    if key == "amigos" and isinstance(data, dict) and isinstance(data.get("pasos"), dict):
+                        items = [(f"amigos.{k}", v) for k, v in data["pasos"].items()]
+                    else:
+                        items = [(key, data)]
+                    for k, v in items:
+                        old = inf["secciones"].get(k)
+                        if not isinstance(old, dict) or str(old.get("fecha", "")) < fecha:
+                            inf["secciones"][k] = {"fecha": fecha, "version": "anterior", "datos": v}
+                except (OSError, ValueError):
+                    pass
+            os.makedirs(os.path.join(folder, "antiguos"), exist_ok=True)
+            os.replace(path, os.path.join(folder, "antiguos", fname))
+            moved = True
+        if moved:
+            self._informe_write(inf)
+
+    async def diag_bundle(self, resumen=None) -> dict:
+        """Zip con lo ULTIMO de cada prueba: resumen.json (estado ahora), informe.json, indice.txt y el registro.
+        Queda en la carpeta personal; se conservan los 3 zips mas recientes."""
+        import shutil
+        import tempfile
+        self._migrate_legacy_diag()
+        home = getattr(decky, "DECKY_USER_HOME", None) or os.path.expanduser("~")
+        name = time.strftime("qam-rail-diagnostico-%Y%m%d-%H%M%S")
+        base = os.path.join(home, name)
+        folder = os.path.join(decky.DECKY_PLUGIN_SETTINGS_DIR, "diag")
+        inf = self._informe_read()
+        files = []
+        with tempfile.TemporaryDirectory() as tmp:
+            def put(fname: str, data) -> None:
+                with open(os.path.join(tmp, fname), "w", encoding="utf-8") as fh:
+                    if isinstance(data, str):
+                        fh.write(data)
+                    else:
+                        json.dump(data, fh, indent=1, default=str, ensure_ascii=False)
+                files.append(fname)
+            if resumen is not None:
+                put("resumen.json", resumen)
+            put("informe.json", inf)
+            # Migas de la sesion actual (que se hizo hoy en el panel: abrir, música, bluetooth, calma...).
+            try:
+                put("migas-sesion.json", (self._session_read() or {}).get("crumbs") or [])
+            except Exception:  # noqa: BLE001
+                pass
+            lines = [f"QAM Rail {getattr(decky, 'DECKY_PLUGIN_VERSION', '?')} · diagnostico {time.strftime('%Y-%m-%d %H:%M:%S')}", ""]
+            for k in sorted(inf["secciones"]):
+                v = inf["secciones"][k]
+                n = 1 + len(v.get("anteriores") or [])
+                lines.append(f"{k:<34} {v.get('fecha', '?')}  (version {v.get('version', '?')}){f'  ·  {n} pruebas' if n > 1 else ''}")
+            if not inf["secciones"]:
+                lines.append("(el informe esta vacio: usa Mas › Diagnostico › Ejecutar todo)")
+            put("indice.txt", "\n".join(lines) + "\n")
+            for log in ("perf-log.jsonl", "perf-log.jsonl.1"):
+                src = os.path.join(folder, log)
+                if os.path.isfile(src):
+                    shutil.copy(src, os.path.join(tmp, log))
+                    files.append(log)
+            path = shutil.make_archive(base, "zip", tmp)
+        try:
+            old = sorted(f for f in os.listdir(home) if f.startswith("qam-rail-diagnostico-") and f.endswith(".zip"))
+            for f in old[:-3]:
+                os.remove(os.path.join(home, f))
+        except OSError:
+            pass
+        try:
+            import pwd
+            user = getattr(decky, "DECKY_USER", None)
+            if user:
+                pw = pwd.getpwnam(user)
+                os.chown(path, pw.pw_uid, pw.pw_gid)
+        except Exception:  # noqa: BLE001 - el permiso es opcional
+            pass
+        return {"path": path, "files": files, "folder": os.path.join(decky.DECKY_PLUGIN_SETTINGS_DIR, "diag")}
+
+    # ---- Apps de QAM Rail (ver py_modules/qam_apps.py) ----
+    def _apps_reg(self) -> dict:
+        try:
+            with open(_path("apps.json"), encoding="utf-8") as fh:
+                data = json.load(fh)
+            return data if isinstance(data, dict) else {}
+        except (OSError, ValueError):
+            return {}
+
+    def _apps_reg_save(self, reg: dict) -> None:
+        tmp = _path("apps.json.tmp")
+        with open(tmp, "w", encoding="utf-8") as fh:
+            json.dump(reg, fh, indent=1)
+        os.replace(tmp, _path("apps.json"))
+
+    async def apps_list(self) -> dict:
+        if qam_apps is None:
+            return {"dir": _apps_dir(), "apps": [], "error": "qam_apps no disponible"}
+        reg = self._apps_reg()
+        extra = [v.get("path") for v in reg.values() if isinstance(v, dict) and v.get("external")]
+        apps = qam_apps.list_apps(_apps_dir(), [p for p in extra if p])
+        for a in apps:
+            r = reg.get(a["id"]) or {}
+            a["steam_appid"] = r.get("appid")
+            a["installed_at"] = r.get("installed_at")
+            a["bad_versions"] = r.get("bad_versions") or []
+            a["last_error"] = r.get("last_error")
+            prev = None if a.get("external") else qam_apps.previous_manifest(_apps_dir(), a["id"])
+            a["previous_version"] = (prev or {}).get("version") if prev else None
+            a["has_previous"] = bool(prev)
+            a["check"] = qam_apps.check_manifest(a, getattr(decky, "DECKY_PLUGIN_VERSION", None), _home())
+        return {"dir": _apps_dir(), "apps": apps}
+
+    async def apps_find_zips(self) -> list:
+        if qam_apps is None:
+            return []
+        home = _home()
+        roots = [os.path.join(home, d) for d in ("Downloads", "Descargas", "Games", "Desktop", "Escritorio")]
+        return await asyncio.to_thread(qam_apps.find_zips, roots)
+
+    async def apps_install(self, source: str, confirmed: bool = False, sha256: str = "", force: bool = False) -> dict:
+        """Instala/actualiza desde un .zip o una carpeta. Corre en segundo plano: ver apps_job().
+        Primera instalacion de una app con instalador propio: el trabajo queda en «confirm» hasta apps_confirm()."""
+        if qam_apps is None or qam_pipeline is None:
+            return {"ok": False, "error": "qam_apps no disponible"}
+        job = getattr(self, "_apps_job", None)
+        if job and job.get("state") in ("running", "confirm"):
+            return {"ok": False, "error": "ya hay una instalacion en marcha"}
+        self._apps_job = {"state": "running", "step": "verificando y preparando", "source": str(source), "started": time.time(), "force": bool(force)}
+        asyncio.get_running_loop().create_task(self._apps_install_task(str(source), bool(confirmed), str(sha256 or "")))
+        return {"ok": True, "started": True}
+
+    # ---- Apps de escritorio (pestaña «Steam» de Apps, 0.52 a; py_modules/qam_desktop.py) ----
+    async def desktop_scan(self, force: bool = False) -> dict:
+        """Lista las apps de escritorio (Flatpak, AppImage de Gear Lever o sueltos, sistema). Solo lee; caché de 10 min."""
+        if qam_desktop is None:
+            return {"ok": False, "apps": [], "error": "qam_desktop no disponible"}
+        c = getattr(self, "_desk_cache", None)
+        if c and not force and time.time() - c["t"] < 600:
+            return c["data"]
+        t0 = time.time()
+        try:
+            r = await asyncio.to_thread(qam_desktop.scan, _home())
+        except Exception as e:  # noqa: BLE001
+            return {"ok": False, "apps": [], "error": str(e)[:160]}
+        data = {"ok": True, **r, "ms": int((time.time() - t0) * 1000)}
+        self._desk_cache = {"t": time.time(), "data": data}
+        return data
+
+    # ---- Actualizaciones desde GitHub Releases (0.51; ver py_modules/qam_updates.py) ----
+    @staticmethod
+    def _http(url: str, etag: str | None = None):
+        """GET con tiempo limite. Devuelve (estado, etag, texto). Un 304 no es error."""
+        import urllib.error
+        import urllib.request
+        req = urllib.request.Request(url, headers={"User-Agent": "qam-rail", "Accept": "application/vnd.github+json"})
+        if etag:
+            req.add_header("If-None-Match", etag)
+        try:
+            with urllib.request.urlopen(req, timeout=15) as r:
+                return r.status, r.headers.get("ETag"), r.read(4 * 1024 * 1024).decode("utf-8", "replace")
+        except urllib.error.HTTPError as e:
+            return e.code, None, ""
+
+    @staticmethod
+    def _opener(url: str):
+        import urllib.request
+        r = urllib.request.urlopen(urllib.request.Request(url, headers={"User-Agent": "qam-rail"}), timeout=30)
+        if not qam_updates.https_ok(r.geturl()):  # tras redirecciones sigue siendo un host de GitHub
+            r.close()
+            raise ValueError("la descarga se redirigió a un sitio no permitido")
+        return r
+
+    def _upd_cache(self) -> dict:
+        try:
+            with open(_path("updates.json"), encoding="utf-8") as fh:
+                d = json.load(fh)
+            return d if isinstance(d, dict) else {}
+        except (OSError, ValueError):
+            return {}
+
+    async def apps_check_updates(self, force: bool = False) -> dict:
+        """Mira GitHub por cada app con «update» (como mucho cada 6 h salvo force; ETag). Solo avisa, no instala."""
+        if qam_apps is None or qam_updates is None:
+            return {"ok": False, "results": {}}
+        data = await self.apps_list()
+        cache = self._upd_cache()
+        results = {}
+        for a in data["apps"]:
+            if not (a.get("update") or {}).get("provider"):
+                continue
+            c = cache.setdefault(a["id"], {})
+            results[a["id"]] = await asyncio.to_thread(qam_updates.check_app, a, c, self._http, None, bool(force))
+        try:
+            tmp = _path("updates.json.tmp")
+            with open(tmp, "w", encoding="utf-8") as fh:
+                json.dump(cache, fh)
+            os.replace(tmp, _path("updates.json"))
+        except OSError:
+            pass
+        return {"ok": True, "results": results}
+
+    async def apps_update(self, app_id: str, force: bool = False) -> dict:
+        """Descarga la release nueva, la verifica con SHA256SUMS y la instala con la misma tuberia (con vuelta atras)."""
+        if qam_apps is None or qam_updates is None or qam_pipeline is None:
+            return {"ok": False, "error": "no disponible"}
+        job = getattr(self, "_apps_job", None)
+        if job and job.get("state") in ("running", "confirm"):
+            return {"ok": False, "error": "ya hay una instalacion en marcha"}
+        res = (await self.apps_check_updates(False))["results"].get(app_id)
+        if not res or res.get("state") != "update":
+            return {"ok": False, "error": "no hay una versión nueva"}
+        if not res.get("sums_url"):
+            return {"ok": False, "error": "la release no trae SHA256SUMS: no se instala sin verificar"}
+        self._apps_job = {"state": "running", "step": f"descargando {res.get('latest')}", "source": res["url"], "started": time.time(), "force": bool(force)}
+        asyncio.get_running_loop().create_task(self._apps_update_task(app_id, res))
+        return {"ok": True, "started": True}
+
+    async def _apps_update_task(self, app_id: str, res: dict) -> None:
+        import shutil
+        import tempfile
+        job = self._apps_job
+        work = None
+        try:
+            base = os.path.join(_apps_dir(), qam_pipeline.STAGING)
+            os.makedirs(base, exist_ok=True)
+            work = tempfile.mkdtemp(prefix="dl-", dir=base)
+            dest = os.path.join(work, os.path.basename(res["name"]))
+            await asyncio.to_thread(qam_updates.download, res["url"], dest, self._opener)
+            job["step"] = "verificando la descarga"
+            sums_status, _, sums_text = await asyncio.to_thread(self._http, res["sums_url"], None)
+            if sums_status != 200:
+                raise ValueError("no se pudo leer SHA256SUMS")
+            want = qam_pipeline.parse_sums(sums_text).get(res["name"])
+            if not want:
+                raise ValueError(f"{res['name']} no figura en SHA256SUMS")
+            await self._apps_install_task(dest, False, want)
+        except Exception as e:  # noqa: BLE001
+            job.update({"state": "error", "error": str(e)[:200]})
+        finally:
+            if work:
+                shutil.rmtree(work, ignore_errors=True)
+
+    async def apps_confirm(self, ok: bool) -> dict:
+        """Respuesta a «Esta app ejecuta su propio instalador»."""
+        c = getattr(self, "_apps_confirm", None)
+        if not c:
+            return {"ok": False}
+        c["ok"] = bool(ok)
+        c["ev"].set()
+        return {"ok": True}
+
+    async def _run_script(self, cwd: str, argv: list, timeout: float) -> tuple:
+        """(codigo, salida) de un proceso como el usuario; sin esperar mas de `timeout` segundos."""
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                *argv, cwd=cwd, env=self._user_env(),
+                stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT, stdin=asyncio.subprocess.DEVNULL)
+            try:
+                out, _ = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+            except asyncio.TimeoutError:
+                try:
+                    proc.kill()
+                except ProcessLookupError:
+                    pass
+                return -1, f"tiempo agotado ({int(timeout)} s)"
+            return proc.returncode, out.decode("utf-8", "replace")[-4000:]
+        except Exception as exc:  # noqa: BLE001
+            return -1, str(exc)
+
+    async def _apps_install_task(self, source: str, confirmed: bool, sha256: str) -> None:
+        """Tuberia de APPS-ESTANDAR.md §3: preparar aparte (+SHA-256) → confirmar → cambiar → install.sh → probar → (volver atras)."""
+        import shlex
+        import traceback
+        job = self._apps_job
+        apps_dir = _apps_dir()
+        qv = getattr(decky, "DECKY_PLUGIN_VERSION", None)
+        staged, new, had_prev = None, None, False
+        try:
+            if os.path.isdir(source):
+                staged = await asyncio.to_thread(qam_pipeline.stage_dir, source, apps_dir, qv, _home())
+            else:
+                staged = await asyncio.to_thread(qam_pipeline.stage_zip, source, apps_dir, sha256 or None, None, qv, _home())
+            man, chk = staged["manifest"], staged["check"]
+            preview = {k: man.get(k) for k in ("id", "name", "version", "group", "description", "install", "launch")}
+            job.update({"app_preview": preview, "warnings": chk["warnings"], "verified": staged["verify"].get("matched"), "sha256": staged["verify"].get("sha256")})
+            if chk["errors"]:
+                raise ValueError("; ".join(chk["errors"]))
+            reg = self._apps_reg()
+            if qam_pipeline.is_bad(reg, man["id"], man.get("version")) and not job.get("force"):
+                raise ValueError(f"la versión {man.get('version')} ya falló en este equipo; instálala con «Forzar» si quieres reintentar")
+            had_prev = os.path.isdir(os.path.join(apps_dir, man["id"]))
+            if not had_prev and man.get("install") and not confirmed:
+                ev = asyncio.Event()
+                self._apps_confirm = {"ev": ev, "ok": False}
+                job.update({"state": "confirm", "step": "esperando confirmación", "app": preview})
+                try:
+                    await asyncio.wait_for(ev.wait(), timeout=120)
+                except asyncio.TimeoutError:
+                    pass
+                ok = self._apps_confirm["ok"]
+                self._apps_confirm = None
+                if not ok:
+                    job.update({"state": "cancelled", "step": "cancelada"})
+                    return
+                job["state"] = "running"
+            job["step"] = f"instalando {man.get('name')}"
+            new = await asyncio.to_thread(qam_pipeline.commit, staged, apps_dir)
+            staged = None
+            log = None
+            if new.get("install") and os.path.isfile(os.path.join(new["path"], new["install"])):
+                job["step"] = f"preparando {new.get('name')} ({new['install']}, puede tardar)"
+                code, text = await self._run_script(new["path"], ["bash", os.path.join(new["path"], new["install"])], 600)
+                try:
+                    with open(os.path.join(new["path"], "qam-install.log"), "w", encoding="utf-8") as fh:
+                        fh.write(text)
+                except OSError:
+                    pass
+                log = f"[{code}] {text[-600:]}"
+                if code != 0:
+                    raise RuntimeError(f"el instalador de la app falló (código {code}): {text.strip()[-160:]}")
+            status = None
+            if new.get("status"):
+                job["step"] = "probando la app"
+                parts = shlex.split(str(new["status"]))
+                exe = os.path.join(new["path"], parts[0])
+                argv = (["bash", exe] if exe.endswith(".sh") else [exe]) + parts[1:]
+                if os.path.isfile(exe) and not exe.endswith(".sh"):
+                    os.chmod(exe, os.stat(exe).st_mode | 0o111)
+                code, text = await self._run_script(new["path"], argv, 8)
+                status = qam_pipeline.parse_status(text) if code == 0 else None
+                if status is None:
+                    raise RuntimeError(f"la app no respondió a «{new['status']}» con un JSON (código {code}): {text.strip()[-120:]}")
+            reg = self._apps_reg()
+            r = reg.setdefault(new["id"], {})
+            r.update({"path": new["path"], "version": new.get("version"), "installed_at": time.time(), "source": os.path.basename(source),
+                      "sha256": job.get("sha256"), "last_error": None})
+            if (r.get("bad_versions") and new.get("version") in r["bad_versions"]):
+                r["bad_versions"].remove(new.get("version"))   # se forzó y funcionó
+            self._apps_reg_save(reg)
+            qam_apps.finish_install(apps_dir, new["id"])
+            job.update({"state": "done", "step": "listo", "app": new, "install_log": log, "status": status, "updated": had_prev})
+        except Exception as exc:  # noqa: BLE001
+            job.update({"state": "error", "error": f"{type(exc).__name__}: {exc}"[:300], "trace": traceback.format_exc()[-1500:]})
+            decky.logger.error(f"apps_install: {exc}")
+            if new is not None:
+                # Ya se habia cambiado la carpeta: volver a como estaba (o quitar si era la primera vez) y no reintentar esta version sola.
+                try:
+                    back = await asyncio.to_thread(qam_apps.discard_new, apps_dir, new["id"], had_prev)
+                    reg = self._apps_reg()
+                    qam_pipeline.mark_bad(reg, new["id"], new.get("version"), job["error"])
+                    if back:
+                        reg.setdefault(new["id"], {}).update({"path": back["path"], "version": back.get("version")})
+                    self._apps_reg_save(reg)
+                    job["rolled_back"] = True
+                    job["back_to"] = (back or {}).get("version")
+                except Exception as exc2:  # noqa: BLE001
+                    job["rolled_back"] = False
+                    job["rollback_error"] = str(exc2)[:200]
+        finally:
+            if staged is not None:
+                qam_pipeline.abort(staged)
+        job["seconds"] = round(time.time() - job.get("started", time.time()), 1)
+        # Queda en el informe de diagnostico (seccion apps) para poder ver por que fallo.
+        try:
+            await self.diag_section("apps", {k: v for k, v in job.items() if k not in ("app", "app_preview")} | {"app": (job.get("app") or job.get("app_preview") or {}).get("id")})
+        except Exception:  # noqa: BLE001
+            pass
+
+    async def apps_rollback(self, app_id: str) -> dict:
+        """Vuelve a la version anterior (la actual pasa a ser la «anterior»: se puede ir y volver)."""
+        if qam_apps is None:
+            return {"ok": False, "error": "qam_apps no disponible"}
+        aid = qam_apps.slug(app_id)
+        try:
+            man = await asyncio.to_thread(qam_apps.rollback, _apps_dir(), aid)
+        except Exception as exc:  # noqa: BLE001
+            return {"ok": False, "error": str(exc)[:200]}
+        reg = self._apps_reg()
+        reg.setdefault(aid, {}).update({"path": man["path"], "version": man.get("version"), "installed_at": time.time()})
+        self._apps_reg_save(reg)
+        return {"ok": True, "app": man}
+
+    async def apps_job(self) -> dict:
+        return dict(getattr(self, "_apps_job", None) or {"state": "idle"})
+
+    async def apps_icons(self) -> dict:
+        """Icono de cada app como data URL (para mostrarlas en el cajon de apps del QAM)."""
+        import base64
+        data = await self.apps_list()
+        out = {}
+        for a in data["apps"]:
+            rel = (a.get("art") or {}).get("icon") or (a.get("art") or {}).get("capsule")
+            p = os.path.join(a["path"], rel) if rel else None
+            if p and os.path.isfile(p) and os.path.getsize(p) < 1_500_000:
+                with open(p, "rb") as fh:
+                    kind = "jpeg" if p.lower().endswith((".jpg", ".jpeg")) else "png"
+                    out[a["id"]] = f"data:image/{kind};base64," + base64.b64encode(fh.read()).decode()
+        return out
+
+    @staticmethod
+    def _user_env() -> dict:
+        """Entorno de la sesion del usuario (systemd --user, D-Bus) para lanzar apps desde el plugin."""
+        env = dict(os.environ)
+        env.setdefault("HOME", _home())
+        uid = os.getuid()
+        run = f"/run/user/{uid}"
+        if os.path.isdir(run):
+            env.setdefault("XDG_RUNTIME_DIR", run)
+            env.setdefault("DBUS_SESSION_BUS_ADDRESS", f"unix:path={run}/bus")
+        return env
+
+    async def _run_app_script(self, cwd: str, script: str) -> str:
+        env = self._user_env()
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                "bash", os.path.join(cwd, script), cwd=cwd, env=env,
+                stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT, stdin=asyncio.subprocess.DEVNULL)
+            out, _ = await asyncio.wait_for(proc.communicate(), timeout=600)
+            text = out.decode("utf-8", "replace")[-4000:]
+            code = proc.returncode
+        except asyncio.TimeoutError:
+            text, code = "tiempo agotado (10 min)", -1
+        except Exception as exc:  # noqa: BLE001
+            text, code = str(exc), -1
+        try:
+            with open(os.path.join(cwd, "qam-install.log"), "w", encoding="utf-8") as fh:
+                fh.write(text)
+        except OSError:
+            pass
+        return f"[{code}] {text[-600:]}"
+
+    async def apps_add_folder(self, path: str) -> dict:
+        """Registra una carpeta ya existente (p. ej. ~/Games/steam-ytmini) sin moverla."""
+        if qam_apps is None or not os.path.isdir(str(path)):
+            return {"ok": False, "error": "carpeta no valida"}
+        man = qam_apps.read_manifest(str(path))
+        man["path"] = str(path)
+        reg = self._apps_reg()
+        reg.setdefault(man["id"], {}).update({"path": str(path), "external": True})
+        self._apps_reg_save(reg)
+        return {"ok": True, "app": man}
+
+    async def apps_set_appid(self, app_id: str, appid) -> bool:
+        reg = self._apps_reg()
+        reg.setdefault(str(app_id), {})["appid"] = appid
+        self._apps_reg_save(reg)
+        return True
+
+    async def apps_art(self, app_id: str) -> dict:
+        """Arte de la app en base64 (para SetCustomArtworkForApp) y ruta del icono."""
+        import base64
+        data = await self.apps_list()
+        app = next((a for a in data["apps"] if a["id"] == app_id), None)
+        if not app:
+            return {}
+        out = {}
+        for kind, rel in (app.get("art") or {}).items():
+            p = os.path.join(app["path"], rel)
+            if os.path.isfile(p) and os.path.getsize(p) < 6_000_000:
+                with open(p, "rb") as fh:
+                    out[kind] = {"b64": base64.b64encode(fh.read()).decode(), "type": "jpg" if p.lower().endswith((".jpg", ".jpeg")) else "png", "path": p}
+        return out
+
+    async def apps_uninstall(self, app_id: str, purge_data: bool = False) -> dict:
+        """Borra la carpeta (solo si esta dentro de qam-apps; las añadidas a mano solo se olvidan). Sus datos (`data_dirs`)
+        no se tocan salvo que se pida (purge_data), y solo dentro de la carpeta personal."""
+        import shutil
+        aid = qam_apps.slug(app_id) if qam_apps else str(app_id)
+        reg = self._apps_reg()
+        info = reg.pop(aid, {}) or {}
+        path = os.path.join(_apps_dir(), aid)
+        removed, purged, script = False, [], None
+        if os.path.isdir(path) and os.path.dirname(os.path.normpath(path)) == os.path.normpath(_apps_dir()):
+            man = qam_apps.read_manifest(path) if qam_apps else {}
+            if man.get("uninstall") and os.path.isfile(os.path.join(path, man["uninstall"])):
+                code, text = await self._run_script(path, ["bash", os.path.join(path, man["uninstall"])], 120)
+                script = f"[{code}] {text[-200:]}"
+            if purge_data:
+                home = os.path.normpath(_home())
+                for d in man.get("data_dirs") or []:
+                    e = qam_apps.expand_home(str(d), home)
+                    if e.startswith(home + os.sep) and e != home and os.path.isdir(e):
+                        shutil.rmtree(e, ignore_errors=True)
+                        purged.append(e)
+            shutil.rmtree(path, ignore_errors=True)
+            shutil.rmtree(os.path.join(_apps_dir(), ".previous", aid), ignore_errors=True)
+            shutil.rmtree(os.path.join(_apps_dir(), ".previous", aid + ".older"), ignore_errors=True)
+            removed = True
+        self._apps_reg_save(reg)
+        return {"ok": True, "removed": removed, "appid": info.get("appid"), "purged": purged, "uninstall_script": script}
+
+    async def apps_run(self, app_id: str, args: str = "") -> dict:
+        """Accion rapida de la app (p. ej. «mini», «pp»): ejecuta su lanzador con argumentos, sin esperar."""
+        data = await self.apps_list()
+        app = next((a for a in data["apps"] if a["id"] == app_id), None)
+        if not app or not app.get("launch"):
+            return {"ok": False}
+        import shlex
+        cmd = ["bash", os.path.join(app["path"], app["launch"]), *shlex.split(str(args or ""))]
+        await asyncio.create_subprocess_exec(*cmd, cwd=app["path"], env=self._user_env(), stdin=asyncio.subprocess.DEVNULL,
+                                             stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL, start_new_session=True)
+        return {"ok": True}
+
+    async def keyboard_url(self, close: bool = False) -> dict:
+        """Respaldo para el teclado de Steam: `steam steam://open/keyboard` como el usuario (Decky corre como root). [H]"""
+        url = "steam://close/keyboard" if close else "steam://open/keyboard"
+        user = getattr(decky, "DECKY_USER", "") or ""
+        argv = ["steam", "-ifrunning", url]
+        if os.getuid() == 0 and user and user != "root":
+            argv = ["runuser", "-u", user, "--", *argv]
+        try:
+            proc = await asyncio.create_subprocess_exec(*argv, env=self._user_env(), stdin=asyncio.subprocess.DEVNULL,
+                                                        stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL,
+                                                        start_new_session=True)
+            await asyncio.wait_for(proc.wait(), 5)
+            return {"ok": proc.returncode == 0, "url": url}
+        except Exception as e:  # noqa: BLE001
+            return {"ok": False, "url": url, "error": str(e)[:120]}
+
+    # ---- Sesiones y reinicios: si Steam se cae o se reinicia, al volver se guarda que paso ----
+    def _session_path(self) -> str:
+        return os.path.join(decky.DECKY_PLUGIN_SETTINGS_DIR, "diag", "sesion.json")
+
+    def _session_read(self) -> dict:
+        try:
+            with open(self._session_path(), encoding="utf-8") as fh:
+                data = json.load(fh)
+            return data if isinstance(data, dict) else {}
+        except (OSError, ValueError):
+            return {}
+
+    def _session_write(self, data: dict) -> None:
+        os.makedirs(os.path.dirname(self._session_path()), exist_ok=True)
+        tmp = self._session_path() + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as fh:
+            json.dump(data, fh, ensure_ascii=False)
+        os.replace(tmp, self._session_path())
+
+    async def diag_crumb(self, text: str) -> None:
+        """Una miga: se escribe ya (max 40) para que sobreviva a un cuelgue de Steam."""
+        ses = self._session_read()
+        crumbs = ses.get("crumbs") if isinstance(ses.get("crumbs"), list) else []
+        crumbs.append([time.strftime("%H:%M:%S"), str(text)[:160]])
+        ses["crumbs"] = crumbs[-40:]
+        ses["last"] = time.time()
+        self._session_write(ses)
+
+    @staticmethod
+    def _steam_pid() -> dict | None:
+        """PID y arranque (segundos desde el boot) del proceso steam principal."""
+        try:
+            hz = os.sysconf("SC_CLK_TCK")
+            for pid in os.listdir("/proc"):
+                if not pid.isdigit():
+                    continue
+                try:
+                    with open(f"/proc/{pid}/comm", encoding="utf-8") as fh:
+                        if fh.read().strip() != "steam":
+                            continue
+                    with open(f"/proc/{pid}/stat", encoding="utf-8") as fh:
+                        start = int(fh.read().rsplit(")", 1)[1].split()[19]) / hz
+                    return {"pid": int(pid), "start_s": round(start, 1)}
+                except (OSError, ValueError, IndexError):
+                    continue
+        except (OSError, ValueError):
+            pass
+        return None
+
+    # Ruido conocido que tapaba lo importante (0.25.0 guardo 160 lineas de «pipewire: out of buffers»).
+    _NOISE = ("out of buffers", "TagLib:", "vk_wsi_force_swapchain", "nis_steam_sharpness", "xkbcomp", "Gamescope WSI",
+              "pApplicationName", "applicationVersion", "pEngineName", "engineVersion", "apiVersion", "Executable name",
+              "Forcing on VK_EXT", "ProtonFixes", "CAPIJobRequestUserStats")
+    _EVIDENCE = ("orca", "core", "dump", "assert", "segv", "sigsegv", "sigabrt", "webhelper", "crash", "oom", "killed",
+                 "exited", "restart", "fatal", "abort", "plugin_loader", "decky", "gamescope-session", "main process")
+
+    @classmethod
+    def _clean(cls, lines: list, limit: int) -> list:
+        """Sin ruido conocido y sin repetidas (ignorando hora y PID): lo que de verdad paso."""
+        import re
+        out, seen = [], set()
+        for l in lines:
+            if any(n in l for n in cls._NOISE):
+                continue
+            key = re.sub(r"\[\d+\]|\d+", "#", l[26:] if len(l) > 26 else l)[:160]
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append(l[:300])
+        return out[-limit:]
+
+    async def _forensics(self, since_ts: float | None = None) -> dict:
+        """Registros ALREDEDOR del corte: desde 90 s antes de la ultima miga hasta ahora, sin ruido, mas volcados
+        de Steam (/tmp/dumps), estado de orca (lector de pantalla) y si el sistema acaba de encender."""
+        out: dict = {}
+        now = time.time()
+        start = (since_ts or now - 1200) - 90
+        since = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(start))
+        steam_logs = os.path.join(_home(), ".local", "share", "Steam", "logs")
+        for name in ("console_log.txt", "console-linux.txt", "webhelper.txt", "cef_log.txt"):
+            p = os.path.join(steam_logs, name)
+            if os.path.isfile(p):
+                try:
+                    with open(p, encoding="utf-8", errors="replace") as fh:
+                        lines = fh.read()[-60000:].splitlines()
+                    # Solo lo fechado dentro de la ventana (las lineas empiezan por [AAAA-MM-DD hh:mm:ss]).
+                    keep = [l for l in lines if l[1:20] >= since[:19]] or lines[-40:]
+                    out[name] = self._clean(keep, 120)
+                except OSError:
+                    pass
+        env = self._user_env()
+
+        async def cmd(*args: str) -> list:
+            try:
+                proc = await asyncio.create_subprocess_exec(*args, env=env, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT)
+                data, _ = await asyncio.wait_for(proc.communicate(), timeout=20)
+                return data.decode("utf-8", "replace").splitlines()
+            except Exception as exc:  # noqa: BLE001
+                return [f"(no disponible: {exc})"]
+
+        ju = await cmd("journalctl", "--user", "--no-pager", "-o", "short-iso", "--since", since, "-n", "4000")
+        js = await cmd("journalctl", "--no-pager", "-o", "short-iso", "--since", since, "-n", "6000")
+        out["journal_usuario"] = self._clean(ju, 150)
+        out["evidencias"] = self._clean([l for l in ju + js if any(k in l.lower() for k in self._EVIDENCE)], 120)
+        dumps = []
+        for d in ("/tmp/dumps", os.path.join(_home(), ".local", "share", "Steam", "dumps")):
+            try:
+                for f in os.listdir(d):
+                    p = os.path.join(d, f)
+                    mt = os.path.getmtime(p)
+                    if mt >= start - 600:
+                        dumps.append({"archivo": f, "hora": time.strftime("%H:%M:%S", time.localtime(mt)), "kb": os.path.getsize(p) // 1024})
+            except OSError:
+                pass
+        out["volcados_steam"] = sorted(dumps, key=lambda x: x["hora"])
+        # El texto del aviso que hizo saltar cada volcado («Assertion Failed: ...», fichero.cpp:linea).
+        for dmp in out["volcados_steam"][-3:]:
+            if dmp["archivo"].endswith(".dmp"):
+                for d in ("/tmp/dumps", os.path.join(_home(), ".local", "share", "Steam", "dumps")):
+                    pth = os.path.join(d, dmp["archivo"])
+                    if os.path.isfile(pth):
+                        dmp["texto"] = self._dump_strings(pth)
+                        break
+        # ¿Se reinicio TODA la sesion de juego (gamescope + Xwayland), no solo Steam? Entonces el fallo no es de Steam
+        # ni de un plugin: es del compositor (se ve como «Fatal IO error ... on X server» y gamescope arrancando de nuevo).
+        allj = ju + js
+        steam_lines = [l for k in ("webhelper.txt", "console-linux.txt", "console_log.txt") for l in (out.get(k) or []) if isinstance(l, str)]
+        x_lost = [l for l in steam_lines + allj if "Fatal IO error" in l or "X server" in l and "lost" in l.lower()]
+        gs_start = [l for l in allj if "gamescope version" in l or "OpenGamepadUI v" in l]
+        out["sesion_grafica"] = {"servidor_x_perdido": x_lost[:4], "gamescope_arranco": gs_start[:4],
+                                 "fin_del_juego": [l for l in steam_lines if "TerminateApp" in l or "Game process removed" in l][-3:]}
+        # Las ultimas lineas del gamescope que murio (sin la ayuda de su consola), por si dice por que.
+        pids = []
+        for l in allj:
+            m = l.split("gamescope-session-plus[", 1)
+            if len(m) == 2:
+                pid = m[1].split("]", 1)[0]
+                if pid not in pids:
+                    pids.append(pid)
+        if len(pids) > 1:
+            old = [l for l in allj if f"gamescope-session-plus[{pids[0]}]" in l and "console:" not in l and "binding:" not in l]
+            out["gamescope_anterior"] = self._clean(old[-40:], 40)
+            # OpenGamepadUI (Godot) al cerrarse deja «leaked at exit» / «Unreferenced static string»: si aparece, fue
+            # el que se cerro y con el cayo la sesion (zip 2026-11-07 21:19).
+            ogui = [l for l in old if "at exit" in l or "Unreferenced static string" in l]
+            out["sesion_grafica"]["opengamepadui_se_cerro"] = bool(ogui)
+            out["sesion_grafica"]["hora_cierre_opengamepadui"] = ogui[0][:25] if ogui else None
+        out["orca"] = (await cmd("systemctl", "--user", "show", "orca", "-p", "ActiveState", "-p", "NRestarts", "-p", "Result"))[:4]
+        try:
+            with open("/proc/uptime", encoding="utf-8") as fh:
+                out["uptime_s"] = float(fh.read().split()[0])
+        except (OSError, ValueError):
+            pass
+        out["ventana"] = [since, time.strftime("%Y-%m-%d %H:%M:%S")]
+        return out
+
+    @staticmethod
+    def _dump_strings(path: str) -> list:
+        """Cadenas legibles de un volcado de Steam que parecen el motivo (assert, fichero .cpp, error)."""
+        import re
+        try:
+            with open(path, "rb") as fh:
+                data = fh.read(4_000_000)
+        except OSError:
+            return []
+        found = []
+        for m in re.finditer(rb"[\x20-\x7e]{12,300}", data):
+            t = m.group().decode("ascii", "replace")
+            if re.search(r"assert|Assertion|\.cpp|\.h:\d|fatal|error|failed", t, re.I) and t not in found:
+                found.append(t)
+            if len(found) >= 15:
+                break
+        return found
+
+    async def session_begin(self, info: dict) -> dict:
+        """El frontend arranco. Si la sesion anterior no se cerro limpia (Steam se cayo, se reinicio o se cambio de
+        modo), se guarda en el informe: migas de antes, registros y si Steam cambio de proceso."""
+        prev = self._session_read()
+        steam = self._steam_pid()
+        unclean = bool(prev.get("open"))
+        saved = None
+        if unclean:
+            report = {
+                "fecha": time.strftime("%Y-%m-%dT%H:%M:%S"),
+                "sesion_anterior": {k: prev.get(k) for k in ("started", "last", "info", "steam")},
+                "steam_ahora": steam,
+                "steam_reiniciado": bool(prev.get("steam") and steam and prev["steam"].get("pid") != steam.get("pid")),
+                "segundos_desde_ultima_miga": round(time.time() - float(prev.get("last") or time.time()), 1),
+                "migas": prev.get("crumbs") or [],
+                "arranque_actual": info,
+                "registros": await self._forensics(float(prev.get("last") or 0) or None),
+            }
+            up = report["registros"].get("uptime_s") or 1e9
+            # Que tipo de corte fue (para no confundir un apagado con un cuelgue).
+            sg = report["registros"].get("sesion_grafica") or {}
+            report["tipo"] = ("encendido del sistema (apagado o reinicio de la consola)" if up < 240
+                              else "toda la sesión de juego se reinició: se cerró OpenGamepadUI (y Steam cayó con ella)"
+                              if sg.get("opengamepadui_se_cerro")
+                              else "toda la sesión de juego se reinició (gamescope/Xwayland cayó; Steam cayó con ella)"
+                              if sg.get("servidor_x_perdido") or (sg.get("gamescope_arranco") and report["steam_reiniciado"])
+                              else "Steam se reinicio (proceso nuevo)" if report["steam_reiniciado"]
+                              else "solo la interfaz de Steam se recargo (mismo proceso)")
+            report["volcado_de_steam"] = bool(report["registros"].get("volcados_steam"))
+            inf = self._informe_read()
+            sec = inf["secciones"].get("reinicios") if isinstance(inf["secciones"].get("reinicios"), dict) else {}
+            lista = sec.get("datos") if isinstance(sec.get("datos"), list) else []
+            await self.diag_section("reinicios", ([report] + lista)[:6])
+            saved = report["fecha"]
+        self._session_write({"open": True, "started": time.time(), "last": time.time(), "info": info, "steam": steam,
+                             "crumbs": [[time.strftime("%H:%M:%S"), f"arranque (listo en {round(((info or {}).get('settledAt') or 0) - ((info or {}).get('loadedAt') or 0))} ms)"]]})
+        return {"previous_unclean": unclean, "saved": saved}
+
+    async def session_end(self) -> None:
+        ses = self._session_read()
+        ses["open"] = False
+        ses["ended"] = time.time()
+        self._session_write(ses)
+
+    # ---- Explorar un tema de CSS Loader (para adaptar la apariencia del panel) ----
+    async def theme_explore(self, name: str) -> dict:
+        """theme.json, archivos (con tamaño), variables CSS, colores mas usados y url() de un tema instalado."""
+        import re
+        root = os.path.join(getattr(decky, "DECKY_HOME", None) or os.path.join(_home(), "homebrew"), "themes")
+        folder = None
+        try:
+            for d in sorted(os.listdir(root)):
+                tj = os.path.join(root, d, "theme.json")
+                if os.path.isfile(tj):
+                    try:
+                        with open(tj, encoding="utf-8") as fh:
+                            meta = json.load(fh)
+                    except (OSError, ValueError):
+                        continue
+                    if str(meta.get("name", d)) == str(name) or d == str(name):
+                        folder = os.path.join(root, d)
+                        break
+        except OSError:
+            return {"error": f"sin carpeta de temas en {root}"}
+        if not folder:
+            return {"error": f"no encuentro el tema «{name}» en {root}"}
+        files, css_text = [], {}
+        for dirpath, _dirs, fnames in os.walk(folder):
+            for f in fnames:
+                p = os.path.join(dirpath, f)
+                rel = os.path.relpath(p, folder)
+                files.append({"archivo": rel, "kb": round(os.path.getsize(p) / 1024, 1)})
+                if f.endswith(".json") and os.path.getsize(p) < 80_000 and f != "theme.json":
+                    try:
+                        with open(p, encoding="utf-8", errors="replace") as fh:
+                            css_text["json:" + rel] = fh.read(80_000)
+                    except OSError:
+                        pass
+                if f.endswith(".css") and len(css_text) < 40:
+                    try:
+                        with open(p, encoding="utf-8", errors="replace") as fh:
+                            css_text[rel] = fh.read(120_000)
+                    except OSError:
+                        pass
+        allcss = "\n".join(css_text.values())
+        colors: dict = {}
+        for m in re.findall(r"#[0-9a-fA-F]{6}\b|#[0-9a-fA-F]{3}\b|rgba?\([^)]*\)", allcss):
+            colors[m.lower()] = colors.get(m.lower(), 0) + 1
+        with open(os.path.join(folder, "theme.json"), encoding="utf-8") as fh:
+            meta = json.load(fh)
+        return {
+            "carpeta": folder, "theme_json": meta, "archivos": sorted(files, key=lambda x: x["archivo"])[:300],
+            "variables": sorted(set(re.findall(r"(--[\w-]+)\s*:", allcss)))[:200],
+            "colores": sorted(colors.items(), key=lambda x: -x[1])[:40],
+            "urls": sorted(set(re.findall(r"url\(([^)]{1,200})\)", allcss)))[:80],
+            "css": {k: v[:60_000] for k, v in sorted(css_text.items(), key=lambda kv: (not kv[0].startswith("json:"), kv[0] not in ("tokens.css", "qam.css", "panel.css"), kv[0]))[:16]},
+        }
+
+    # ---- Wi-Fi por NetworkManager (nmcli): Steam solo da el estado en protobuf ----
+    # ---- Audio (PipeWire, wpctl): salida y micrófono ----
+    async def _wpctl(self, *args: str, timeout: float = 6) -> tuple:
+        return await self._acmd("wpctl", *args, timeout=timeout)
+
+    async def _acmd(self, prog: str, *args: str, timeout: float = 6) -> tuple:
+        try:
+            proc = await asyncio.create_subprocess_exec(prog, *args, env=self._user_env(),
+                                                        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+            out, err = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+            return proc.returncode, out.decode("utf-8", "replace"), err.decode("utf-8", "replace")
+        except FileNotFoundError:
+            return 127, "", f"{prog} no está instalado"
+        except asyncio.TimeoutError:
+            return 124, "", "tiempo agotado"
+
+    async def audio_state(self, raw: bool = False) -> dict:
+        """Salidas y micrófonos que se pueden elegir (con el filtro de altavoces en vez de la tarjeta en crudo)."""
+        import qam_audio
+        # Caché de 4 s (lo pide cada tarjeta de audio abierta): cada lectura lanza 5 procesos contra PipeWire.
+        c = getattr(self, "_audio_cache", None)
+        if not raw and c and time.monotonic() - c[0] < 4.0:
+            return c[1]
+        res = await self._audio_state_read(raw)
+        if not raw and res.get("ok"):
+            self._audio_cache = (time.monotonic(), res)
+        return res
+
+    async def _audio_state_read(self, raw: bool) -> dict:
+        import qam_audio
+        code, out, err = await self._wpctl("status")
+        if code != 0:
+            return {"ok": False, "error": (err or out).strip()[:200]}
+        st = qam_audio.parse_status(out)
+        _, si, _ = await self._wpctl("inspect", "@DEFAULT_AUDIO_SINK@")
+        _, so, _ = await self._wpctl("inspect", "@DEFAULT_AUDIO_SOURCE@")
+        # Con el ecualizador de Panel delante hay que saber a qué dispositivo real manda el sonido (ver qam_audio.choices).
+        names, dest, links = {}, None, ""
+        if any(qam_audio._EQ.search(f["nombre"].strip()) for f in st.get("filtros_salida") or []):
+            (_, ps, _), (_, links, _) = await asyncio.gather(self._acmd("pactl", "list", "sinks"), self._acmd("pw-link", "-l"))
+            names = qam_audio.sink_object_ids(ps)
+            for o in st.get("salidas") or []:  # sin «object.id» en pactl: el nombre interno sale de wpctl inspect
+                if o["id"] not in names:
+                    _c, ins, _e = await self._wpctl("inspect", str(o["id"]))
+                    nm = re.search(r'node\.name\s*=\s*"([^"]+)"', ins)
+                    if nm:
+                        names[o["id"]] = nm.group(1)
+            dest = qam_audio.eq_target(links, names)
+        res = {"ok": True, **qam_audio.choices(st, qam_audio.inspect_id(si), qam_audio.inspect_id(so), names, dest)}
+        if raw:  # para el diagnóstico: lo que dice PipeWire tal cual
+            res["wpctl_status"] = out[:4000]
+            res["defecto_salida"] = si[:800]
+            res["nombres"] = names
+            res["enlaces_eq"] = "\n".join(l for l in links.splitlines() if "pdc_eq" in l or "|->" in l)[:1500]
+        return res
+
+    async def audio_trace(self, seconds: int = 20) -> dict:
+        """Sigue el audio unos segundos (solo lee): quién es la salida por defecto, a dónde manda el ecualizador de
+        Panel, volumen/silencio/estado de cada salida y a qué salida va cada flujo. Guarda solo los cambios, con su
+        segundo. Al final: cortes (pw-top), perfil y códec Bluetooth, reinicios de filter-chain y el registro."""
+        import qam_audio
+        import re as _re
+        import time as _t
+        seconds = max(5, min(60, int(seconds)))
+        t0, prev, log, n = _t.monotonic(), None, [], 0
+        while _t.monotonic() - t0 < seconds:
+            (_, d, _), (_, ls, _), (_, lk, _), (_, sh, _), (_, si, _) = await asyncio.gather(
+                self._acmd("pactl", "get-default-sink"), self._acmd("pactl", "list", "sinks"), self._acmd("pw-link", "-l"),
+                self._acmd("pactl", "list", "short", "sinks"), self._acmd("pactl", "list", "short", "sink-inputs"))
+            names = qam_audio.sink_names(sh)
+            dest = qam_audio.eq_target(lk, names)
+            sinks = {k: v for k, v in qam_audio.parse_sinks(ls).items() if _re.search(r"pdc_eq|alsa_output|bluez_output|\bEQ\b", k)}
+            flujos = sorted(names.get(int(f[1]), f[1]) for f in (x.split() for x in si.splitlines()) if len(f) > 1 and f[1].isdigit())
+            now = {"defecto": d.strip(), "destino_eq": names.get(dest) if dest else None, "sinks": sinks, "flujos": flujos}
+            ch = qam_audio.trace_diff(prev, now)
+            if ch:
+                log.append({"s": round(_t.monotonic() - t0, 1), "cambios": ch, **(now if prev is None else {})})
+            prev, n = now, n + 1
+            await asyncio.sleep(0.5)
+        (_, top, _), (_, cards, _), (_, fc, _), (_, ju, _), (_, md, _) = await asyncio.gather(
+            self._acmd("pw-top", "-b", "-n", "3", timeout=10), self._acmd("pactl", "list", "cards"),
+            self._acmd("systemctl", "--user", "show", "filter-chain.service", "-p", "NRestarts", "-p", "ActiveState", "-p", "ActiveEnterTimestamp"),
+            self._acmd("journalctl", "--user", "--no-pager", "-o", "short-iso", "--since", "-5min", "-n", "3000", timeout=10),
+            self._acmd("pw-metadata", "-n", "default"))
+        (_, sl, _), (_, wf, _) = await asyncio.gather(
+            self._acmd("pactl", "list", "sinks"), self._acmd("nmcli", "-t", "-f", "active,ssid,chan,freq,signal", "dev", "wifi"))
+        bt = [l.strip() for l in cards.splitlines() if _re.search(r"bluez_card|Active Profile|Perfil activo|api\.bluez5\.codec|bluetooth\.battery|device\.description", l)]
+        bt += [l.strip() for l in sl.splitlines() if _re.search(r"bluez5\.codec|api\.bluez5\.profile|node\.latency|api\.bluez5\.address", l)]
+        wifi_on = [l for l in wf.splitlines() if l.startswith("yes")]
+        jr = [l for l in ju.splitlines() if _re.search(r"pipewire|wireplumber|filter-chain|bluez|bluetooth|xrun|underrun|pdc_eq|spa\.|rtkit", l, _re.I)]
+        return {"ok": True, "segundos": seconds, "muestras": n, "final": prev, "cambios": log[:120],
+                "pw_top": "\n".join(top.splitlines()[-40:])[:3500], "bluetooth": bt[:30], "filter_chain": fc.strip(),
+                "metadata": md[:1200], "wifi": wifi_on[:2],
+                "reinicios_eq": sum(1 for l in jr if "Started filter-chain.service" in l), "registro": jr[-80:]}
+
+    async def audio_reset(self) -> dict:
+        """Vuelve a la salida que elige el sistema (deshace una elección; en Bazzite, el filtro de los altavoces)."""
+        self._audio_cache = None
+        import qam_audio
+        code, out, err = await self._wpctl("clear-default")
+        if code == 0:
+            return {"ok": True, "detail": "clear-default"}
+        _, txt, _ = await self._wpctl("status")
+        filt = qam_audio.parse_status(txt).get("filtros_salida") or []
+        if filt:
+            c2, o2, e2 = await self._wpctl("set-default", str(filt[0]["id"]))
+            return {"ok": c2 == 0, "detail": f"set-default {filt[0]['id']} {(e2 or o2).strip()[:120]}"}
+        return {"ok": False, "detail": (err or out).strip()[:200]}
+
+    async def audio_set_default(self, node: int) -> dict:
+        self._audio_cache = None
+        code, out, err = await self._wpctl("set-default", str(int(node)))
+        detail = (err or out).strip()[:200]
+        if code == 0:
+            detail = (detail + " " + await self._real_sink_full(int(node))).strip()
+        return {"ok": code == 0, "detail": detail}
+
+    async def _real_sink_full(self, node: int) -> str:
+        """0.49.7: con el ecualizador de Panel delante, el volumen que se mueve es el del EQ (100 %) y el del dispositivo real
+        (tarjeta analogica) se queda donde lo dejo la ultima vez: se vieron 1 % y 40 % con el EQ al 100 % → altavoces «bajos».
+        Al elegir un dispositivo real con ruta fisica (alsa), se sube a 100 %; el volumen se gobierna desde el EQ.
+        No se toca el Bluetooth (volumen absoluto del propio auricular)."""
+        try:
+            code, out, _ = await self._wpctl("inspect", str(node))
+            if code != 0 or not re.search(r'node\.name = "alsa_output', out):
+                return ""
+            code, out, _ = await self._wpctl("get-volume", str(node))
+            m = re.search(r"Volume:\s*([0-9.]+)", out)
+            if code != 0 or not m or float(m.group(1)) >= 0.9:
+                return ""
+            await self._wpctl("set-volume", str(node), "1.00")
+            await self._wpctl("set-mute", str(node), "0")
+            return f"[volumen del dispositivo {round(float(m.group(1)) * 100)} % → 100 %]"
+        except Exception as e:  # nunca debe romper el cambio de salida
+            return f"[volumen: {e}]"
+
+    async def audio_mute(self, node: int, on: bool) -> dict:
+        self._audio_cache = None
+        code, out, err = await self._wpctl("set-mute", str(int(node)), "1" if on else "0")
+        return {"ok": code == 0, "detail": (err or out).strip()[:200]}
+
+    async def audio_volume(self, node: int, vol: float) -> dict:
+        self._audio_cache = None
+        v = max(0.0, min(1.5, float(vol)))
+        code, out, err = await self._wpctl("set-volume", str(int(node)), f"{v:.2f}")
+        return {"ok": code == 0, "detail": (err or out).strip()[:200]}
+
+    async def _nmcli(self, *args: str, timeout: float = 20) -> tuple:
+        try:
+            proc = await asyncio.create_subprocess_exec("nmcli", *args, env=self._user_env(),
+                                                        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+            out, err = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+            return proc.returncode, out.decode("utf-8", "replace"), err.decode("utf-8", "replace")
+        except FileNotFoundError:
+            return 127, "", "nmcli no esta instalado"
+        except asyncio.TimeoutError:
+            return 124, "", "tiempo agotado"
+
+    @staticmethod
+    def _split_terse(line: str) -> list:
+        """Campos de «nmcli -t» (separados por «:», con «\\:» escapado)."""
+        out, cur, esc = [], "", False
+        for ch in line:
+            if esc:
+                cur += ch
+                esc = False
+            elif ch == "\\":
+                esc = True
+            elif ch == ":":
+                out.append(cur)
+                cur = ""
+            else:
+                cur += ch
+        out.append(cur)
+        return out
+
+    async def wifi_state(self, rescan: bool = False) -> dict:
+        """Radio, red actual y redes visibles (con señal, seguridad y si estan guardadas)."""
+        # Las tres lecturas a la vez (antes en fila: el estado tardaba en llegar).
+        (code, radio, err), (_c, saved_out, _e), (_c2, lst, _e2) = await asyncio.gather(
+            self._nmcli("-t", "-f", "WIFI", "radio"),
+            self._nmcli("-t", "-f", "NAME,TYPE", "connection", "show"),
+            self._nmcli("-t", "-f", "IN-USE,SSID,SIGNAL,SECURITY,CHAN", "device", "wifi", "list", "--rescan", "yes" if rescan else "no", timeout=30),
+        )
+        if code != 0:
+            return {"ok": False, "error": err.strip() or f"nmcli {code}"}
+        saved = {self._split_terse(l)[0] for l in saved_out.splitlines() if l.endswith(":802-11-wireless")}
+        nets, seen = [], set()
+        for l in lst.splitlines():
+            f = self._split_terse(l)
+            if len(f) < 5 or not f[1] or f[1] in seen:
+                continue
+            seen.add(f[1])
+            nets.append({"ssid": f[1], "active": f[0].strip() == "*", "signal": int(f[2] or 0), "security": f[3], "channel": f[4], "saved": f[1] in saved})
+        nets.sort(key=lambda n: (not n["active"], not n["saved"], -n["signal"]))
+        return {"ok": True, "radio": radio.strip() == "enabled", "networks": nets[:20], "saved": sorted(saved)}
+
+    async def wifi_connect(self, ssid: str) -> dict:
+        """Conecta a una red GUARDADA (las nuevas, con contraseña, desde Ajustes de Steam)."""
+        code, out, err = await self._nmcli("connection", "up", "id", str(ssid), timeout=45)
+        return {"ok": code == 0, "detail": (out or err).strip()[-300:]}
+
+    async def wifi_radio(self, on: bool) -> dict:
+        code, out, err = await self._nmcli("radio", "wifi", "on" if on else "off")
+        log = [(out or err).strip()[-120:]]
+        if on:
+            # Si lo bloqueó rfkill (lo que hace el interruptor del sistema), nmcli solo no lo enciende.
+            await self._rfkill("unblock", "wifi")
+            await self._nmcli("radio", "wifi", "on")
+        await asyncio.sleep(1.0)
+        _c, now, _e = await self._nmcli("-t", "-f", "WIFI", "radio")
+        if not on and now.strip() == "enabled":
+            # NetworkManager lo dejó encendido (o algo lo reenciende): se bloquea en el núcleo.
+            await self._rfkill("block", "wifi")
+            log.append("rfkill block")
+            await asyncio.sleep(1.0)
+            _c, now, _e = await self._nmcli("-t", "-f", "WIFI", "radio")
+        ok = (now.strip() == "enabled") == bool(on)
+        return {"ok": ok, "detail": ("sigue " + now.strip() + ": " if not ok else "") + " | ".join(x for x in log if x)[-200:]}
+
+    async def _rfkill(self, action: str, kind: str) -> bool:
+        try:
+            proc = await asyncio.create_subprocess_exec("rfkill", action, kind, stdout=asyncio.subprocess.DEVNULL,
+                                                        stderr=asyncio.subprocess.DEVNULL)
+            await asyncio.wait_for(proc.wait(), timeout=4)
+            return proc.returncode == 0
+        except Exception:  # noqa: BLE001
+            return False
+
+    async def diag_mark(self, step: str, estado: str, detalle: str = "") -> bool:
+        """Luz de cada prueba (ok / aviso / error / saltada) con fecha y version, para verla de un vistazo."""
+        inf = self._informe_read()
+        est = inf.get("estados") if isinstance(inf.get("estados"), dict) else {}
+        est[str(step)[:60]] = {"estado": str(estado)[:12], "detalle": str(detalle)[:160],
+                               "fecha": time.strftime("%Y-%m-%dT%H:%M:%S"), "version": getattr(decky, "DECKY_PLUGIN_VERSION", None)}
+        inf["estados"] = est
+        self._informe_write(inf)
+        return True
+
+    async def diag_states(self) -> dict:
+        inf = self._informe_read()
+        return inf.get("estados") if isinstance(inf.get("estados"), dict) else {}
+
+    # ---- Bluetooth por BlueZ (bluetoothctl): esta version de Steam ya no expone SteamClient.System.Bluetooth ----
+    async def _btctl(self, *args: str, timeout: float = 15) -> tuple:
+        try:
+            proc = await asyncio.create_subprocess_exec("bluetoothctl", *args, env=self._user_env(),
+                                                        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT,
+                                                        stdin=asyncio.subprocess.DEVNULL)
+            out, _ = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+            return proc.returncode, out.decode("utf-8", "replace")
+        except FileNotFoundError:
+            return 127, "bluetoothctl no esta instalado"
+        except asyncio.TimeoutError:
+            try:
+                proc.kill()
+            except Exception:  # noqa: BLE001
+                pass
+            return 124, "tiempo agotado"
+
+    @staticmethod
+    def _bt_info(text: str) -> dict:
+        info = {}
+        for line in text.splitlines():
+            line = line.strip()
+            if ":" in line:
+                k, v = line.split(":", 1)
+                info[k.strip()] = v.strip()
+        return info
+
+    async def bt_state(self) -> dict:
+        """Adaptador (encendido, buscando) y dispositivos conocidos con tipo, conexion, emparejado y señal."""
+        code, show = await self._btctl("show")
+        if code != 0 or "Controller" not in show:
+            return {"ok": False, "error": show.strip()[-200:] or f"bluetoothctl {code}"}
+        sh = self._bt_info(show)
+
+        async def listed(*flt: str) -> dict:
+            _c, txt = await self._btctl("devices", *flt)
+            res = {}
+            for line in txt.splitlines():
+                parts = line.strip().split(" ", 2)
+                if len(parts) == 3 and parts[0] == "Device":
+                    res[parts[1]] = parts[2]
+            return res
+
+        # Las tres listas a la vez (antes en fila: cada lectura tardaba el triple).
+        every, paired, connected = await asyncio.gather(listed(), listed("Paired"), listed("Connected"))
+        out = []
+        # Solo los emparejados se consultan uno a uno (tipo de dispositivo); los de cerca, solo nombre.
+        # El tipo de cada emparejado no cambia: se pregunta una vez (antes: 7+ procesos en cada lectura).
+        icons = getattr(self, "_bt_icons", None) or {}
+        self._bt_icons = icons
+        for mac, name in paired.items():
+            if mac not in icons:
+                _c, it = await self._btctl("info", mac, timeout=6)
+                icons[mac] = self._bt_info(it)
+            inf = icons[mac]
+            out.append({"mac": mac, "name": inf.get("Alias") or name, "icon": inf.get("Icon", ""), "connected": mac in connected,
+                        "paired": True, "rssi": None})
+        for mac, name in every.items():
+            if mac in paired or name.replace("-", ":").upper() == mac.upper():
+                continue
+            out.append({"mac": mac, "name": name, "icon": "", "connected": mac in connected, "paired": False, "rssi": None})
+        return {"ok": True, "powered": sh.get("Powered") == "yes", "discovering": sh.get("Discovering") == "yes", "devices": out[:40]}
+
+    async def bt_action(self, action: str, mac: str = "") -> dict:
+        """power-on / power-off / connect / disconnect / pair (pair + trust + connect) / remove."""
+        import re
+        if mac and not re.fullmatch(r"[0-9A-Fa-f:]{17}", mac):
+            return {"ok": False, "detail": "MAC no valida"}
+        steps = {
+            "power-on": [("power", "on")], "power-off": [("power", "off")],
+            "connect": [("connect", mac)], "disconnect": [("disconnect", mac)],
+            "pair": [("pair", mac), ("trust", mac), ("connect", mac)], "remove": [("remove", mac)],
+        }.get(action)
+        if not steps:
+            return {"ok": False, "detail": "accion desconocida"}
+        log = []
+        if action == "power-on":
+            # Si el Bluetooth esta bloqueado por rfkill, «power on» falla con org.bluez.Error.Blocked.
+            try:
+                proc = await asyncio.create_subprocess_exec("rfkill", "unblock", "bluetooth", stdout=asyncio.subprocess.DEVNULL,
+                                                            stderr=asyncio.subprocess.DEVNULL)
+                await asyncio.wait_for(proc.wait(), timeout=4)
+            except Exception:  # noqa: BLE001
+                pass
+        for st in steps:
+            code, out = await self._btctl(*st, timeout=20)
+            log.append(out.strip()[-160:])
+            if code != 0 and st[0] != "trust":
+                return {"ok": False, "detail": " | ".join(log)[-300:]}
+        if action == "power-off":
+            # «power off» de BlueZ deja la radio sin bloquear y Steam la vuelve a encender (diagnóstico 14‑11): se bloquea
+            # también en el núcleo (rfkill), que es lo que hace de verdad el interruptor del sistema.
+            try:
+                proc = await asyncio.create_subprocess_exec("rfkill", "block", "bluetooth", stdout=asyncio.subprocess.DEVNULL,
+                                                            stderr=asyncio.subprocess.DEVNULL)
+                await asyncio.wait_for(proc.wait(), timeout=4)
+                log.append("rfkill block")
+            except Exception:  # noqa: BLE001
+                log.append("rfkill no disponible")
+            await asyncio.sleep(0.8)
+            _c, show = await self._btctl("show", timeout=6)
+            if "Powered: yes" in show:
+                return {"ok": False, "detail": "sigue encendido: " + " | ".join(log)[-240:]}
+        return {"ok": True, "detail": " | ".join(log)[-300:]}
+
+    async def bt_scan(self, seconds: int = 20) -> dict:
+        """Busca dispositivos durante unos segundos (en segundo plano: luego se leen con bt_state)."""
+        secs = max(5, min(int(seconds or 20), 60))
+        asyncio.get_running_loop().create_task(self._btctl("--timeout", str(secs), "scan", "on", timeout=secs + 5))
+        return {"ok": True, "seconds": secs}
+
+    async def post_game_sample(self, seconds: int = 10) -> dict:
+        """Que ocupa la CPU justo al salir de un juego: carga media y procesos que mas consumen (top, 2 muestras)."""
+        secs = max(3, min(int(seconds or 10), 20))
+
+        def loadavg() -> list:
+            try:
+                with open("/proc/loadavg", encoding="utf-8") as fh:
+                    return fh.read().split()[:3]
+            except OSError:
+                return []
+
+        start = loadavg()
+        top = []
+        try:
+            proc = await asyncio.create_subprocess_exec("top", "-b", "-n", "2", "-d", str(secs), "-o", "%CPU", "-w", "200",
+                                                        env=self._user_env(), stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL)
+            out, _ = await asyncio.wait_for(proc.communicate(), timeout=secs + 10)
+            text = out.decode("utf-8", "replace")
+            # La segunda muestra es la del intervalo (la primera es desde el arranque).
+            last = text.split("top - ")[-1].splitlines()
+            hdr = next((i for i, l in enumerate(last) if l.strip().startswith("PID")), None)
+            if hdr is not None:
+                for l in last[hdr + 1:hdr + 13]:
+                    parts = l.split()
+                    if len(parts) >= 12:
+                        row = {"cpu": parts[8], "mem": parts[9], "proceso": " ".join(parts[11:])[:60]}
+                        # Quien es de verdad (p. ej. gst-launch-1.0 = una grabacion/captura de pantalla en marcha).
+                        if parts[0].isdigit() and not row["proceso"].startswith("steamwebhelper"):
+                            try:
+                                with open(f"/proc/{parts[0]}/cmdline", "rb") as fh:
+                                    row["orden"] = fh.read().replace(b"\0", b" ").decode("utf-8", "replace").strip()[:240]
+                                # Quien lo lanzo (hasta 3 niveles): p. ej. gst-launch-1.0 ← python de un plugin de Decky.
+                                chain, pid = [], parts[0]
+                                for _ in range(3):
+                                    with open(f"/proc/{pid}/stat", encoding="utf-8") as fh:
+                                        pid = fh.read().rsplit(")", 1)[1].split()[1]
+                                    if pid in ("0", "1"):
+                                        break
+                                    with open(f"/proc/{pid}/cmdline", "rb") as fh:
+                                        chain.append(fh.read().replace(b"\0", b" ").decode("utf-8", "replace").strip()[:160])
+                                if chain:
+                                    row["lanzado_por"] = chain
+                            except (OSError, IndexError):
+                                pass
+                        top.append(row)
+            cpu_line = next((l for l in last if l.startswith("%Cpu")), "")
+        except Exception as exc:  # noqa: BLE001
+            cpu_line = f"(top no disponible: {exc})"
+        return {"carga_inicio": start, "carga_fin": loadavg(), "cpu": cpu_line.strip(), "procesos": top}
+
+    async def bench_save(self, data: dict) -> str:
+        folder = os.path.join(decky.DECKY_PLUGIN_SETTINGS_DIR, "bench")
+        os.makedirs(folder, exist_ok=True)
+        path = os.path.join(folder, time.strftime("bench-%Y%m%d-%H%M%S.json"))
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump(data, fh, indent=2)
+        return path

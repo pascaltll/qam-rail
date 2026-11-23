@@ -1,0 +1,11 @@
+{
+  "name": "QAM Rail",
+  "author": "Carlos",
+  "flags": [],
+  "api_version": 1,
+  "publish": {
+    "tags": ["qam", "ui", "launcher"],
+    "description": "QAM como barra lateral de iconos con lanzador rápido de apps.",
+    "image": ""
+  }
+}

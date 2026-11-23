@@ -1,0 +1,48 @@
+{
+  "name": "qam-rail",
+  "version": "0.51.2",
+  "description": "QAM de Steam como barra lateral de iconos (estilo Android/Xiaomi) con lanzador rápido de apps.",
+  "type": "module",
+  "scripts": {
+    "build": "rollup -c",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "dist": "bash scripts/package.sh"
+  },
+  "license": "GPL-3.0-only",
+  "devDependencies": {
+    "@decky/rollup": "^1.0.2",
+    "@decky/ui": "^4.12.1",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@types/webpack": "^5.28.5",
+    "happy-dom": "^21.0.1",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "react-icons": "^5.7.0",
+    "rollup": "^4.64.5",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.3"
+  },
+  "dependencies": {
+    "@decky/api": "^1.1.3",
+    "tslib": "^2.7.0"
+  },
+  "pnpm": {
+    "peerDependencyRules": {
+      "ignoreMissing": [
+        "react",
+        "react-dom"
+      ]
+    }
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/pascaltll/qam-rail.git"
+  },
+  "homepage": "https://github.com/pascaltll/qam-rail",
+  "bugs": {
+    "url": "https://github.com/pascaltll/qam-rail/issues"
+  },
+  "author": "Carlos"
+}
