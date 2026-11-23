@@ -36,5 +36,26 @@ async def t_unload():
     await p._unload()
 
 
+async def t_prune():
+    p = main.Plugin()
+    calls = []
+    async def sess(): return [], {"DISPLAY": ":1"}
+    async def base(prefix, display, key, on): calls.append((key, on))
+    p._user_session, p._base_layer = sess, base
+    p._claims_v = {"0x10": "firefox", "0x11": "firefox", "0x20": "stremio"}
+    class X:   # 0x10 sigue; 0x11 y 0x20 ya no existen
+        def geometry(self, w): return (1920, 1080) if w == 0x10 else None
+    gone = await p._prune_dead(X())
+    assert gone == ["firefox", "stremio"], gone               # firefox perdió una ventana pero aún tiene otra viva: su número se queda
+    assert calls == [("stremio", False)], calls
+    assert p._claims_v == {"0x10": "firefox"}, p._claims_v
+    class Y:
+        def geometry(self, w): return None
+    calls.clear()
+    assert await p._prune_dead(Y()) == ["firefox"] and calls == [("firefox", False)], calls
+    assert p._claims_v == {}
+
+
 asyncio.run(t_unload())
+asyncio.run(t_prune())
 print("TODO OK")

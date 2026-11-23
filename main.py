@@ -1229,6 +1229,31 @@ class Plugin:
         return x, {"focused": focused, "base": base, "overlay": overlay, "screen": x.screen_size(), "wins": wins, "front": front,
                    "anim": bool(getattr(self, "_anim_busy", False)), "running": bool(self._claims)}
 
+    async def _prune_dead(self, x) -> list:
+        """Una app cerrada por fuera del QAM (flatpak kill, se cierra sola) deja su ventana marcada y su número en la capa base de gamescope.
+        Se olvida la ventana y, si era la última de esa app, se quita su número de la capa base (Steam no debe quedar detrás de algo que ya no existe)."""
+        gone = []
+        for w, k in list(self._claims.items()):
+            try:
+                wid = int(str(w), 0)
+            except ValueError:
+                continue
+            if x.geometry(wid) is None:
+                gone.append((w, str(k)))
+        if not gone:
+            return []
+        for w, _k in gone:
+            self._claims.pop(w, None)
+        prefix, seen = await self._user_session()
+        display = seen.get("DISPLAY") or ":0"
+        keys = sorted({k for _w, k in gone})
+        for k in keys:
+            if not any(str(v) == k for v in self._claims.values()):
+                await self._base_layer(prefix, display, k, False)
+        self._tag_log(f"ventana cerrada por fuera: {', '.join(keys)}; capa base limpiada")
+        self._tl("ventana_cerrada_fuera", apps=",".join(keys)[:120])
+        return keys
+
     async def _wd_loop(self) -> None:
         """Cada segundo (cada 4 sin apps abiertas ni interfaz) mira el estado y anota las anomalías en la línea de tiempo, con el contexto."""
         wd = qam_blackbox.Watchdog()
@@ -1239,6 +1264,9 @@ class Plugin:
                     await asyncio.sleep(4)
                     continue
                 x, snap = await self._wd_snapshot()
+                if self._claims and time.time() - getattr(self, "_prune_at", 0.0) > 3:
+                    self._prune_at = time.time()
+                    await self._prune_dead(x)
                 last = getattr(self, "_wd_last", None)
                 key = (snap["focused"], tuple(snap["base"]), snap["overlay"], tuple(snap["wins"]))
                 if key != last:

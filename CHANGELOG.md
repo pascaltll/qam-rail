@@ -1,5 +1,10 @@
 # Cambios
 
+## dev.46
+
+- **Causa probable de que el QAM se colgara tras cerrar una app por fuera (`flatpak kill`) y de las pantallas negras:** cuando una ventana que seguimos desaparecía, la primera petición de X sobre ella (`XGetGeometry`, `XResizeWindow`, `XSetInputFocus`) hacía que Xlib llamara a `exit()` y matara **todo el backend** del plugin (reproducido en el banco: el proceso sale con código 1). Ahora hay un manejador de errores de X que no hace nada y la petición simplemente falla. Prueba: `tests/py/test_xerr.py`.
+- **Apps cerradas por fuera:** el vigilante (cada ~3 s con apps abiertas) olvida las ventanas que ya no existen y quita de la capa base de gamescope el número de la app si era su última ventana (`desktop-tag.log`: «ventana cerrada por fuera»; línea de tiempo: `ventana_cerrada_fuera`).
+
 ## dev.45
 
 - **Teclado grande con el mando: Steam + Y** abre el teclado desde cualquier app de escritorio y lo cierra si ya está abierto (el backend lo avisa con el evento `qam_kb`; no manda nada a la app). Y sola sigue siendo la barra de direcciones. Cerrar con B ya no vuelve atrás dos veces. Abrirlo al tocar un campo de texto: pendiente (hace falta saber qué campo tiene el foco; se estudia AT-SPI).

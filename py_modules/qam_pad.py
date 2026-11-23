@@ -147,6 +147,21 @@ class PadMapper:
 
 
 # ---------------------------------------------------------------- salida a X (XTest)
+_X_ERR_CB = None
+
+
+def _quiet_x_errors(x11) -> None:
+    """Xlib, ante un error de petición (p. ej. una ventana que acaba de cerrarse), llama a exit() y mata TODO el proceso: el backend del plugin
+    se caía al cerrar una app por fuera del QAM. Con un manejador que no hace nada, la petición falla sola (XGetGeometry devuelve 0)."""
+    global _X_ERR_CB
+    if _X_ERR_CB is None:
+        _X_ERR_CB = ctypes.CFUNCTYPE(ctypes.c_int, ctypes.c_void_p, ctypes.c_void_p)(lambda _d, _e: 0)
+    x11.XSetErrorHandler.restype = ctypes.c_void_p
+    x11.XSetErrorHandler.argtypes = [ctypes.c_void_p]
+    x11.XSetErrorHandler(ctypes.cast(_X_ERR_CB, ctypes.c_void_p))
+
+
+
 class XOut:
     """Ratón y teclado falsos con XTest sobre la pantalla del usuario. Lanza OSError si no puede abrirla o faltan las bibliotecas."""
 
@@ -181,6 +196,7 @@ class XOut:
         xt.XTestFakeButtonEvent.argtypes = [vp, cu, ci, cl]
         xt.XTestFakeKeyEvent.argtypes = [vp, cu, ci, cl]
         self.x11, self.xt = x11, xt
+        _quiet_x_errors(x11)
         self.dpy = x11.XOpenDisplay(display.encode())
         if not self.dpy:
             raise OSError(f"no se pudo abrir la pantalla {display}")
