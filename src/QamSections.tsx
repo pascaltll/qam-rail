@@ -2,7 +2,7 @@ import { DialogButton, Focusable } from "@decky/ui";
 import { useEffect, useRef, useState, type CSSProperties, type FC, type ReactNode } from "react";
 
 import { readApps, curate, type AppEntry } from "./apps";
-import { appsRun, drawerCached, loadDrawerApps, shortcutOf, type QamApp } from "./qamApps";
+import { appsRun, appsRunning, drawerCached, loadDrawerApps, shortcutOf, type QamApp } from "./qamApps";
 import { crumb } from "./crumbs";
 import { boostActive, boostEnabled, setBoostEnabled } from "./menuEfficiency";
 import type { HostedPlugin } from "./decky";
@@ -763,12 +763,13 @@ function openQamApp(a: QamApp, notify: (t: string) => void, after: () => void): 
   }, 400);
 }
 
-const QamAppIcon: FC<{ a: QamApp; icon?: string; notify: (t: string) => void; after: () => void; onMenu?: (m: MenuTarget) => void }> = ({ a, icon, notify, after, onMenu }) => {
+const QamAppIcon: FC<{ a: QamApp; icon?: string; notify: (t: string) => void; after: () => void; onMenu?: (m: MenuTarget) => void; running?: boolean }> = ({ a, icon, notify, after, onMenu, running }) => {
   const ctl = Object.keys(a.controls ?? {});
-  return <AppIcon name={a.name} capsule={icon ?? null} onTap={() => openQamApp(a, notify, after)}
-    onMenu={ctl.length && onMenu ? () => onMenu({ key: `q:${a.id}`, name: a.name, qam: { id: a.id, controls: ctl } }) : undefined} />;
+  const native = Object.values(a.controls ?? {}).includes("@");
+  return <AppIcon name={a.name} capsule={icon ?? null} running={native ? !!running : undefined} onTap={() => openQamApp(a, notify, after)}
+    onMenu={ctl.length && onMenu ? () => onMenu({ key: `q:${a.id}`, name: a.name, qam: { id: a.id, controls: ctl, running: native ? !!running : undefined } }) : undefined} />;
 };
-type MenuTarget = { key: string; name: string; qam?: { id: string; controls: string[] } };
+type MenuTarget = { key: string; name: string; qam?: { id: string; controls: string[]; running?: boolean } };
 /** Apps de escritorio agregadas a QAM desde Apps › Steam: se abren directamente, sin pasar por Steam. */
 function useDesktopPins(): Pin[] {
   const [p, setP] = useState<Pin[]>(() => pinsCached());
@@ -788,7 +789,8 @@ function useDeskMenu() {
   const [menu, setMenu] = useState<MenuTarget | null>(null);
   useEffect(() => {
     let on = true;
-    const read = () => void loadRunning(true).then((k) => { if (on) setRunning(k); });
+    const read = () => void Promise.all([loadRunning(true), appsRunning().then((r) => r.ids.map((i) => `q:${i}`)).catch(() => [] as string[])])
+      .then(([k, q]) => { if (on) setRunning([...k, ...q]); });
     read();
     const stop = tickEvery(read, 6000, { name: "desktop-running-drawer" });
     return () => { on = false; stop(); };
@@ -809,7 +811,7 @@ export const AppRow: FC<{ apps: AppEntry[]; notify: (t: string) => void; onAll: 
     <>
     {dm.menu && <DeskMenu app={dm.menu} notify={notify} after={after} onClose={() => dm.setMenu(null)} />}
     <GridNav row>
-      {own.map((a) => <QamAppIcon key={`q:${a.id}`} a={a} icon={q.icons[a.id]} notify={notify} after={after} onMenu={dm.setMenu} />)}
+      {own.map((a) => <QamAppIcon key={`q:${a.id}`} a={a} icon={q.icons[a.id]} notify={notify} after={after} onMenu={dm.setMenu} running={dm.running.includes(`q:${a.id}`)} />)}
       {dp.slice(0, Math.max(0, limit - own.length)).map((p) => <DeskIcon key={`d:${p.key}`} p={p} notify={notify} after={after} onMenu={dm.setMenu} running={dm.running.includes(p.key)} />)}
       {steam.slice(0, Math.max(0, limit - own.length - dp.length)).map((a) => <AppIcon key={a.appid} name={a.name} capsule={a.capsule} onTap={() => launchApp(a, notify, after)} />)}
       <AppIcon name={apps.length || own.length ? "Más apps" : "Apps"} icon={<Icon d={ICONS.grid} size={26} color="#fff" />} bg={COLORS.track} onTap={onAll} />
@@ -827,7 +829,7 @@ export const AppGrid: FC<{ apps: AppEntry[]; notify: (t: string) => void; after:
     <>
     {dm.menu && <DeskMenu app={dm.menu} notify={notify} after={after} onClose={() => dm.setMenu(null)} />}
     <GridNav>
-      {q.apps.map((a) => <QamAppIcon key={`q:${a.id}`} a={a} icon={q.icons[a.id]} notify={notify} after={after} onMenu={dm.setMenu} />)}
+      {q.apps.map((a) => <QamAppIcon key={`q:${a.id}`} a={a} icon={q.icons[a.id]} notify={notify} after={after} onMenu={dm.setMenu} running={dm.running.includes(`q:${a.id}`)} />)}
       {dp.map((p) => <DeskIcon key={`d:${p.key}`} p={p} notify={notify} after={after} onMenu={dm.setMenu} running={dm.running.includes(p.key)} />)}
       {steam.map((a) => <AppIcon key={a.appid} name={a.name} capsule={a.capsule} onTap={() => launchApp(a, notify, after)} />)}
     </GridNav>

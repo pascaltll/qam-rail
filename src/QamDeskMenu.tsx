@@ -9,8 +9,8 @@ import { appsControl } from "./qamApps";
 import { COLORS, Chip, ICONS2, Row, cardStyle } from "./ui";
 
 /** `qam`: app de QAM (MiniTube…) con las órdenes de su lanzador; sin él, app de escritorio. */
-export const DeskMenu: FC<{ app: { key: string; name: string; qam?: { id: string; controls: string[] } }; notify: (t: string) => void; onClose: () => void; after?: () => void }> = ({ app, notify, onClose, after }) => {
-  const [running, setRunning] = useState<boolean>(() => !!app.qam || runningCached().includes(app.key));
+export const DeskMenu: FC<{ app: { key: string; name: string; qam?: { id: string; controls: string[]; running?: boolean } }; notify: (t: string) => void; onClose: () => void; after?: () => void }> = ({ app, notify, onClose, after }) => {
+  const [running, setRunning] = useState<boolean>(() => (app.qam ? (app.qam.running ?? true) : false) || runningCached().includes(app.key));
   const [busy, setBusy] = useState(false);
   const box = useRef<HTMLDivElement | null>(null);
   useEffect(() => { if (app.qam) return; let on = true; void loadRunning(true).then((k) => { if (on) setRunning(k.includes(app.key)); }); return () => { on = false; }; }, [app.key]);

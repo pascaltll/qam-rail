@@ -98,6 +98,7 @@ export async function loadDrawerApps(force = false): Promise<{ apps: QamApp[]; i
 export const drawerCached = () => cache;
 export const appsAddFolder = callable<[path: string], { ok: boolean; app?: QamApp; error?: string }>("apps_add_folder");
 export const appsUninstall = callable<[id: string, purgeData?: boolean], { ok: boolean; removed: boolean; appid: number | null; purged?: string[] }>("apps_uninstall");
+export const appsRunning = callable<[], { ids: string[] }>("apps_running");
 export const appsControl = callable<[id: string, action: string], { ok: boolean; error?: string }>("apps_control");
 export const appsRun = callable<[id: string, args: string], { ok: boolean }>("apps_run");
 const appsSetAppid = callable<[id: string, appid: number], boolean>("apps_set_appid");

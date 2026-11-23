@@ -165,6 +165,7 @@ def check_manifest(man: dict, qam_version: str | None = None, home: str | None =
 
 
 CONTROL_KEYS = ("show", "minimize", "close", "kill")
+NATIVE = "@"  # valor de control: lo ejecuta QAM Rail, no el lanzador de la app
 CONTROL_RE = re.compile(r"^[A-Za-z0-9 _.-]{1,24}$")
 
 
@@ -177,6 +178,8 @@ def controls_for(man: dict) -> dict:
         out = {k: str(v) for k, v in raw.items() if k in CONTROL_KEYS and isinstance(v, str) and CONTROL_RE.match(v)}
     elif "ytmini" in str(man.get("id", "")).lower() or str(man.get("name", "")).strip().lower() == "minitube":
         out = {"show": "open", "minimize": "mini", "close": "close", "kill": "kill"}
+    else:
+        out = {k: NATIVE for k in CONTROL_KEYS}  # sin órdenes propias: las hace QAM Rail (procesos de la app + capa de ventana)
     return out
 
 

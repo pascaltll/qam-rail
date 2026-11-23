@@ -714,16 +714,35 @@ class Plugin:
         m = re.search(r"=\s*(\d+)", out) if rc == 0 else None
         return int(m.group(1)) if m else None
 
-    async def _app_pids(self, path: str) -> set:
-        """PIDs de los procesos cuya orden contiene la carpeta de la app (para saber qué ventana es suya)."""
-        try:
-            proc = await asyncio.create_subprocess_exec("pgrep", "-f", path, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL)
-            out, _ = await asyncio.wait_for(proc.communicate(), 3)
-            return {int(x) for x in out.decode().split() if x.isdigit()}
-        except Exception:
-            return set()
+    @staticmethod
+    def _app_patterns(app: dict) -> list:
+        """Trozos de orden que identifican los procesos de una app de QAM. Bazzite enlaza /home → /var/home, así que se usan la ruta real,
+        la dada y «qam-apps/<carpeta>/» (con barra final: «forgeinator/» no casa con «forgeinator-dev/»)."""
+        path = str(app.get("path") or "")
+        out = []
+        for q in (os.path.realpath(path), path):
+            if q and q.rstrip("/") + "/" not in out:
+                out.append(q.rstrip("/") + "/")
+        base = os.path.basename(path.rstrip("/"))
+        if base:
+            out.append(f"qam-apps/{base}/")
+        return out
 
-    async def _desk_tag(self, key: str, prefix: list, display: str, before: set, path: str | None = None) -> None:
+    async def _app_pids(self, patterns) -> set:
+        """PIDs de los procesos cuya orden contiene alguno de los trozos (para saber qué ventana es de la app)."""
+        pats = [patterns] if isinstance(patterns, str) else list(patterns)
+        pids: set = set()
+        for pat in pats:
+            try:
+                proc = await asyncio.create_subprocess_exec("pgrep", "-f", "--", re.escape(pat), stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL)
+                out, _ = await asyncio.wait_for(proc.communicate(), 3)
+                pids |= {int(x) for x in out.decode().split() if x.isdigit()}
+            except Exception:
+                pass
+        pids.discard(os.getpid())
+        return pids
+
+    async def _desk_tag(self, key: str, prefix: list, display: str, before: set, path=None) -> None:
         """Game Mode (gamescope) solo muestra ventanas con la propiedad STEAM_GAME: se la ponemos a las ventanas de la app durante ~20 s.
         Apps de QAM (`path`): se reconocen por el PID de la ventana (también si ya estaba abierta). Apps de escritorio: ventanas nuevas.
         Una ventana ya marcada por otra app no se toca."""
@@ -1311,8 +1330,48 @@ class Plugin:
                                              stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL, start_new_session=True)
         if tag:
             self._qam_keys.add(f"qam:{app_id}")
-            self._spawn(self._desk_tag(f"qam:{app_id}", prefix, display, before, app["path"]))
+            self._spawn(self._desk_tag(f"qam:{app_id}", prefix, display, before, self._app_patterns(app)))
         return {"ok": True}
+
+    async def _apps_native(self, app: dict, action: str) -> dict:
+        """Menú de una app de QAM sin órdenes propias: mostrar (o abrir si está cerrada), minimizar, cerrar (SIGTERM) y forzar cierre (SIGKILL)."""
+        key = f"qam:{app['id']}"
+        pids = await self._app_pids(self._app_patterns(app))
+        if action == "show":
+            if not pids:
+                return await self.apps_run(app["id"], "")
+            prefix, seen = await self._user_session()
+            display = seen.get("DISPLAY") or ":0"
+            self._xauth = seen.get("XAUTHORITY") or None
+            self._qam_keys.add(key)
+            self._spawn(self._desk_tag(key, prefix, display, set(), self._app_patterns(app)))
+            return {"ok": True}
+        if action == "minimize":
+            await self._base_off(key)
+            return {"ok": True}
+        if action in ("close", "kill"):
+            import signal
+            sig = signal.SIGKILL if action == "kill" else signal.SIGTERM
+            n = 0
+            for pid in sorted(pids, reverse=True):  # hijos antes que padres
+                try:
+                    os.kill(pid, sig)
+                    n += 1
+                except OSError:
+                    pass
+            await self._base_off(key)
+            self._qam_keys.discard(key)
+            return {"ok": True, "n": n} if n else {"ok": True, "error": None, "n": 0}
+        return {"ok": False, "error": "acción desconocida"}
+
+    async def apps_running(self) -> dict:
+        """Apps de QAM con órdenes nativas que tienen procesos en marcha (para el «●» del cajón)."""
+        data = await self.apps_list()
+        ids = []
+        for a in data["apps"]:
+            if (a.get("controls") or {}).get("close") == "@" and a.get("launch") and await self._app_pids(self._app_patterns(a)):
+                ids.append(a["id"])
+        return {"ids": ids}
 
     async def apps_control(self, app_id: str, action: str) -> dict:
         """Menú de la app de QAM: ejecuta la orden de su lanzador para mostrar / minimizar / cerrar / forzar cierre (según su manifiesto)."""
@@ -1321,6 +1380,8 @@ class Plugin:
         args = ((app or {}).get("controls") or {}).get(action)
         if not app or not app.get("launch") or not args:
             return {"ok": False, "error": "esa app no ofrece esa opción"}
+        if args == "@":
+            return await self._apps_native(app, action)
         import shlex
         cmd = ["bash", os.path.join(app["path"], app["launch"]), *shlex.split(args)]
         try:

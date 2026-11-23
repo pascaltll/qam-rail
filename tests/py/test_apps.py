@@ -202,7 +202,7 @@ def test_flow():
 
 def test_controls():
     assert qam_apps.controls_for({"id": "ytmini"}) == {"show": "open", "minimize": "mini", "close": "close", "kill": "kill"}
-    assert qam_apps.controls_for({"id": "otra"}) == {}
+    assert qam_apps.controls_for({"id": "otra"}) == {k: "@" for k in qam_apps.CONTROL_KEYS}  # sin órdenes propias: nativas (las hace QAM Rail)
     assert qam_apps.controls_for({"id": "otra", "controls": {"close": "stop", "kill": "a;b", "x": "y"}}) == {"close": "stop"}
 
 
