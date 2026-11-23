@@ -13,7 +13,7 @@ done
 [ ${#PROFILES[@]} -gt 0 ] || { echo "No encuentro ningún perfil de Firefox."; exit 1; }
 for d in "${PROFILES[@]}"; do
   f="$d/user.js"
-  [ -f "$f" ] && sed -i "/$MARK/d" "$f"
+  [ -f "$f" ] && sed -i "\#QAM Rail táctil#d" "$f"
   if [ "${1:-}" != "--quitar" ]; then
     {
       echo "user_pref(\"browser.uidensity\", 2); $MARK"
