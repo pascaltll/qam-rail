@@ -66,6 +66,10 @@ export function toSeconds(raw: number, _lengthMs = 0): number {
   return Number.isFinite(raw) && raw > 0 ? raw / 1000 : 0;
 }
 export const racing = (dp: number, dt: number) => dt >= RACE_WINDOW_S && dp > dt * 3;
+/** Ventanas seguidas con ritmo raro antes de pausar (un salto manual de la barra es una sola ventana). */
+export const RACE_STRIKES = 2;
+/** Puro (probado): ¿hay que pausar? `strikes` = ventanas seguidas con `racing` hasta esta (incluida). */
+export const shouldAutoPause = (strikes: number) => strikes >= RACE_STRIKES;
 
 // Vigilancia de la velocidad de la posicion (para la prueba de musica: cuanto avanza por segundo real).
 const rateLog: number[] = [];
@@ -88,9 +92,10 @@ export function startMusicWatch(): () => void {
   const a = api();
   // Inicio de la ventana de medida: se reinicia al pausar, cambiar de pista o saltar hacia atras.
   let win: { p: number; t: number; track: number } | null = null;
+  let strikes = 0;
   const h1 = a?.RegisterForMusicPlaybackChanges?.((t) => {
     state = toState(t, state);
-    if (state?.status === PLAYING) outputLost = false; else win = null;
+    if (state?.status === PLAYING) outputLost = false; else { win = null; strikes = 0; }
     emit();
   });
   const h2 = a?.RegisterForMusicPlaybackPosition?.((raw) => {
@@ -99,13 +104,18 @@ export function startMusicWatch(): () => void {
     // Steam da la posicion en MILISEGUNDOS (prueba de musica 0.32: el contador avanzaba x1000). Antes se mostraba
     // como segundos: el contador «se aceleraba» y el detector de salida perdida pausaba la musica cada 6 s.
     const p = toSeconds(raw, state.lengthMs);
-    if (state.status !== PLAYING || !win || win.track !== state.track || p < win.p) win = { p, t: now, track: state.track };
+    if (state.status !== PLAYING || !win || win.track !== state.track || p < win.p) { win = { p, t: now, track: state.track }; strikes = 0; }
     else if (now - win.t >= RACE_WINDOW_S) {
       const dp = p - win.p, dt = now - win.t;
       rateLog.push(Math.round((dp / dt) * 100) / 100);
       if (rateLog.length > 60) rateLog.splice(0, rateLog.length - 60);
-      // Solo se anota (sin pausar): con la unidad corregida, un ritmo raro se ve en la prueba de musica.
-      if (racing(dp, dt)) crumb(`música: contador raro (x${Math.round((dp / dt) * 10) / 10})`);
+      // Ritmo raro (zip 2026-11-23: Steam perdió su salida de audio, sin stream en PipeWire, y el contador corría solo):
+      // se anota y, a la segunda ventana seguida, se pausa. Steam necesita reiniciarse para reabrir el audio.
+      if (racing(dp, dt)) {
+        strikes += 1;
+        crumb(`música: contador raro (x${Math.round((dp / dt) * 10) / 10})`);
+        if (shouldAutoPause(strikes)) { strikes = 0; pauseMusic("el contador corre mucho más rápido que el reloj (Steam sin salida de audio: reinícialo)"); }
+      } else strikes = 0;
       win = { p, t: now, track: state.track };
     }
     state = { ...state, positionS: p };

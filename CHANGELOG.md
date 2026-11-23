@@ -1,5 +1,9 @@
 # Cambios
 
+## dev.52
+
+- **Música «acelerada» sin sonido:** con tus datos del 23-11 (sin ningún stream de Steam en PipeWire; solo los canales de Bazzite en `Corked`) queda claro que Steam pierde su salida de audio y su contador corre solo. El detector de ritmo raro (más de 3× el reloj en ventanas de 6 s), que desde 0.33 solo anotaba, vuelve a **pausar la música** cuando lo ve en dos ventanas seguidas (un salto manual de la barra no lo dispara). La miga dice que hay que reiniciar Steam para que reabra el audio. [H] sin probar en el equipo.
+
 ## dev.51
 
 - `pad.log` anota siempre los combos (Steam+Y, Y→Steam, Select+Y, Steam+A); el tope de botones sueltos sube de 60 a 150 (con 60 el log se llenaba en minutos y no quedaba rastro de las pruebas).

@@ -5,7 +5,7 @@ vi.mock("@decky/ui", () => ({ findModuleExport: () => undefined, getGamepadNavig
 vi.mock("../src/panelBridge", () => ({ callPanel: vi.fn(), rpc: { state: vi.fn() } }));
 
 import { afterCalm, extendCalm, featureOn, featuresOff, inCalm, resetCalmForTest, setAllFeatures, setFeature, startCalm } from "../src/calm";
-import { racing } from "../src/music";
+import { racing, shouldAutoPause } from "../src/music";
 import { audioGone, type BzState } from "../src/network";
 
 describe("calma", () => {
@@ -51,6 +51,8 @@ describe("música sin salida de audio", () => {
     expect(racing(6, 6)).toBe(false);
     expect(racing(40, 6)).toBe(true);
     expect(racing(3, 1)).toBe(false); // un tirón (avisos de golpe) no cuenta: ventana corta
+    expect(shouldAutoPause(1)).toBe(false); // un salto manual de la barra es una sola ventana
+    expect(shouldAutoPause(2)).toBe(true);
     expect(racing(16, 6)).toBe(false); // ráfaga tras un tirón de 2 s dentro de la ventana
   });
   it("auriculares que dejan de estar conectados", () => {
