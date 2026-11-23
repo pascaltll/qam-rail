@@ -1203,6 +1203,11 @@ class Plugin:
         if ev == "qam.combo":
             self._ui()["combo_at"] = time.time()
         self._tl(ev, **data)
+        if ev == "kb.combo":
+            try:   # avisa a la interfaz (Steam + Y): ella abre o cierra el teclado grande
+                asyncio.ensure_future(decky.emit("qam_kb"))
+            except Exception:  # noqa: BLE001
+                pass
 
     async def _wd_snapshot(self):
         """Estado de gamescope y de las ventanas de la app que se ve: sin lanzar procesos (una conexión a X reutilizada)."""

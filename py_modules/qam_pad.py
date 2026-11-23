@@ -431,6 +431,8 @@ class PadRunner:
                     elif val == 1 and (self._mode_down or now < self._mode_until):
                         if code == 304 and self._mode_down:
                             self.event("qam.combo")  # Steam + A: el usuario pidió el QAM
+                        elif code == 308 and self._mode_down:
+                            self.event("kb.combo")   # Steam + Y: el usuario pidió el teclado grande
                         continue  # Steam + botón (abrir el QAM, capturas…): no es un clic para la app
                     if self._logged < 60:
                         self._logged += 1

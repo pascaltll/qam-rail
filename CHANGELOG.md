@@ -1,5 +1,10 @@
 # Cambios
 
+## dev.45
+
+- **Teclado grande con el mando: Steam + Y** abre el teclado desde cualquier app de escritorio y lo cierra si ya está abierto (el backend lo avisa con el evento `qam_kb`; no manda nada a la app). Y sola sigue siendo la barra de direcciones. Cerrar con B ya no vuelve atrás dos veces. Abrirlo al tocar un campo de texto: pendiente (hace falta saber qué campo tiene el foco; se estudia AT-SPI).
+- `cursor-xbox.sh`: la ruta de iconos ahora incluye `/run/host/user-share/icons` (la que ve el sandbox de Flatpak) y hay `--diag` para ver qué carpeta ve cada app. [H] sin verificar.
+
 ## dev.44
 
 - **Al descargar el plugin (actualizar o reiniciar Decky) se limpia la capa base de gamescope y el overlay** de las apps que abrimos; antes quedaban apuntando a una app sin dueño y Steam podía quedarse debajo con la pantalla negra. Registrado en `desktop-tag.log` («descarga del plugin»). Causa del negro sin confirmar; es la hipótesis que mejor encaja con que ocurra justo tras instalar una dev con una app abierta.

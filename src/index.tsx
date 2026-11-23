@@ -22,9 +22,9 @@ import { setTierContext } from "./powerTiers";
 import { learned } from "./menuStats";
 import { currentPalette } from "./appearance";
 import { situation } from "./situation";
-import { definePlugin, routerHook, toaster } from "@decky/api";
+import { addEventListener, definePlugin, removeEventListener, routerHook, toaster } from "@decky/api";
 import { BigKeyboardPage } from "./BigKeyboardPage";
-import { BIG_KEYBOARD_ROUTE } from "./bigKeyboard";
+import { BIG_KEYBOARD_ROUTE, toggleBigKeyboard } from "./bigKeyboard";
 import { staticClasses } from "@decky/ui";
 import { useEffect, useState } from "react";
 import { FaThLarge } from "react-icons/fa";
@@ -56,7 +56,10 @@ export default definePlugin(() => {
 
   void loadSettings().then(publish);
   let routeOn = false;
+  const onKbCombo = (): void => { toggleBigKeyboard(); };   // Steam + Y en el mando (lo avisa el backend)
+  let kbListening = false;
   whenActive(() => {
+    try { addEventListener("qam_kb", onKbCombo); kbListening = true; } catch { /* sin eventos: queda el chip «Teclado» */ }
     try { routerHook.addRoute(BIG_KEYBOARD_ROUTE, BigKeyboardPage, { exact: true }); routeOn = true; } catch { /* sin ruta: el teclado grande no se ofrece */ }
     applyRail();
     if (chan?.notice) toaster.toast({ title: `QAM Rail (${kindName(chan.me)})`, body: chan.notice });
@@ -187,6 +190,7 @@ export default definePlugin(() => {
     content: <Content />,
     icon: <FaThLarge />,
     onDismount() {
+      if (kbListening) { try { removeEventListener("qam_kb", onKbCombo); } catch { /* nada */ } }
       if (routeOn) { try { routerHook.removeRoute(BIG_KEYBOARD_ROUTE); } catch { /* nada */ } }
       cancelBoot();
       window.clearTimeout(confirmTimer);

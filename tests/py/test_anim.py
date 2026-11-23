@@ -126,6 +126,18 @@ feed("event16", BTN_SOUTH, 1); feed("event16", BTN_SOUTH, 0)
 assert [a for a in r._x.acts if a[0] == "b" and a[2]], r._x.acts
 
 
+# --- Steam + Y abre el teclado grande: avisa a la interfaz y no manda nada a la app; Y sola sigue siendo la barra de direcciones
+evs = []
+r.event = lambda ev, **d: evs.append(ev)
+r._x.acts.clear(); r._last_key.clear(); r._mode_until = 0.0
+feed("event16", 316, 1); feed("event16", 308, 1); feed("event16", 308, 0); feed("event16", 316, 0)
+assert evs == ["kb.combo"], evs
+assert not [a for a in r._x.acts if a[0] in ("b", "k")], r._x.acts
+r._mode_until = 0.0
+feed("event16", 308, 1); feed("event16", 308, 0)
+assert evs == ["kb.combo"] and [a for a in r._x.acts if a == ("k", "ctrl+l")], (evs, r._x.acts)
+
+
 # --- teclado del panel: símbolos de X, ventana de delante, teclas con nombre y errores
 assert qam_pad.keysym_for_char("a") == 0x61 and qam_pad.keysym_for_char("ñ") == 0xF1 and qam_pad.keysym_for_char("€") == 0x1000000 + 0x20AC
 assert qam_pad.LEVEL_MODS[3] == ["Shift_L", "ISO_Level3_Shift"] and "Return" in qam_pad.NAMED_KEYS
