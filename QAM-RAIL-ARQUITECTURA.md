@@ -869,6 +869,8 @@ Compartido: `~/homebrew/qam-apps` (mismo esquema de manifiestos) y la carpeta `s
 
 **Nota sobre el log.** `Sandbox: CanCreateUserNamespace() … EPERM` es un mensaje habitual del Firefox Flatpak y no implica que no arranque: lo que había visto el usuario podía ser Firefox corriendo sin ventana visible en Game Mode (gamescope solo da foco a lo lanzado por Steam). Pendiente de confirmar con `pgrep -a firefox`.
 
+**Ventana en Game Mode [H].** Con Firefox en marcha (`pgrep` [V]) no se veía: gamescope solo muestra ventanas con la propiedad X `STEAM_GAME` (cualquier valor ≠ 769 las pone encima de la principal; fuente: documentación de gamescope-session de ChimeraOS). `xprop` y `xwininfo` existen en el equipo [V]. `desktop_run` toma una foto de las ventanas de `:0` (`xwininfo -root -children`, `qam_desktop.parse_xwininfo`), y durante ~20 s pone `STEAM_GAME=1` (`xprop -id … -f STEAM_GAME 32c -set`) a las ventanas grandes (≥ 200 px) nuevas o de la misma clase que ya vimos abrir esa app (`windows_to_tag`). No se toca ninguna otra ventana (Steam no se marca).
+
 **Cajón.** `desktop_pins` (claves en `desktop-pins.json` + icono como data URL) y `desktop_pin_set`. `QamSections` añade los iconos a `AppGrid` y `AppRow` (`DeskIcon`), con el panel cerrado antes de lanzar (400 ms, igual que las demás apps).
 
 **Frontend.** `src/qamDesktop.ts`: lógica pura probada (`filterApps`, `groupApps`, `isPinned`, `noteFor`) y caché de pins (`loadPins`, 60 s). Navegación: dos filas por tarjeta, sin barras en una fila de chips.

@@ -76,6 +76,20 @@ def _t054_exec():
     assert d.clean_exec("/usr/bin/flatpak run --branch=stable --file-forwarding org.mozilla.firefox @@u %u @@") == ["/usr/bin/flatpak", "run", "--branch=stable", "org.mozilla.firefox"]
 
 
+def _t054_x():
+    txt = """
+     0x38000aa "Mozilla Firefox": ("Navigator" "firefox")  1920x1080+0+0  +0+0
+     0x380004e "Firefox": ()  10x10+-100+-100  +-100+-100
+     0x380002c "Firefox": ("Firefox" "firefox")  364x359+1369+28  +1369+28
+     0x3800001 "Firefox": ("org.mozilla.firefox" "Firefox")  10x10+10+10  +10+10
+     0x3800010 (has no name): ()  300x300+0+0  +0+0
+"""
+    w = d.parse_xwininfo(txt)
+    assert len(w) == 5 and w[0]["classes"] == ["Navigator", "firefox"] and w[0]["w"] == 1920
+    assert [x["id"] for x in d.windows_to_tag(w, {"0x38000aa"}, set())] == ["0x380002c", "0x3800010"]
+    assert [x["id"] for x in d.windows_to_tag(w, {"0x38000aa", "0x380002c", "0x3800010"}, {"firefox"})] == ["0x38000aa", "0x380002c"]
+
+
 def _t054():
     import qam_desktop as D
     w = lambda c: "/usr/bin/" + c
@@ -108,3 +122,4 @@ def _t054():
     print("0.54 OK")
 _t054()
 _t054_exec()
+_t054_x()

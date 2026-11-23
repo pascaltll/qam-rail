@@ -600,6 +600,18 @@ class Plugin:
             pass
         return prefix, seen
 
+    def _spawn(self, coro) -> None:
+        t = asyncio.ensure_future(coro)
+        self._bg_tasks = getattr(self, "_bg_tasks", set())
+        self._bg_tasks.add(t)
+        t.add_done_callback(self._bg_tasks.discard)
+
+    @property
+    def _desk_classes(self) -> dict:
+        if not hasattr(self, "_desk_classes_v"):
+            self._desk_classes_v = {}
+        return self._desk_classes_v
+
     @staticmethod
     def _desk_unit(key: str) -> str:
         import hashlib
@@ -630,6 +642,35 @@ class Plugin:
         code, out = await self._systemctl_user("stop", unit)
         return {"ok": code == 0, "error": out.strip().splitlines()[-1][:120] if code and out.strip() else None}
 
+    async def _x_windows(self, prefix: list, display: str) -> list:
+        if qam_desktop is None:
+            return []
+        try:
+            proc = await asyncio.create_subprocess_exec(*prefix, "env", f"DISPLAY={display}", "xwininfo", "-root", "-children", env=self._user_env(),
+                                                        stdin=asyncio.subprocess.DEVNULL, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL)
+            out, _ = await asyncio.wait_for(proc.communicate(), 3)
+        except (OSError, asyncio.TimeoutError):
+            return []
+        return qam_desktop.parse_xwininfo(out.decode("utf-8", "replace"))
+
+    async def _desk_tag(self, key: str, prefix: list, display: str, before: set) -> None:
+        """Game Mode (gamescope) solo muestra ventanas con la propiedad STEAM_GAME: se la ponemos a las ventanas nuevas de la app durante ~20 s."""
+        known = self._desk_classes.setdefault(str(key), set())
+        done: set = set()
+        for _ in range(28):
+            await asyncio.sleep(0.7)
+            for w in qam_desktop.windows_to_tag(await self._x_windows(prefix, display), before, known):
+                if w["id"] in done:
+                    continue
+                done.add(w["id"])
+                known.update(c for c in w["classes"] if c)
+                try:
+                    p = await asyncio.create_subprocess_exec(*prefix, "env", f"DISPLAY={display}", "xprop", "-id", w["id"], "-f", "STEAM_GAME", "32c", "-set", "STEAM_GAME", "1",
+                                                             env=self._user_env(), stdin=asyncio.subprocess.DEVNULL, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL)
+                    await asyncio.wait_for(p.wait(), 3)
+                except (OSError, asyncio.TimeoutError):
+                    pass
+
     async def desktop_run(self, key: str) -> dict:
         """Abre la app de escritorio dentro de la sesión del usuario (`systemd-run --user`: entorno limpio, sin los límites del servicio de Decky,
         que hacían fallar el sandbox de Firefox con «CanCreateUserNamespace EPERM»). Espera 1,5 s: si se cierra con error devuelve el final de su salida."""
@@ -642,9 +683,12 @@ class Plugin:
             os.chmod(log, 0o666)  # lo escribe el gestor del usuario
         except OSError:
             pass
-        if str(key) in (await self.desktop_running()).get("keys", []):
-            return {"ok": True, "already": True}
         prefix, seen = await self._user_session()
+        display = seen.get("DISPLAY") or ":0"
+        before = {w["id"] for w in await self._x_windows(prefix, display)}
+        if str(key) in (await self.desktop_running()).get("keys", []):
+            self._spawn(self._desk_tag(key, prefix, display, before))  # ya abierta: se vuelve a mostrar su ventana
+            return {"ok": True, "already": True}
         sets = []
         if "DISPLAY" not in seen:
             sets.append("--setenv=DISPLAY=:0")
@@ -656,6 +700,7 @@ class Plugin:
                                                         stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.PIPE, start_new_session=True)
         except OSError as e:
             return {"ok": False, "error": str(e)[:120]}
+        self._spawn(self._desk_tag(key, prefix, display, before))
         try:
             await asyncio.wait_for(proc.wait(), 1.5)
         except asyncio.TimeoutError:

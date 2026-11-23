@@ -249,3 +249,29 @@ def clean_registry(raw) -> dict:
             continue
         out[k] = {"appid": int(appid), "name": str(v.get("name", ""))[:120], "source": str(v.get("source", ""))[:20], "added": int(v.get("added") or 0)}
     return out
+
+
+_XWIN = re.compile(r'^\s*(0x[0-9a-fA-F]+)\s+(?:"(.*?)"|\(has no name\)):\s*\((.*?)\)\s+(\d+)x(\d+)\+(-?\d+)\+(-?\d+)')
+
+
+def parse_xwininfo(text: str) -> list:
+    """Salida de `xwininfo -root -children` → ventanas {id, title, classes, w, h}. Para encontrar las ventanas nuevas de una app."""
+    out = []
+    for line in (text or "").splitlines():
+        m = _XWIN.match(line)
+        if not m:
+            continue
+        out.append({"id": m.group(1), "title": m.group(2) or "", "classes": re.findall(r'"([^"]*)"', m.group(3)), "w": int(m.group(4)), "h": int(m.group(5))})
+    return out
+
+
+def windows_to_tag(now: list, before_ids: set, known_classes: set, min_size: int = 200) -> list:
+    """Ventanas a las que poner STEAM_GAME: grandes y (nuevas, o de una clase que ya vimos abrir esta app)."""
+    pick = []
+    for w in now:
+        if w["w"] < min_size or w["h"] < min_size:
+            continue
+        cls = {c for c in w["classes"] if c}
+        if w["id"] not in before_ids or (cls & known_classes):
+            pick.append(w)
+    return pick
