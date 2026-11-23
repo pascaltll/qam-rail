@@ -13,6 +13,7 @@ export interface QamApp {
   update?: { provider: string; repo: string; asset?: string; channel?: string } | null;
   has_previous?: boolean; previous_version?: string | null; bad_versions?: string[]; last_error?: string | null; installed_at?: number | null;
   check?: { errors: string[]; warnings: string[] };
+  controls?: Partial<Record<"show" | "minimize" | "close" | "kill", string>>;
 }
 export interface FoundZip { zip: string; mtime: number; size: number; id: string; name: string; version: string | null }
 
@@ -97,6 +98,7 @@ export async function loadDrawerApps(force = false): Promise<{ apps: QamApp[]; i
 export const drawerCached = () => cache;
 export const appsAddFolder = callable<[path: string], { ok: boolean; app?: QamApp; error?: string }>("apps_add_folder");
 export const appsUninstall = callable<[id: string, purgeData?: boolean], { ok: boolean; removed: boolean; appid: number | null; purged?: string[] }>("apps_uninstall");
+export const appsControl = callable<[id: string, action: string], { ok: boolean; error?: string }>("apps_control");
 export const appsRun = callable<[id: string, args: string], { ok: boolean }>("apps_run");
 const appsSetAppid = callable<[id: string, appid: number], boolean>("apps_set_appid");
 const appsArt = callable<[id: string], Record<string, { b64: string; type: "png" | "jpg"; path: string }>>("apps_art");

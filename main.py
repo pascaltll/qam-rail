@@ -642,34 +642,56 @@ class Plugin:
         code, out = await self._systemctl_user("stop", unit)
         return {"ok": code == 0, "error": out.strip().splitlines()[-1][:120] if code and out.strip() else None}
 
+    async def _x_run(self, prefix: list, display: str, *cmd: str) -> tuple[int, str, str]:
+        env_extra = [f"DISPLAY={display}"]
+        xa = getattr(self, "_xauth", None)
+        if xa:
+            env_extra.append(f"XAUTHORITY={xa}")
+        try:
+            proc = await asyncio.create_subprocess_exec(*prefix, "env", *env_extra, *cmd, env=self._user_env(), stdin=asyncio.subprocess.DEVNULL,
+                                                        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+            out, err = await asyncio.wait_for(proc.communicate(), 3)
+            return proc.returncode or 0, out.decode("utf-8", "replace"), err.decode("utf-8", "replace")
+        except (OSError, asyncio.TimeoutError) as e:
+            return 127, "", str(e)[:120]
+
+    def _tag_log(self, text: str) -> None:
+        try:
+            with open(_path("desktop-tag.log"), "a", encoding="utf-8") as fh:
+                fh.write(time.strftime("%H:%M:%S ") + text + "\n")
+            if os.path.getsize(_path("desktop-tag.log")) > 60_000:
+                os.replace(_path("desktop-tag.log"), _path("desktop-tag.log.old"))
+        except OSError:
+            pass
+
     async def _x_windows(self, prefix: list, display: str) -> list:
         if qam_desktop is None:
             return []
-        try:
-            proc = await asyncio.create_subprocess_exec(*prefix, "env", f"DISPLAY={display}", "xwininfo", "-root", "-children", env=self._user_env(),
-                                                        stdin=asyncio.subprocess.DEVNULL, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL)
-            out, _ = await asyncio.wait_for(proc.communicate(), 3)
-        except (OSError, asyncio.TimeoutError):
+        rc, out, err = await self._x_run(prefix, display, "xwininfo", "-root", "-children")
+        if rc != 0:
+            self._tag_log(f"xwininfo falló (código {rc}): {err.strip()[:160]}")
             return []
-        return qam_desktop.parse_xwininfo(out.decode("utf-8", "replace"))
+        return qam_desktop.parse_xwininfo(out)
 
     async def _desk_tag(self, key: str, prefix: list, display: str, before: set) -> None:
         """Game Mode (gamescope) solo muestra ventanas con la propiedad STEAM_GAME: se la ponemos a las ventanas nuevas de la app durante ~20 s."""
         known = self._desk_classes.setdefault(str(key), set())
         done: set = set()
-        for _ in range(28):
+        self._tag_log(f"== {key}: ventanas antes {len(before)}, clases conocidas {sorted(known)}")
+        for i in range(28):
             await asyncio.sleep(0.7)
-            for w in qam_desktop.windows_to_tag(await self._x_windows(prefix, display), before, known):
+            wins = await self._x_windows(prefix, display)
+            pick = qam_desktop.windows_to_tag(wins, before, known)
+            if i in (0, 5, 13, 27):
+                self._tag_log(f"  intento {i}: {len(wins)} ventanas, a marcar {[w['id'] for w in pick]}")
+            for w in pick:
                 if w["id"] in done:
                     continue
                 done.add(w["id"])
                 known.update(c for c in w["classes"] if c)
-                try:
-                    p = await asyncio.create_subprocess_exec(*prefix, "env", f"DISPLAY={display}", "xprop", "-id", w["id"], "-f", "STEAM_GAME", "32c", "-set", "STEAM_GAME", "1",
-                                                             env=self._user_env(), stdin=asyncio.subprocess.DEVNULL, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL)
-                    await asyncio.wait_for(p.wait(), 3)
-                except (OSError, asyncio.TimeoutError):
-                    pass
+                rc, _o, err = await self._x_run(prefix, display, "xprop", "-id", w["id"], "-f", "STEAM_GAME", "32c", "-set", "STEAM_GAME", "1")
+                _rc2, chk, _e = await self._x_run(prefix, display, "xprop", "-id", w["id"], "STEAM_GAME")
+                self._tag_log(f"  {w['id']} {w['classes']} {w['w']}x{w['h']}: xprop código {rc} {err.strip()[:100]} → {chk.strip()[:60]}")
 
     async def desktop_minimize(self, key: str) -> dict:
         """Minimizar: quita STEAM_GAME a las ventanas de la app; gamescope deja de mostrarlas y vuelve Steam. La app sigue abierta («Abrir» la vuelve a mostrar)."""
@@ -682,13 +704,9 @@ class Plugin:
         for w in qam_desktop.windows_to_tag(await self._x_windows(prefix, display), set(), known):
             if not known:
                 break
-            try:
-                p = await asyncio.create_subprocess_exec(*prefix, "env", f"DISPLAY={display}", "xprop", "-id", w["id"], "-remove", "STEAM_GAME", env=self._user_env(),
-                                                         stdin=asyncio.subprocess.DEVNULL, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL)
-                await asyncio.wait_for(p.wait(), 3)
-                n += 1
-            except (OSError, asyncio.TimeoutError):
-                pass
+            rc, _o, err = await self._x_run(prefix, display, "xprop", "-id", w["id"], "-remove", "STEAM_GAME")
+            self._tag_log(f"minimizar {w['id']}: código {rc} {err.strip()[:80]}")
+            n += 1 if rc == 0 else 0
         return {"ok": n > 0, "windows": n, "error": None if n else "no encontré su ventana"}
 
     async def desktop_kill(self, key: str) -> dict:
@@ -712,6 +730,7 @@ class Plugin:
             pass
         prefix, seen = await self._user_session()
         display = seen.get("DISPLAY") or ":0"
+        self._xauth = seen.get("XAUTHORITY") or None
         before = {w["id"] for w in await self._x_windows(prefix, display)}
         if str(key) in (await self.desktop_running()).get("keys", []):
             self._spawn(self._desk_tag(key, prefix, display, before))  # ya abierta: se vuelve a mostrar su ventana
@@ -1176,6 +1195,22 @@ class Plugin:
         cmd = ["bash", os.path.join(app["path"], app["launch"]), *shlex.split(str(args or ""))]
         await asyncio.create_subprocess_exec(*cmd, cwd=app["path"], env=self._user_env(), stdin=asyncio.subprocess.DEVNULL,
                                              stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL, start_new_session=True)
+        return {"ok": True}
+
+    async def apps_control(self, app_id: str, action: str) -> dict:
+        """Menú de la app de QAM: ejecuta la orden de su lanzador para mostrar / minimizar / cerrar / forzar cierre (según su manifiesto)."""
+        data = await self.apps_list()
+        app = next((a for a in data["apps"] if a["id"] == app_id), None)
+        args = ((app or {}).get("controls") or {}).get(action)
+        if not app or not app.get("launch") or not args:
+            return {"ok": False, "error": "esa app no ofrece esa opción"}
+        import shlex
+        cmd = ["bash", os.path.join(app["path"], app["launch"]), *shlex.split(args)]
+        try:
+            await asyncio.create_subprocess_exec(*cmd, cwd=app["path"], env=self._user_env(), stdin=asyncio.subprocess.DEVNULL,
+                                                 stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL, start_new_session=True)
+        except OSError as e:
+            return {"ok": False, "error": str(e)[:100]}
         return {"ok": True}
 
     async def keyboard_url(self, close: bool = False) -> dict:

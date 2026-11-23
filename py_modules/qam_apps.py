@@ -164,7 +164,29 @@ def check_manifest(man: dict, qam_version: str | None = None, home: str | None =
     return {"errors": errors, "warnings": warnings}
 
 
+CONTROL_KEYS = ("show", "minimize", "close", "kill")
+CONTROL_RE = re.compile(r"^[A-Za-z0-9 _.-]{1,24}$")
+
+
+def controls_for(man: dict) -> dict:
+    """Órdenes del lanzador para el menú de la app (mostrar, minimizar, cerrar, forzar cierre): del manifiesto (`controls`)
+    o, para MiniTube, las suyas (`open`, `mini`, `close`, `kill`). Solo texto corto sin símbolos: se pasan como argumentos del lanzador."""
+    raw = man.get("controls")
+    out = {}
+    if isinstance(raw, dict):
+        out = {k: str(v) for k, v in raw.items() if k in CONTROL_KEYS and isinstance(v, str) and CONTROL_RE.match(v)}
+    elif "ytmini" in str(man.get("id", "")).lower() or str(man.get("name", "")).strip().lower() == "minitube":
+        out = {"show": "open", "minimize": "mini", "close": "close", "kill": "kill"}
+    return out
+
+
 def read_manifest(root: str) -> dict:
+    man = _read_manifest(root)
+    man["controls"] = controls_for(man)
+    return man
+
+
+def _read_manifest(root: str) -> dict:
     path = os.path.join(root, MANIFEST)
     base = guess_manifest(root)
     base.update({"schema": 0, "group": None, "description": None, "uninstall": None, "data_dirs": [], "update": None, "status": None, "min_qam_rail": None})

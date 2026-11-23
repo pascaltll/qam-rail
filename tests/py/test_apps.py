@@ -200,7 +200,13 @@ def test_flow():
     with tempfile.TemporaryDirectory() as t:
         asyncio.run(flow(t))
 
+def test_controls():
+    assert qam_apps.controls_for({"id": "ytmini"}) == {"show": "open", "minimize": "mini", "close": "close", "kill": "kill"}
+    assert qam_apps.controls_for({"id": "otra"}) == {}
+    assert qam_apps.controls_for({"id": "otra", "controls": {"close": "stop", "kill": "a;b", "x": "y"}}) == {"close": "stop"}
+
+
 if __name__ == "__main__":
     test_versions(); test_verify(); test_manifest_check(); test_defaults_schema1(); test_zip_hostile()
-    test_stage_commit_previous_rollback(); test_flow()
+    test_stage_commit_previous_rollback(); test_flow(); test_controls()
     print("TODO OK")

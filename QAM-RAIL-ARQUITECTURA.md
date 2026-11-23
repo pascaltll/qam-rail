@@ -873,6 +873,12 @@ Compartido: `~/homebrew/qam-apps` (mismo esquema de manifiestos) y la carpeta `s
 
 **Menú de la app.** `QamDeskMenu.tsx`, en línea sobre la rejilla (sin `position: fixed`). Se abre con pulsación larga (650 ms; el clic posterior se ignora) o con `onSecondaryButton` (X). Opciones: Mostrar (= `desktop_run`, re-etiqueta la ventana), Minimizar (`desktop_minimize`: `xprop -remove STEAM_GAME` a las ventanas de las clases conocidas de esa app; gamescope deja de mostrarlas), Cerrar (`systemctl --user stop`), Forzar cierre (`kill --signal=SIGKILL` + `stop`). Y está reservada para la ayuda.
 
+**Menú en apps de QAM.** `qam_apps.controls_for`: `controls` del manifiesto (claves `show|minimize|close|kill`, valores cortos sin símbolos) o, para MiniTube, `open|mini|close|kill`. `apps_control(id, acción)` ejecuta `bash launcher.sh <args>` como las acciones rápidas. El mismo `DeskMenu` sirve a ambas clases (`app.qam`).
+
+**Cómo se ve MiniTube sobre todo (aprendido).** MiniTube no es una ventana X: crea una vista de Steam (`BrowserView` con `DFL` de Decky, controlada por CDP en `localhost:8080`), que Steam compone dentro de su propia interfaz, por encima del juego y por debajo del QAM. Una ventana X de un Flatpak solo puede mostrarse en gamescope como ventana «principal» (`STEAM_GAME` ≠ 769, tapa lo demás) y no como tarjeta flotante. Para algo flotante, la vía es una vista de Steam (MiniTube, el navegador propio de Hub). `GAMESCOPE_EXTERNAL_OVERLAY` existe en gamescope (lo usa mangoapp) pero está sin documentar y sin probar aquí.
+
+**Diagnóstico.** `desktop-tag.log` (en `settings/qam-rail-dev/`): ventanas vistas, a marcar y resultado de `xprop` (con comprobación de que `STEAM_GAME` quedó puesta).
+
 **Cajón.** `desktop_pins` (claves en `desktop-pins.json` + icono como data URL) y `desktop_pin_set`. `QamSections` añade los iconos a `AppGrid` y `AppRow` (`DeskIcon`), con el panel cerrado antes de lanzar (400 ms, igual que las demás apps).
 
 **Frontend.** `src/qamDesktop.ts`: lógica pura probada (`filterApps`, `groupApps`, `isPinned`, `noteFor`) y caché de pins (`loadPins`, 60 s). Navegación: dos filas por tarjeta, sin barras en una fila de chips.
