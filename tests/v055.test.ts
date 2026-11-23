@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { solid } from "../src/BigKeyboardPage";
+import { solid } from "../src/color";
 import { missing } from "../src/deskIcons";
 
 describe("0.54.0-dev.55", () => {
