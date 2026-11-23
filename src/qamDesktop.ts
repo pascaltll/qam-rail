@@ -16,6 +16,8 @@ export interface Pin { key: string; name: string; source: string; icon: string |
 
 export const desktopPlan = callable<[key: string], DesktopPlan>("desktop_plan");
 export const desktopRun = callable<[key: string], { ok: boolean; error?: string }>("desktop_run");
+export const desktopRunning = callable<[], { keys: string[] }>("desktop_running");
+export const desktopStop = callable<[key: string], { ok: boolean; error?: string | null }>("desktop_stop");
 export const desktopPins = callable<[], { pins: Pin[] }>("desktop_pins");
 export const desktopPinSet = callable<[key: string, on: boolean], { ok: boolean; error?: string }>("desktop_pin_set");
 
@@ -69,3 +71,12 @@ export async function openDesktopApp(key: string, name: string): Promise<{ ok: b
   crumb(`abrir app de escritorio: ${name}`);
   try { return await desktopRun(key); } catch (err) { return { ok: false, error: String(err).slice(0, 80) }; }
 }
+
+/** Cierra una app que abrió QAM Rail. */
+export async function closeDesktopApp(key: string, name: string): Promise<{ ok: boolean; error?: string | null }> {
+  crumb(`cerrar app de escritorio: ${name}`);
+  try { return await desktopStop(key); } catch (err) { return { ok: false, error: String(err).slice(0, 80) }; }
+}
+
+/** Puro: ¿está abierta? */
+export const isRunning = (key: string, running: string[]): boolean => running.includes(key);

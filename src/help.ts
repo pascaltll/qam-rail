@@ -11,7 +11,7 @@ export const HELP: Record<string, HelpEntry> = {
   ] },
   steam: { title: "Apps del equipo", text: [
     "Aquí salen las apps de escritorio instaladas (Flatpak, AppImage y del sistema): navegadores, Discord, emuladores…",
-    "«Abrir» la lanza. «Agregar a QAM» la pone en Apps (y en Inicio) de este panel para abrirla desde su menú; no se crea nada en Steam.",
+    "«Abrir» la lanza y pasa a «Cerrar» mientras está abierta (cierra la app y todos sus procesos). «Agregar a QAM» la pone en Apps (y en Inicio) de este panel para abrirla desde su menú; no se crea nada en Steam.",
     "Los navegadores basados en Chromium se abren a pantalla completa. Firefox no tiene una opción fiable para eso.",
     "Si una app no abre, el aviso dice por qué (lo último que escribió al cerrarse).",
   ] },

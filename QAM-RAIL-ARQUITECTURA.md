@@ -865,6 +865,10 @@ Compartido: `~/homebrew/qam-apps` (mismo esquema de manifiestos) y la carpeta `s
 
 **Lanzamiento.** Decky corre como root y su servicio tiene límites heredados: lanzar con `runuser` hacía que Firefox (Flatpak) fallara con `Sandbox: CanCreateUserNamespace() clone() failure: EPERM` [V, `desktop-run.log` de Carlos]. `desktop_run` lanza ahora con `runuser -u <usuario> -- env XDG_RUNTIME_DIR DBUS_SESSION_BUS_ADDRESS systemd-run --user --wait --collect -p StandardOutput=file:<log> …`, es decir, dentro del gestor `systemd --user` (entorno limpio). `DISPLAY=:0` solo si el gestor no lo tiene. Espera 1,5 s: si el cliente termina con error devuelve la última línea del log; si sigue, la app está en marcha. Chromium lleva `--start-fullscreen`; del `Exec` de Flatpak se quitan `@@u`, `@@` y `--file-forwarding`.
 
+**Cerrar.** Cada app corre en `qam-desk-<sha1(clave)[:12]>.service` (`--unit=`). `desktop_running` lista las activas (`systemctl --user list-units 'qam-desk-*'`) y `desktop_stop` hace `systemctl --user stop` (mata todo el cgroup, incluidos los procesos hijos de Flatpak). Abrir una ya abierta devuelve `already`.
+
+**Nota sobre el log.** `Sandbox: CanCreateUserNamespace() … EPERM` es un mensaje habitual del Firefox Flatpak y no implica que no arranque: lo que había visto el usuario podía ser Firefox corriendo sin ventana visible en Game Mode (gamescope solo da foco a lo lanzado por Steam). Pendiente de confirmar con `pgrep -a firefox`.
+
 **Cajón.** `desktop_pins` (claves en `desktop-pins.json` + icono como data URL) y `desktop_pin_set`. `QamSections` añade los iconos a `AppGrid` y `AppRow` (`DeskIcon`), con el panel cerrado antes de lanzar (400 ms, igual que las demás apps).
 
 **Frontend.** `src/qamDesktop.ts`: lógica pura probada (`filterApps`, `groupApps`, `isPinned`, `noteFor`) y caché de pins (`loadPins`, 60 s). Navegación: dos filas por tarjeta, sin barras en una fila de chips.

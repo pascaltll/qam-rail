@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 vi.mock("@decky/api", () => ({ callable: () => async () => ({ ok: true }) }));
 
 import { HELP } from "../src/help";
-import { filterApps, groupApps, isPinned, noteFor, sourceLabel, type DesktopApp } from "../src/qamDesktop";
+import { isRunning, filterApps, groupApps, isPinned, noteFor, sourceLabel, type DesktopApp } from "../src/qamDesktop";
 
 const app = (name: string, source: DesktopApp["source"] = "flatpak", group = "Internet"): DesktopApp => ({ key: `${source}:${name}`, name, source, exec: [name], icon: null, group, desktop: null });
 
@@ -30,5 +30,9 @@ describe("0.54 · apps de escritorio", () => {
   });
   it("hay ayuda «steam»", () => {
     expect(HELP.steam.text.join(" ")).toContain("Agregar a QAM");
+  });
+  it("abierta o no", () => {
+    expect(isRunning("a", ["a", "b"])).toBe(true);
+    expect(isRunning("c", ["a"])).toBe(false);
   });
 });

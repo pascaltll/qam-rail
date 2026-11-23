@@ -600,6 +600,36 @@ class Plugin:
             pass
         return prefix, seen
 
+    @staticmethod
+    def _desk_unit(key: str) -> str:
+        import hashlib
+        return "qam-desk-" + hashlib.sha1(str(key).encode()).hexdigest()[:12]
+
+    async def _systemctl_user(self, *args: str) -> tuple[int, str]:
+        prefix, _ = await self._user_session()
+        try:
+            proc = await asyncio.create_subprocess_exec(*prefix, "systemctl", "--user", *args, env=self._user_env(), stdin=asyncio.subprocess.DEVNULL,
+                                                        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT)
+            out, _ = await asyncio.wait_for(proc.communicate(), 8)
+            return proc.returncode or 0, out.decode("utf-8", "replace")
+        except (OSError, asyncio.TimeoutError):
+            return 1, ""
+
+    async def desktop_running(self) -> dict:
+        """Claves de las apps de escritorio que QAM Rail abrió y siguen en marcha."""
+        code, out = await self._systemctl_user("list-units", "qam-desk-*", "--state=active,activating", "--plain", "--no-legend", "--no-pager")
+        units = {ln.split()[0].removesuffix(".service") for ln in out.splitlines() if ln.strip() and ln.split()[0].startswith("qam-desk-")} if code == 0 else set()
+        if not units:
+            return {"keys": []}
+        data = await self.desktop_scan(False)
+        return {"keys": [a["key"] for a in data.get("apps", []) if self._desk_unit(a.get("key", "")) in units]}
+
+    async def desktop_stop(self, key: str) -> dict:
+        """Cierra la app que abrió QAM Rail (para su unidad: termina todos sus procesos)."""
+        unit = self._desk_unit(key) + ".service"
+        code, out = await self._systemctl_user("stop", unit)
+        return {"ok": code == 0, "error": out.strip().splitlines()[-1][:120] if code and out.strip() else None}
+
     async def desktop_run(self, key: str) -> dict:
         """Abre la app de escritorio dentro de la sesión del usuario (`systemd-run --user`: entorno limpio, sin los límites del servicio de Decky,
         que hacían fallar el sandbox de Firefox con «CanCreateUserNamespace EPERM»). Espera 1,5 s: si se cierra con error devuelve el final de su salida."""
@@ -612,12 +642,14 @@ class Plugin:
             os.chmod(log, 0o666)  # lo escribe el gestor del usuario
         except OSError:
             pass
+        if str(key) in (await self.desktop_running()).get("keys", []):
+            return {"ok": True, "already": True}
         prefix, seen = await self._user_session()
         sets = []
         if "DISPLAY" not in seen:
             sets.append("--setenv=DISPLAY=:0")
         cwd = pl["dir"] if os.path.isdir(pl["dir"]) else _home()
-        cmd = [*prefix, "systemd-run", "--user", "--wait", "--collect", "--quiet", f"--working-directory={cwd}",
+        cmd = [*prefix, "systemd-run", "--user", "--wait", "--collect", "--quiet", f"--unit={self._desk_unit(key)}", f"--working-directory={cwd}",
                "-p", f"StandardOutput=file:{log}", "-p", f"StandardError=file:{log}", *sets, "--", *pl["argv"]]
         try:
             proc = await asyncio.create_subprocess_exec(*cmd, env=self._user_env(), stdin=asyncio.subprocess.DEVNULL,

@@ -5,6 +5,7 @@
 Apps › pestaña «Steam»: apps de escritorio del equipo (Flatpak, AppImage, sistema).
 
 - «Abrir» lanza la app dentro de la **sesión del usuario** con `systemd-run --user` (Decky corre como root y su servicio hacía fallar el sandbox de Firefox: «CanCreateUserNamespace EPERM»; el log real de Carlos) y espera 1,5 s; si se cierra con error, el aviso dice por qué (última línea de su salida, `desktop-run.log`).
+- Cada app se abre en su propia unidad (`qam-desk-<hash>`): «Abrir» pasa a «Cerrar» mientras está abierta (`desktop_running`, `desktop_stop`; se refresca cada 6 s con la pestaña abierta).
 - «Agregar a QAM» pone la app en Apps (y en la fila de Inicio) de este panel, con su icono, y se abre desde ahí. **No se crea nada en Steam.** `desktop-pins.json`.
 - Flatpak: se quitan las marcas `@@u`/`@@`/`--file-forwarding` del `Exec` (sin archivos no hacen falta).
 - Navegadores Chromium con `--start-fullscreen`; Firefox no (no hay opción fiable).

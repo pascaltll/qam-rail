@@ -4,10 +4,11 @@ import { Focusable } from "@decky/ui";
 import { useEffect, useMemo, useState, type FC } from "react";
 
 import {
-  desktopScan, filterApps, groupApps, isPinned, loadPins, noteFor, openDesktopApp, setPinned, sourceLabel,
+  closeDesktopApp, desktopRunning, desktopScan, filterApps, isRunning, groupApps, isPinned, loadPins, noteFor, openDesktopApp, setPinned, sourceLabel,
   type DesktopApp, type Pin,
 } from "./qamDesktop";
 import { Card, Label, small } from "./QamSections";
+import { tickEvery } from "./ticker";
 import { COLORS, Chip, ICONS2, Keep, Row, Segments, colorFor } from "./ui";
 
 type Src = "all" | "flatpak" | "appimage" | "system";
@@ -15,6 +16,8 @@ type Src = "all" | "flatpak" | "appimage" | "system";
 export const QamDesktopApps: FC<{ notify: (t: string) => void; after?: () => void }> = ({ notify, after }) => {
   const [apps, setApps] = useState<DesktopApp[] | null>(null);
   const [pins, setPins] = useState<Pin[]>([]);
+  const [running, setRunning] = useState<string[]>([]);
+  const refreshRunning = () => void desktopRunning().then((r) => setRunning(Array.isArray(r?.keys) ? r.keys : []), () => null);
   const [src, setSrc] = useState<Src>("all");
   const [busy, setBusy] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -23,7 +26,7 @@ export const QamDesktopApps: FC<{ notify: (t: string) => void; after?: () => voi
     void desktopScan(force).then((d) => { setApps(Array.isArray(d?.apps) ? d.apps : []); setErr(d?.ok === false ? d.error ?? "no se pudo leer" : null); }, () => { setApps([]); setErr("no se pudo leer"); });
     void loadPins(true).then(setPins, () => null);
   };
-  useEffect(() => { load(false); }, []);
+  useEffect(() => { load(false); refreshRunning(); return tickEvery(refreshRunning, 6000, { name: "desktop-running" }); }, []);
 
   const shown = useMemo(() => filterApps((apps ?? []).filter((a) => src === "all" || a.source === src), ""), [apps, src]);
   const groups = useMemo(() => groupApps(shown), [shown]);
@@ -34,12 +37,17 @@ export const QamDesktopApps: FC<{ notify: (t: string) => void; after?: () => voi
     try { const m = await fn(); if (m) notify(m); } catch (e) { notify(`Error: ${String(e).slice(0, 80)}`); }
     setBusy(null);
     void loadPins().then(setPins, () => null);
+    window.setTimeout(refreshRunning, 1200);
   };
   const open = (a: DesktopApp) => act(a, async () => {
     const r = await openDesktopApp(a.key, a.name);
     if (!r.ok) return `No se pudo abrir ${a.name}: ${r.error ?? "?"}`;
     after?.();
     return `Abriendo ${a.name}`;
+  });
+  const close = (a: DesktopApp) => act(a, async () => {
+    const r = await closeDesktopApp(a.key, a.name);
+    return r.ok ? `${a.name} cerrada` : `No se pudo cerrar ${a.name}: ${r.error ?? "?"}`;
   });
   const toggle = (a: DesktopApp) => act(a, async () => {
     const on = !isPinned(a.key, pins);
@@ -67,11 +75,13 @@ export const QamDesktopApps: FC<{ notify: (t: string) => void; after?: () => voi
                     <div style={{ width: 32, height: 32, borderRadius: 10, background: colorFor(a.name), display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, fontWeight: 800, color: "#fff", flexShrink: 0 }}>{a.name.slice(0, 1).toUpperCase()}</div>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontSize: 14, fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{a.name}</div>
-                      <div style={{ ...small, fontSize: 11 }}>{noteFor(a, pinned)}</div>
+                      <div style={{ ...small, fontSize: 11 }}>{noteFor(a, pinned) + (isRunning(a.key, running) ? " · abierta" : "")}</div>
                     </div>
                   </div>
                   <Row gap={6}>
-                    <Chip compact active icon={ICONS2.play} onClick={() => void open(a)}>Abrir</Chip>
+                    {isRunning(a.key, running)
+                      ? <Chip compact active icon={ICONS2.trash} onClick={() => void close(a)}>{busy === a.key ? "…" : "Cerrar"}</Chip>
+                      : <Chip compact active icon={ICONS2.play} onClick={() => void open(a)}>Abrir</Chip>}
                     <Chip compact active={pinned} icon={pinned ? ICONS2.trash : ICONS2.plus} onClick={() => void toggle(a)}>{busy === a.key ? "…" : pinned ? "Quitar de QAM" : "Agregar a QAM"}</Chip>
                   </Row>
                 </Focusable>
