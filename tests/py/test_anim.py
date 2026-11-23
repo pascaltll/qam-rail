@@ -136,6 +136,12 @@ assert not [a for a in r._x.acts if a[0] in ("b", "k")], r._x.acts
 r._mode_until = 0.0
 feed("event16", 308, 1); feed("event16", 308, 0)
 assert evs == ["kb.combo"] and [a for a in r._x.acts if a == ("k", "ctrl+l")], (evs, r._x.acts)
+# Steam avisa de su botón DESPUÉS de la Y (visto en el equipo: «308 pulsado, 308 soltado, 316 pulsado»): también cuenta como Steam + Y
+feed("event16", 316, 1); feed("event16", 316, 0)
+assert evs == ["kb.combo", "kb.combo"], evs
+feed("event16", 316, 1); feed("event16", 316, 0)   # sin Y reciente no hay combo
+assert evs == ["kb.combo", "kb.combo"], evs
+assert qam_pad.KEYS["LB"] == "ctrl+Prior" and qam_pad.KEYS["RB"] == "ctrl+Next"
 
 
 # --- teclado del panel: símbolos de X, ventana de delante, teclas con nombre y errores

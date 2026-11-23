@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Genera el tema de cursor "qam-xbox" (gota invertida blanca con borde oscuro y la punta arriba a la izquierda, como el puntero de la Xbox) en formato Xcursor.
+"""Genera el tema de cursor "qam-xbox" (gota hueca de trazo blanco con un anillo y un triángulo, punta arriba a la izquierda, como el puntero de la Xbox) en formato Xcursor.
 Uso: cursor_xbox.py DESTINO [--tam 32]   → crea DESTINO/qam-xbox/{index.theme,cursors/*}. Solo biblioteca estándar."""
 import math
 import os
@@ -7,7 +7,7 @@ import struct
 import sys
 
 NAME = "qam-xbox"
-VERSION = 2  # súbelo cuando cambie el dibujo: el plugin regenera el tema si el guardado es de otra versión
+VERSION = 3  # súbelo cuando cambie el dibujo: el plugin regenera el tema si el guardado es de otra versión
 SIZES = (24, 32, 48, 64)
 # nombres que usan los toolkits para cada forma; todo lo que no sea mano o texto es la flecha (círculo)
 HAND = ("pointer", "hand1", "hand2", "pointing_hand", "grab", "grabbing", "openhand", "closedhand")
@@ -49,21 +49,33 @@ def render(kind: str, size: int):
     # gota compacta: la punta queda a ~1,9 radios del centro; el radio sale de lo que cabe en el lienzo
     r = (size - 1.5 - tip - ring - halo - shadow) / (1.35 + 1.0)
     cx = tip + 1.35 * r
+    stroke = max(1.7, size / 19.0)
+    axis = (cx - tip) * math.sqrt(2.0)
     c = (size - 1) / 2.0
     buf = bytearray()
     for y in range(h):
         for x in range(w):
             px = (0.0, 0.0, 0.0, 0.0)
             if kind in ("arrow", "hand"):
+                # como el de la Xbox: gota HUECA de trazo blanco (borde oscuro fino por fuera para verse sobre claro), un anillo en el centro
+                # y un triángulo junto a la punta; la mano rellena la gota de blanco translúcido
                 d = _drop(x, y, tip, cx, r)
                 ds = _drop(x - shadow, y - shadow * 1.4, tip, cx, r)
-                # sombra suave, borde oscuro, relleno blanco; la mano lleva además un anillo exterior
-                px = _over(px, (0, 0, 0, 0.28 * _cov(ds, ring + size * 0.03)))
-                px = _over(px, (0.08, 0.08, 0.08, _cov(d, ring)))
-                px = _over(px, (1, 1, 1, _cov(d, 0.0)))
+                px = _over(px, (0, 0, 0, 0.30 * _cov(ds, 0.6)))
+                inner = _cov(d, -stroke)                                                    # 1 dentro del trazo, 0 sobre él
+                px = _over(px, (0.05, 0.05, 0.05, 0.30 * _cov(d, 0.0)))                    # interior algo oscurecido
                 if kind == "hand":
-                    ro = ring + halo
-                    px = _over(px, (1, 1, 1, _cov(d, ro) * (1 - _cov(d, ro - ring * 1.1))))
+                    px = _over(px, (1, 1, 1, 0.55 * _cov(d, 0.0) * inner))
+                px = _over(px, (0.08, 0.08, 0.08, 0.85 * _cov(d, 0.9) * (1 - _cov(d, 0.0))))  # contorno oscuro, solo por fuera
+                px = _over(px, (1, 1, 1, _cov(d, 0.0) * (1 - inner)))                       # trazo blanco
+                dc = math.hypot(x - cx, y - cx)
+                ring_o, ring_i = r * 0.46, r * 0.46 - stroke
+                px = _over(px, (1, 1, 1, _cov(dc, ring_o) * (1 - _cov(dc, ring_i))))       # anillo central
+                u = ((x - tip) + (y - tip)) / math.sqrt(2.0)                                 # a lo largo del eje punta→centro
+                v = ((x - tip) - (y - tip)) / math.sqrt(2.0)
+                u0, ln = axis * 0.27, axis * 0.26
+                if u0 <= u <= u0 + ln and abs(v) <= (u - u0) * 1.0 + 0.3:
+                    px = _over(px, (1, 1, 1, 1.0))                                           # triángulo (vértice hacia la punta)
             elif kind == "text":
                 # I-beam: barra vertical con remates, blanca con borde oscuro
                 bx, half = abs(x - c), size * 0.36

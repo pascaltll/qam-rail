@@ -27,7 +27,7 @@ BTN_NAMES = {304: "A", 305: "B", 307: "X", 308: "Y", 310: "LB", 311: "RB", 314: 
 DPAD_KEYS = {"UP": "Up", "DOWN": "Down", "LEFT": "Left", "RIGHT": "Right"}
 # Qué hace cada botón al pulsarlo (clic = botón de ratón; el resto, combinación de teclas).
 CLICKS = {"A": 1, "X": 3, "L3": 2}
-KEYS = {"B": "alt+Left", "Y": "ctrl+l", "LB": "ctrl+shift+Tab", "RB": "ctrl+Tab", "START": "Return", "SELECT": "Escape", "R3": "ctrl+0"}
+KEYS = {"B": "alt+Left", "Y": "ctrl+l", "LB": "ctrl+Prior", "RB": "ctrl+Next", "START": "Return", "SELECT": "Escape", "R3": "ctrl+0"}
 TRIGGER_KEYS = {"LT": "Prior", "RT": "Next"}  # Re Pág / Av Pág
 DEAD = 0.18
 REPEAT_DELAY, REPEAT_EVERY = 0.40, 0.07
@@ -355,6 +355,7 @@ class PadRunner:
         self._dup_noted = False
         self._mode_down = False
         self._mode_until = 0.0
+        self._y_at = 0.0            # última pulsación de Y suelta (Steam avisa de su botón al soltarlo, tras la Y)
 
     def stop(self) -> None:
         self._stop = True
@@ -442,6 +443,10 @@ class PadRunner:
                             self.log(f"mando: doble entrada: el botón {code} llega por {prev[1]} y {ev}; se cuenta una vez")
                         continue
                     if code == BTN_MODE:
+                        if val == 1 and 0 < now - self._y_at < 1.0:
+                            # Steam + Y con el aviso de Steam llegando después de la Y (así lo vimos en el equipo): también abre el teclado
+                            self._y_at = 0.0
+                            self.event("kb.combo")
                         self._mode_down = val == 1
                         self._mode_until = now + 0.5 if val == 0 else 0.0
                     elif val == 1 and (self._mode_down or now < self._mode_until):
@@ -450,6 +455,8 @@ class PadRunner:
                         elif code == 308 and self._mode_down:
                             self.event("kb.combo")   # Steam + Y: el usuario pidió el teclado grande
                         continue  # Steam + botón (abrir el QAM, capturas…): no es un clic para la app
+                    if code == 308 and val == 1:
+                        self._y_at = now
                     if self._logged < 60:
                         self._logged += 1
                         self.log(f"mando: botón {code} {'pulsado' if val else 'soltado'} ({ev})")

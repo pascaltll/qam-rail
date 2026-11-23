@@ -1,5 +1,12 @@
 # Cambios
 
+## dev.49
+
+- **Steam + Y no abría el teclado:** en tu `pad.log` Steam avisa de su botón *después* de la Y («308 pulsado/soltado, 316 pulsado/soltado»), así que el backend nunca veía a Steam pulsado con la Y y no salía `kb.combo`. Ahora también cuenta Y seguida de Steam en menos de 1 s (la Y ya habrá mandado Ctrl+L a la app; es un efecto menor). Steam + Y en el orden contrario sigue valiendo.
+- **Teclado «sin overlay» tras cerrarlo con B:** la ruta del teclado volvía a montarse (entrada vieja del historial de Steam) con el overlay apagado y no se veía. Si la ruta aparece sin haberla abierto nosotros, sale de ella sola.
+- **LB/RB en los navegadores:** pasan de Ctrl+Mayús+Tab / Ctrl+Tab a Ctrl+Re Pág / Ctrl+Av Pág (también cambian de pestaña en Firefox y Edge). En tu log, al pulsar LB Steam se llevó el foco y abrió su barra a la vez; sospecha (sin confirmar) de que Steam reaccione a Ctrl+Tab.
+- **Puntero Xbox más fiel:** gota hueca de trazo blanco, anillo central y triángulo junto a la punta (la mano la rellena de blanco translúcido). El tema sube a versión 3 y se regenera solo.
+
 ## dev.48
 
 - **Puntero Xbox en forma de gota invertida** (círculo con la punta arriba a la izquierda; la zona activa del clic está en la punta), como el del Xbox; la mano lleva un anillo y el cursor de texto sigue siendo la barra. El tema guardado lleva ahora un número de versión (`version`): al cambiar el dibujo se regenera solo, sin borrar nada a mano.
