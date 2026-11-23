@@ -1,5 +1,10 @@
 # Cambios
 
+## dev.63
+
+- **Los avisos de Steam ya no suben con el refuerzo.** dev.62 subía también los flujos internos de Bazzite («Game output», «Music output», «ROG Ally EQ», «Virtual Headphone Surround»…), que no tienen nombre de app y por los que pasa todo el audio, avisos de Steam incluidos. Ahora esos flujos no se tocan nunca, y «Open Gamepad UI» (sonidos de interfaz) viene como sonido del sistema. Una sola vez, al arrancar, se devuelve a 100 % lo que dejaron dev.61/62 (altavoces y flujos internos).
+- `audio-boost.json` se escribe de forma atómica (en dev.62 pudo quedar cortado a medias si Decky recargaba durante la escritura; un archivo ilegible se trata como «sin refuerzo»).
+
 ## dev.62
 
 - **El refuerzo de volumen ahora es por fuente, no por dispositivo:** sube solo lo que suena de apps (vídeo, música, juegos) y deja como están los avisos del sistema (los de Steam y el escritorio), que con el refuerzo del dispositivo de dev.61 sonaban demasiado fuertes. Un vigilante (cada 2 s, solo mientras haya refuerzo) fija el volumen de cada flujo nuevo; lo toca una vez por flujo y nivel, así no pelea con una app que cambie su propio volumen. «Qué sube: N de M ›» abre la lista de apps para elegir cuáles suben (se recuerda por app; los avisos de Steam y del escritorio vienen apagados). Al arrancar, una sola vez, devuelve a 100 % el volumen de los altavoces que dejó dev.61. `audio-boost.json` guarda el nivel y las elecciones.

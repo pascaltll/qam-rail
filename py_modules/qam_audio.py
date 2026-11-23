@@ -239,7 +239,7 @@ def trace_diff(prev: dict | None, now: dict) -> list:
 BOOST_MAX = 200
 # Quién suena «a nivel de sistema»: avisos de Steam y del escritorio. Por nombre de app / binario o por rol del flujo.
 _SYSTEM_APPS = re.compile(r"^(steam|steamwebhelper|gamescope|libcanberra|canberra|speech-dispatcher|spd-say|notify-send|plasmashell|"
-                          r"kwin.*|kded.*|gnome-shell|xdg-desktop-portal.*|decky.*|qam.*|pipewire.*|wireplumber)$", re.I)
+                          r"kwin.*|kded.*|gnome-shell|open ?gamepad.*|xdg-desktop-portal.*|decky.*|qam.*|pipewire.*|wireplumber)$", re.I)
 _SYSTEM_ROLES = {"event", "notification", "a11y", "alert", "dialog", "test"}
 
 
@@ -265,13 +265,21 @@ def parse_sink_inputs(pactl_list: str) -> list:
     return out
 
 
+def is_anonymous(s: dict) -> bool:
+    """Flujos internos (cadena del ecualizador, «Game output», «Virtual Headphone Surround»…): sin app ni binario. Por ellos pasa
+    TODO el audio, avisos de Steam incluidos, así que nunca se tocan."""
+    return not (s.get("binario") or "").strip() and (s.get("app") or "?") == "?"
+
+
 def is_system_stream(s: dict) -> bool:
-    return bool(_SYSTEM_APPS.match((s.get("app") or "").strip()) or _SYSTEM_APPS.match((s.get("binario") or "").strip())
+    return is_anonymous(s) or bool(_SYSTEM_APPS.match((s.get("app") or "").strip()) or _SYSTEM_APPS.match((s.get("binario") or "").strip())
                 or (s.get("rol") or "") in _SYSTEM_ROLES)
 
 
 def boost_on(s: dict, ov: dict) -> bool:
     """¿Se refuerza este flujo? Lo decide el usuario por app (ov[app]); si no, por defecto todo menos los sonidos del sistema."""
+    if is_anonymous(s):
+        return False
     v = (ov or {}).get(s.get("app"))
     return bool(v) if isinstance(v, bool) else not is_system_stream(s)
 

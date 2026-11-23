@@ -159,16 +159,31 @@ Sink Input #79
 \tProperties:
 \t\tapplication.name = "MiJuego.exe"
 \t\tmedia.role = "Game"
+Sink Input #80
+\tMute: no
+\tVolume: front-left: 78643 / 120% / 4.00 dB
+\tCorked: no
+\tProperties:
+\t\tmedia.name = "Game output"
+Sink Input #81
+\tMute: no
+\tVolume: front-left: 65536 / 100% / 0.00 dB
+\tCorked: no
+\tProperties:
+\t\tapplication.name = "Chromium"
+\t\tapplication.process.binary = "steamwebhelper"
+\t\tmedia.name = "Playback"
 """
 
 
 def test_refuerzo_por_fuente():
     import qam_audio as a
     ss = a.parse_sink_inputs(_SI)
-    assert [s["id"] for s in ss] == [77, 78, 79]
+    assert [s["id"] for s in ss] == [77, 78, 79, 80, 81]
     assert ss[0]["app"] == "Firefox" and ss[0]["rol"] == "video" and ss[0]["vol"] == 100 and not ss[0]["pausado"]
     assert ss[1]["pausado"] and ss[2]["vol"] == 79
-    assert [a.is_system_stream(s) for s in ss] == [False, True, False]
+    assert [a.is_system_stream(s) for s in ss] == [False, True, False, True, True]
+    assert a.is_anonymous(ss[3]) and not a.is_anonymous(ss[4])
     applied = {}
     # 150 %: suben el vídeo y el juego, no el aviso de Steam
     assert a.plan_boost(ss, 150, {}, applied) == [(77, 150), (79, 150)]

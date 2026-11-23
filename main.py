@@ -2720,12 +2720,14 @@ class Plugin:
         import qam_audio
         return {"pct": qam_audio.clamp_pct(c.get("pct", 100)),
                 "ov": {str(k): v for k, v in (c.get("ov") or {}).items() if isinstance(v, bool)} if isinstance(c.get("ov"), dict) else {},
-                "seen": [str(x) for x in (c.get("seen") or []) if isinstance(x, str)][:16], "migrado": bool(c.get("migrado", False))}
+                "seen": [str(x) for x in (c.get("seen") or []) if isinstance(x, str)][:16], "mig2": bool(c.get("mig2", False))}
 
     def _boost_save(self, cfg: dict) -> None:
-        try:
-            with open(_path("audio-boost.json"), "w", encoding="utf-8") as fh:
+        try:  # atómico: si Decky recarga a mitad de escritura, el archivo no queda cortado (dev.62 lo dejó a medias)
+            tmp = _path("audio-boost.json") + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as fh:
                 json.dump(cfg, fh)
+            os.replace(tmp, _path("audio-boost.json"))
         except OSError as exc:
             decky.logger.error(f"refuerzo: {exc}")
 
@@ -2745,7 +2747,8 @@ class Plugin:
         return len(todo)
 
     async def _boost_migrate(self, cfg: dict) -> None:
-        """dev.61 subía el volumen del DISPOSITIVO (sonaban más fuerte hasta los avisos del sistema). Una vez, se devuelve a 100 %."""
+        """Una vez: deshace lo que dejaron dev.61 y dev.62 (subían el dispositivo y los flujos internos del ecualizador, y con ellos los
+        avisos de Steam). Los altavoces reales y los flujos sin app que estén por encima de 100 % vuelven a 100 %."""
         import qam_audio
         code, out, _ = await self._acmd("pactl", "list", "sinks")
         if code == 0:
@@ -2753,7 +2756,11 @@ class Plugin:
                 if name.startswith("alsa_output") and (v.get("vol") or 0) > 100:
                     await self._acmd("pactl", "set-sink-volume", name, "100%")
                     decky.logger.info(f"refuerzo: {name} volvía a {v.get('vol')} % → 100 %")
-        cfg["migrado"] = True
+        for s in await self._boost_streams():
+            if qam_audio.is_anonymous(s) and (s.get("vol") or 0) > 100:
+                await self._acmd("pactl", "set-sink-input-volume", str(s["id"]), "100%")
+                decky.logger.info(f"refuerzo: flujo interno «{s.get('nombre')}» volvía a {s.get('vol')} % → 100 %")
+        cfg["mig2"] = True
         self._boost_save(cfg)
 
     async def _boost_loop(self) -> None:
@@ -2761,7 +2768,7 @@ class Plugin:
         while True:
             try:
                 cfg = self._boost_cfg()
-                if not cfg["migrado"]:
+                if not cfg["mig2"]:
                     await self._boost_migrate(cfg)
                 active = cfg["pct"] > 100 or any(v != 100 for v in (getattr(self, "_boost_applied", None) or {}).values())
                 if active:
