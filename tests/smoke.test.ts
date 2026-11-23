@@ -530,6 +530,7 @@ describe("QamApp (humo)", () => {
     expect(currentPalette().cardRadius).toBe(28);
     await click(byText("Del tema"));
     await click(byText("← Más"));
+    await click(byText("Pruebas y herramientas")); // plegado desde dev.64
     await click(byText("Pruebas y diagnóstico"));
     const t = host.textContent ?? "";
     expect(t).toContain("Probar ahora");
@@ -669,7 +670,7 @@ describe("QamApp (humo)", () => {
     act(() => root.unmount());
   });
 
-  it("Conexiones: Wi‑Fi y Bluetooth con lo ya conocido, enlaces a Ajustes y Remote Play como próximamente", async () => {
+  it("Conexiones: Wi‑Fi y Bluetooth con lo ya conocido, sin filas muertas (Remote Play «próximamente» ya no está)", async () => {
     const root = await mount();
     await click(rail()[3]);
     const t = host.textContent ?? "";
@@ -678,7 +679,7 @@ describe("QamApp (humo)", () => {
     expect(t).toContain("Otras redes");
     expect(t).toContain("Emparejar otro");
     expect(t).toContain("Modo avión");
-    expect(t).toContain("próximamente");
+    expect(t).not.toContain("próximamente");
     expect(t).not.toContain("Buscar");
     act(() => root.unmount());
   });

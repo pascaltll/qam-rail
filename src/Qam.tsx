@@ -44,7 +44,7 @@ import { EnergyTdp } from "./QamTdp";
 import { getRegistry, type SectionId } from "./registry";
 import { clamp01, sc, type Unreg } from "./steam";
 import * as UI from "./ui";
-import { COLORS, Chip, FONT, ICONS, ICONS2, Icon, Row, ToggleRow, XSlider, cardStyle, colorFor, useThrottled, paneGap } from "./ui";
+import { COLORS, Chip, FONT, ICONS, ICONS2, Icon, Row, ToggleRow, XSlider, colorFor, useThrottled, paneGap } from "./ui";
 
 // Riel fijo: mismo orden y sitio en ambos modos (solo cambia el contenido de Inicio).
 const SECTIONS: Array<{ id: SectionId; label: string; icon: string }> = [
@@ -57,13 +57,6 @@ const SECTIONS: Array<{ id: SectionId; label: string; icon: string }> = [
   { id: "more", label: "Más", icon: ICONS2.more },
 ];
 const GAME_ICON = "M6 12h4M8 10v4M15 11h.01M18 13h.01M7 6h10a4 4 0 0 1 4 4v4a4 4 0 0 1-4 4h-1l-2-2h-4l-2 2H7a4 4 0 0 1-4-4v-4a4 4 0 0 1 4-4z";
-
-const Info: FC<{ label: string; value: string }> = ({ label, value }) => (
-  <Focusable data-qr="item" style={{ ...cardStyle, flexDirection: "row", alignItems: "center", minHeight: 46, padding: "6px 14px", gap: 10 }}>
-    <span style={{ flexShrink: 0, fontSize: 14 }}>{label}</span>
-    <span style={{ flexGrow: 1, textAlign: "right", fontSize: 12, color: COLORS.muted }}>{value}</span>
-  </Focusable>
-);
 
 // Pestañas del QAM de Steam (QuickAccessTab) y la de Panel de Control. [H] el id de Panel (5260355) viene de su codigo; sin verificar.
 const TAB = { notifications: 0, remotePlay: 1, voice: 2, friends: 3, settings: 4, perf: 5, help: 6, soundtrack: 7, decky: 999, panel: 5260355 };
@@ -489,7 +482,6 @@ export const QamApp: FC<{ log: (m: string) => void; onNative: (tab?: number) => 
           <WifiCard notify={notify} />
           <BluetoothCard notify={notify} />
           <Card><ToggleRow icon={ICONS2.plane} label="Modo avión" on={conn.plane} note="Apaga Wi‑Fi y Bluetooth" onToggle={() => conn.setPlane(!conn.plane)} /></Card>
-          <Info label="Remote Play" value="próximamente" />
         </>
       );
       break;
@@ -514,7 +506,7 @@ export const QamApp: FC<{ log: (m: string) => void; onNative: (tab?: number) => 
             <QamDesktopApps notify={notify} after={onClose} />
           ) : (
             <>
-              {plugins.length ? <PluginIcons plugins={plugins} onOpen={openPlugin} /> : <Info label="Plugins" value="Decky no tiene plugins cargados" />}
+              {plugins.length ? <PluginIcons plugins={plugins} onOpen={openPlugin} /> : <div style={{ fontSize: 12, color: COLORS.muted, padding: "4px 6px" }}>Decky no tiene plugins cargados.</div>}
               <DeckyCard notify={notify} onStore={openStore} onSettings={() => go(DECKY_ROUTES.settings)} onLoaderUpdate={() => go(DECKY_ROUTES.general)} />
             </>
           )}
@@ -535,22 +527,23 @@ export const QamApp: FC<{ log: (m: string) => void; onNative: (tab?: number) => 
       ) : (
         <>
           <Shortcut icon={<ShortIcon d={MORE_ICON.look} />} label="Apariencia" hint="colores, acento, fluidez del panel" onOpen={() => { setLook(true); window.setTimeout(() => focusBody(), 90); }} />
-          <Shortcut icon={<ShortIcon d={MORE_ICON.panel} />} label="Panel de Control" hint="todas sus opciones" onOpen={openPanel} />
+          <Shortcut icon={<ShortIcon d={MORE_ICON.panel} />} label="Panel de Control" hint="CPU, GPU, mandos (remapeo), perfiles" onOpen={openPanel} />
           <QamChannelCard notify={notify} />
           <QamSelfUpdateCard notify={notify} />
           <Label>Sistema</Label>
           <Shortcut icon={<ShortIcon d={ICONS2.sliders} />} label="Ajustes de Steam" onOpen={() => onNative(TAB.settings)} />
-          <Shortcut icon={<ShortIcon d={GAME_ICON} />} label="Mandos (remapeo)" hint="Panel de Control" onOpen={openPanel} />
           <Shortcut icon={<ShortIcon d={MORE_ICON.keyboard} />} label="Teclado en pantalla" hint="o Steam + X" onOpen={() => {
             crumb("teclado en pantalla");
             onClose();
             window.setTimeout(() => { void toggleKeyboard().then((m) => { if (!m) notify("Steam no deja abrir el teclado desde aquí: usa Steam + X"); else crumb(`teclado: ${m}`); }); }, 350);
           }} />
           <Shortcut icon={<ShortIcon d={MORE_ICON.help} />} label="Ayuda de Steam" onOpen={() => onNative(TAB.help)} />
-          <Label>Pruebas</Label>
-          <Shortcut icon={<ShortIcon d={MORE_ICON.tests} />} label="Pruebas y diagnóstico" hint={mods.length ? `módulos: ${mods.map((m) => m.name).join(", ")}` : "probar, aislar, informe"} onOpen={() => setDiag(true)} />
-          <Shortcut icon={<ShortIcon d={ICONS.bolt} />} label="Prueba de CPU por vatios" onOpen={() => { setBench(true); setSection("energy"); window.setTimeout(() => focusBody(), 90); }} />
           <Shortcut icon={<ShortIcon d={ICONS.grid} />} label="QAM de Steam" hint="el menú original" onOpen={() => onNative()} />
+          {/* Lo que se usa poco, plegado: una sola parada de mando en vez de dos. */}
+          <Fold label="Pruebas y herramientas" hint={mods.length ? `módulos: ${mods.map((m) => m.name).join(", ")}` : "diagnóstico, prueba de CPU"} icon={MORE_ICON.tests}>
+            <Shortcut icon={<ShortIcon d={MORE_ICON.tests} />} label="Pruebas y diagnóstico" hint="probar, aislar, informe" onOpen={() => setDiag(true)} />
+            <Shortcut icon={<ShortIcon d={ICONS.bolt} />} label="Prueba de CPU por vatios" onOpen={() => { setBench(true); setSection("energy"); window.setTimeout(() => focusBody(), 90); }} />
+          </Fold>
         </>
       );
   }

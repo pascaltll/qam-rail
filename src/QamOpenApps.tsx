@@ -7,7 +7,7 @@ import { openBigKeyboard } from "./bigKeyboard";
 import { Card } from "./QamSections";
 import { useTap } from "./tap";
 import { tickEvery } from "./ticker";
-import { AppGlyph, COLORS, Chip, Icon, ICONS2, Row, focusRing } from "./ui";
+import { AppGlyph, COLORS, Chip, Icon, ICONS2, Row, ToggleRow, focusRing } from "./ui";
 
 /** Ficha de app abierta: icono grande, nombre y un punto verde; una sola parada del mando, toque con respuesta inmediata. */
 const OpenTile: FC<{ name: string; icon?: string | null; glyph?: ReactNode; accent?: boolean; onTap: () => void }> = ({ name, icon, glyph, accent, onTap }) => {
@@ -73,9 +73,8 @@ export const OpenAppsStrip: FC<{ notify: (t: string) => void; after: () => void 
         <Chip compact icon={ICONS2.refresh} onClick={() => void desktopRepair().then((r) => notify(r.ok ? (r.fixed?.length ? `Reparado: ${r.fixed.join(", ")}` : "Nada que reparar") : `No se pudo reparar: ${r.error ?? "?"}`)).catch(() => notify("No se pudo reparar"))}>Reparar</Chip>
       </Row>
       {touch !== null && touch.on && touch.full && (
-        <Row gap={6}>
-          <Chip compact active={touch.text} onClick={() => void padTouch(null, null, !touch.text).then((p) => { setTouch(p); notify(p.text ? "Al tocar un texto se abre el teclado" : "Teclado al tocar texto: no"); })}>{touch.text ? "Tocar texto abre el teclado: sí" : "Tocar texto abre el teclado: no"}</Chip>
-        </Row>
+        <ToggleRow label="Tocar un texto abre el teclado" note={touch.text ? "Al tocar un campo de texto aparece el teclado grande" : "Con el dedo, solo si el táctil es completo"} on={touch.text}
+          onToggle={() => void padTouch(null, null, !touch.text).then((p) => { setTouch(p); notify(p.text ? "Al tocar un texto se abre el teclado" : "Teclado al tocar texto: no"); })} />
       )}
     </Card>
   );

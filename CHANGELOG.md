@@ -1,5 +1,10 @@
 # Cambios
 
+## dev.64
+
+- **Menos paradas de mando muertas o repetidas:** Conexiones ya no trae la fila «Remote Play · próximamente» (era una parada sin función); en Apps › Plugins, el aviso de «sin plugins» es solo texto. **Más:** «Mandos (remapeo)» y «Panel de Control» abrían lo mismo, ahora es una sola entrada («CPU, GPU, mandos, perfiles»); «Pruebas y diagnóstico» y «Prueba de CPU por vatios» van dentro de un plegable «Pruebas y herramientas» (una parada en vez de dos), y «QAM de Steam» pasa a Sistema, con los demás ajustes del sistema.
+- **Abiertas ahora:** «Tocar texto abre el teclado» pasa de chip ancho a interruptor con nota (mismo estilo que el resto), y se explica cuándo funciona.
+
 ## dev.63
 
 - **Los avisos de Steam ya no suben con el refuerzo.** dev.62 subía también los flujos internos de Bazzite («Game output», «Music output», «ROG Ally EQ», «Virtual Headphone Surround»…), que no tienen nombre de app y por los que pasa todo el audio, avisos de Steam incluidos. Ahora esos flujos no se tocan nunca, y «Open Gamepad UI» (sonidos de interfaz) viene como sonido del sistema. Una sola vez, al arrancar, se devuelve a 100 % lo que dejaron dev.61/62 (altavoces y flujos internos).
