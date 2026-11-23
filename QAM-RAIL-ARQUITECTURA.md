@@ -858,3 +858,17 @@ Compartido: `~/homebrew/qam-apps` (mismo esquema de manifiestos) y la carpeta `s
 **Pendiente de verificar en el equipo [H].** Que Decky acepte dos plugins con nombres distintos a la vez; que `DECKY_PLUGIN_SETTINGS_DIR` sea por carpeta (`settings/qam-rail-dev`); que `callable` apunte al backend de cada plugin; que el aviso (toast) salga tras el reinicio.
 
 **Pruebas.** `tests/py/test_channel.py` (activo, cambio, red de seguridad), `tests/sh/test_scripts.sh` (instalar dev al lado, `--dev`, `canal.sh`), `tests/v053.test.ts` (lógica de la UI).
+
+## 59. Pestaña «Steam» de Apps (0.54)
+
+**Qué es.** Tercera pestaña de Apps (`src/QamDesktopApps.tsx`) con las apps de escritorio que ya escanea `qam_desktop.scan` (0.51.1): Flatpak, AppImage y del sistema.
+
+**Backend.** `desktop_plan(key)` devuelve `argv/exe/args/dir/icon_path/fullscreen/browser`; `desktop_run(key)` lanza sin shell, sesión nueva y sin esperar; `desktop_reg_get/set` mantienen `apps-steam.json` (clave de la app → `{appid,name,source,added}`), el registro de los atajos NUESTROS. Solo se quita lo que está ahí: nunca otros atajos del usuario.
+
+**Frontend.** `src/qamDesktop.ts` (lógica pura probada: `filterApps`, `groupApps`, `steamState` no/si/perdida, `noteFor`; y las llamadas a SteamClient: `AddShortcut`, `SetShortcutIcon`, `RemoveShortcut`, `RunGame`). Regla de navegación: dos filas por tarjeta (nombre / acciones), sin barras en una fila de chips.
+
+**Decisiones.** Chromium con `--start-fullscreen`; Firefox sin opción (no hay una fiable). El mando como ratón se resuelve con la plantilla de Steam Input «Gamepad with Mouse Trackpad» en el atajo (indicado en la ayuda); el Flatpak de Edge necesita lectura de `/run/udev`.
+
+**Pendiente [H].** Probar en el equipo `AddShortcut` con ejecutables de Flatpak, iconos, `RunGame` del atajo creado y «Volver a Steam».
+
+**Pruebas.** `tests/py/test_desktop.py` (`_t054`), `tests/v054.test.ts`.

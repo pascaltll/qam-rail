@@ -1,5 +1,17 @@
 # Cambios
 
+## 0.54.0
+
+Apps › pestaña «Steam»: apps de escritorio del equipo (Flatpak, AppImage, sistema).
+
+- «Abrir» lanza la app directamente (sin shell); si ya es atajo de Steam se abre por Steam.
+- «A Steam» crea el atajo (ejecutable, opciones, carpeta de inicio e icono) y lo anota en `apps-steam.json`; «Quitar de Steam» solo borra atajos creados por QAM Rail. Si el atajo desapareció de Steam se ofrece «Volver a Steam».
+- Navegadores Chromium se lanzan con `--start-fullscreen`; Firefox no (no hay opción fiable).
+- Filtro por origen (Todas / Flatpak / AppImage / Sistema), grupos por categoría, dos filas por app para el mando.
+- Ayuda «steam» (incluye la plantilla de mando «Gamepad with Mouse Trackpad» para usar el mando como ratón).
+- Backend: `desktop_plan`, `desktop_run`, `desktop_reg_get`, `desktop_reg_set`; `qam_desktop.launch_plan/browser_kind/icon_path/clean_registry`.
+- [H] Sin verificar en el equipo: AddShortcut/SetShortcutIcon con rutas de Flatpak y `RunGame` con el atajo creado.
+
 ## 0.53.0
 
 Canales estable / dev: dos copias de QAM Rail a la vez.

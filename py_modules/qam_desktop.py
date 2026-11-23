@@ -181,3 +181,71 @@ def _read(path: str):
             return fh.read(MAX_DESKTOP_BYTES).decode("utf-8")
     except (OSError, UnicodeDecodeError):
         return None
+
+
+# ---- Lanzamiento (0.54): navegadores a pantalla completa y atajo de Steam ----
+CHROMIUM_RE = re.compile(r"(chrome|chromium|msedge|microsoft-edge|edge|brave|vivaldi|opera|thorium|ungoogled)", re.I)
+FIREFOX_RE = re.compile(r"(firefox|librewolf|zen|waterfox|floorp)", re.I)
+FULLSCREEN_FLAG = "--start-fullscreen"
+
+
+def browser_kind(app: dict):
+    """«chromium» | «firefox» | «other» para una app del grupo Navegadores; None si no es un navegador."""
+    if app.get("group") != "Navegadores":
+        return None
+    hay = " ".join([str(app.get("key", "")), str(app.get("name", "")), " ".join(app.get("exec") or [])])
+    if CHROMIUM_RE.search(hay):
+        return "chromium"
+    if FIREFOX_RE.search(hay):
+        return "firefox"
+    return "other"
+
+
+def launch_plan(app: dict, which=None, home: str = "", fullscreen: bool = True) -> dict:
+    """Cómo se lanza: argv completo y, para el atajo de Steam, ejecutable + opciones + carpeta de inicio.
+    Solo se añaden opciones que la app documenta: `--start-fullscreen` en los navegadores de la familia Chromium
+    (Firefox no tiene una opción fiable y depende de gamescope). Sin shell: todo va como lista de argumentos."""
+    import shutil
+    which = which or shutil.which
+    argv = [str(a) for a in (app.get("exec") or [])]
+    if not argv:
+        raise ValueError("la app no tiene orden de lanzamiento")
+    kind = browser_kind(app)
+    fs = bool(fullscreen and kind == "chromium")
+    if fs and FULLSCREEN_FLAG not in argv:
+        argv.append(FULLSCREEN_FLAG)
+    exe = argv[0] if os.path.isabs(argv[0]) else (which(argv[0]) or argv[0])
+    return {"argv": [exe] + argv[1:], "exe": exe, "args": shlex.join(argv[1:]), "dir": os.path.dirname(exe) if os.path.isabs(exe) else (home or "/"),
+            "fullscreen": fs, "browser": kind}
+
+
+def icon_path(icon: str | None, home: str, isfile=os.path.isfile):
+    """Ruta de archivo del icono si es absoluta o se encuentra en los temas habituales (hicolor); si no, None."""
+    if not icon:
+        return None
+    if os.path.isabs(icon):
+        return icon if isfile(icon) else None
+    roots = ("/usr/share/icons/hicolor", "/var/lib/flatpak/exports/share/icons/hicolor", os.path.join(home, ".local/share/flatpak/exports/share/icons/hicolor"),
+             os.path.join(home, ".local/share/icons/hicolor"))
+    for size in ("512x512", "256x256", "128x128", "64x64", "48x48"):
+        for root in roots:
+            for ext in ("png", "svg"):
+                p = os.path.join(root, size, "apps", f"{icon}.{ext}")
+                if isfile(p):
+                    return p
+    return None
+
+
+def clean_registry(raw) -> dict:
+    """Registro de atajos NUESTROS (clave de la app → {appid, name, source, added}). Descarta lo mal formado."""
+    out = {}
+    if not isinstance(raw, dict):
+        return out
+    for k, v in raw.items():
+        if not isinstance(k, str) or not isinstance(v, dict) or len(k) > 120:
+            continue
+        appid = v.get("appid")
+        if isinstance(appid, bool) or not isinstance(appid, (int, float)):
+            continue
+        out[k] = {"appid": int(appid), "name": str(v.get("name", ""))[:120], "source": str(v.get("source", ""))[:20], "added": int(v.get("added") or 0)}
+    return out

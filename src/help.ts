@@ -9,6 +9,12 @@ export const HELP: Record<string, HelpEntry> = {
     "Pasar de una a otra reinicia Decky unos segundos. Desde la terminal: ./canal.sh estable  ·  ./canal.sh dev  ·  ./canal.sh (para ver cuál está activa).",
     "Red de seguridad: si la de desarrollo no llega a arrancar bien 2 veces seguidas, el panel vuelve solo a la estable y lo avisa.",
   ] },
+  steam: { title: "Apps del equipo", text: [
+    "Aquí salen las apps de escritorio instaladas (Flatpak, AppImage y del sistema): navegadores, Discord, emuladores…",
+    "«Abrir» la lanza directamente. «A Steam» crea su atajo (con su icono) para abrirla también desde la biblioteca; «Quitar de Steam» solo borra los atajos que creó QAM Rail.",
+    "Los navegadores basados en Chromium se abren a pantalla completa. Firefox no tiene una opción fiable para eso.",
+    "Para usar el mando como ratón dentro de una app, en su atajo elige la plantilla de mando «Gamepad with Mouse Trackpad».",
+  ] },
   tipo: { title: "Tipo de juego", text: [
     "Dice al panel qué clase de juego es para adaptarse: qué plugins y ajustes quedan a mano.",
     "Simple: 2D, indies, retro. Medio: 3D moderado. Exigente: 3D pesado.",

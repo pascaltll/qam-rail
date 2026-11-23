@@ -69,3 +69,37 @@ if __name__ == "__main__":
         if k.startswith("test_"):
             f(); print("ok", k)
     print("TODO OK")
+
+
+# ---- 0.54: lanzamiento y registro ----
+def _t054():
+    import qam_desktop as D
+    w = lambda c: "/usr/bin/" + c
+    chrome = {"key": "com.google.Chrome", "name": "Google Chrome", "group": "Navegadores", "exec": ["flatpak", "run", "com.google.Chrome"]}
+    p = D.launch_plan(chrome, which=w, home="/home/u")
+    assert p["fullscreen"] and p["browser"] == "chromium" and p["exe"] == "/usr/bin/flatpak" and p["args"] == "run com.google.Chrome --start-fullscreen", p
+    assert p["argv"][0] == "/usr/bin/flatpak" and p["argv"][-1] == "--start-fullscreen" and p["dir"] == "/usr/bin"
+    assert D.launch_plan(chrome, which=w, fullscreen=False)["args"] == "run com.google.Chrome"
+    ff = {"key": "org.mozilla.firefox", "name": "Firefox", "group": "Navegadores", "exec": ["flatpak", "run", "org.mozilla.firefox"]}
+    assert D.launch_plan(ff, which=w)["fullscreen"] is False and "--start-fullscreen" not in D.launch_plan(ff, which=w)["args"]
+    assert D.browser_kind({"group": "Navegadores", "name": "Algo raro", "exec": ["x"]}) == "other" and D.browser_kind({"group": "Multimedia"}) is None
+    edge = {"key": "ai-abc", "name": "Microsoft Edge", "group": "Navegadores", "exec": ["/home/u/AppImages/edge.AppImage", "--x"]}
+    pe = D.launch_plan(edge, which=w, home="/home/u")
+    assert pe["exe"] == "/home/u/AppImages/edge.AppImage" and pe["dir"] == "/home/u/AppImages" and pe["args"] == "--x --start-fullscreen"
+    vlc = {"key": "vlc", "name": "VLC", "group": "Multimedia", "exec": ["vlc"]}
+    assert D.launch_plan(vlc, which=lambda c: None, home="/home/u")["dir"] == "/home/u" and D.launch_plan(vlc, which=lambda c: None)["exe"] == "vlc"
+    try: D.launch_plan({"exec": []}); raise SystemExit("debía fallar")
+    except ValueError: pass
+    # argumentos con espacios o comillas no se parten (sin shell)
+    odd = {"key": "k", "name": "X", "group": "Otras", "exec": ["/opt/a b/app", "--name=un valor", "it's"]}
+    import shlex
+    assert shlex.split(D.launch_plan(odd)["args"]) == ["--name=un valor", "it's"]
+    # iconos
+    assert D.icon_path("/x/i.png", "/h", isfile=lambda p: p == "/x/i.png") == "/x/i.png" and D.icon_path("/x/no.png", "/h", isfile=lambda p: False) is None
+    assert D.icon_path("org.x.App", "/h", isfile=lambda p: p == "/usr/share/icons/hicolor/256x256/apps/org.x.App.png") == "/usr/share/icons/hicolor/256x256/apps/org.x.App.png"
+    assert D.icon_path(None, "/h") is None
+    # registro
+    r = D.clean_registry({"a": {"appid": 123, "name": "A", "source": "flatpak", "added": 5}, "b": {"appid": True}, "c": "x", 7: {"appid": 1}, "d": {"appid": "9"}})
+    assert list(r) == ["a"] and r["a"]["appid"] == 123 and D.clean_registry(None) == {}
+    print("0.54 OK")
+_t054()

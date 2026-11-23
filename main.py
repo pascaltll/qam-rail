@@ -556,6 +556,63 @@ class Plugin:
         self._desk_cache = {"t": time.time(), "data": data}
         return data
 
+    async def _desk_find(self, key: str):
+        data = await self.desktop_scan(False)
+        return next((a for a in data.get("apps", []) if a.get("key") == key), None)
+
+    async def desktop_plan(self, key: str) -> dict:
+        """Cómo lanzar una app de escritorio (ejecutable, opciones, carpeta, pantalla completa en navegadores Chromium) y su icono."""
+        if qam_desktop is None:
+            return {"ok": False, "error": "no disponible"}
+        app = await self._desk_find(str(key))
+        if not app:
+            return {"ok": False, "error": "esa app ya no está"}
+        try:
+            plan = qam_desktop.launch_plan(app, home=_home())
+        except ValueError as e:
+            return {"ok": False, "error": str(e)}
+        return {"ok": True, "name": app["name"], "source": app["source"], "icon_path": qam_desktop.icon_path(app.get("icon"), _home()), **plan}
+
+    async def desktop_run(self, key: str) -> dict:
+        """Abre la app directamente (sin pasar por Steam): como el usuario, sin shell, sin esperar. Para las que están «En Steam» se lanza por Steam."""
+        pl = await self.desktop_plan(key)
+        if not pl.get("ok"):
+            return pl
+        try:
+            await asyncio.create_subprocess_exec(*pl["argv"], cwd=pl["dir"] if os.path.isdir(pl["dir"]) else _home(), env=self._user_env(),
+                                                 stdin=asyncio.subprocess.DEVNULL, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL,
+                                                 start_new_session=True)
+        except OSError as e:
+            return {"ok": False, "error": str(e)[:120]}
+        return {"ok": True}
+
+    def _desk_reg(self) -> dict:
+        try:
+            with open(_path("apps-steam.json"), encoding="utf-8") as fh:
+                return qam_desktop.clean_registry(json.load(fh)) if qam_desktop else {}
+        except (OSError, ValueError):
+            return {}
+
+    async def desktop_reg_get(self) -> dict:
+        """Atajos de Steam creados por QAM Rail para apps de escritorio (solo estos se pueden quitar desde aquí)."""
+        return self._desk_reg()
+
+    async def desktop_reg_set(self, key: str, entry: dict | None) -> dict:
+        """Anota (o, con None, borra) el atajo de una app. Solo tocamos lo nuestro: nunca otros atajos de Steam."""
+        if qam_desktop is None:
+            return {}
+        reg = self._desk_reg()
+        if entry is None:
+            reg.pop(str(key), None)
+        else:
+            one = qam_desktop.clean_registry({str(key): {**(entry if isinstance(entry, dict) else {}), "added": int(time.time())}})
+            reg.update(one)
+        tmp = _path("apps-steam.json.tmp")
+        with open(tmp, "w", encoding="utf-8") as fh:
+            json.dump(reg, fh, indent=1)
+        os.replace(tmp, _path("apps-steam.json"))
+        return reg
+
     # ---- Actualizaciones desde GitHub Releases (0.51; ver py_modules/qam_updates.py) ----
     @staticmethod
     def _http(url: str, etag: str | None = None):

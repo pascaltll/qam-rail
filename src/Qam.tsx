@@ -16,6 +16,7 @@ import { DiagView, FluencyBanner } from "./QamDiag";
 import { AppearanceCard } from "./QamAppearance";
 import { toggleKeyboard } from "./keyboard";
 import { QamAppsCard } from "./QamAppsCard";
+import { QamDesktopApps } from "./QamDesktopApps";
 import { QamChannelCard } from "./QamChannel";
 import { QamSelfUpdateCard } from "./QamSelfUpdate";
 import { BluetoothCard, WifiCard } from "./QamNetwork";
@@ -85,7 +86,7 @@ export const QamApp: FC<{ log: (m: string) => void; onNative: (tab?: number) => 
     if (b) scrollPos.current[sectionRef.current] = b.scrollTop;
     setSectionRaw(id);
   }, []);
-  const [appsTab, setAppsTab] = useState<"apps" | "plugins">("apps");
+  const [appsTab, setAppsTab] = useState<"apps" | "steam" | "plugins">("apps");
   const [bright, setBright] = useState(0.5);
   const [vol, setVol] = useState(0.5);
   const [toast, setToast] = useState("");
@@ -480,12 +481,15 @@ export const QamApp: FC<{ log: (m: string) => void; onNative: (tab?: number) => 
           <Row>
             <Chip icon={ICONS.grid} active={appsTab === "apps"} onClick={() => setAppsTab("apps")}>Apps</Chip>
             <Chip icon={ICONS2.plug} active={appsTab === "plugins"} onClick={() => setAppsTab("plugins")}>Plugins</Chip>
+            <Chip icon={ICONS2.globe} active={appsTab === "steam"} onClick={() => setAppsTab("steam")}>Steam</Chip>
           </Row>
           {appsTab === "apps" ? (
             <>
               <AppGrid apps={[...apps.pinned, ...apps.more]} notify={notify} after={onClose} />
               <QamAppsCard notify={notify} />
             </>
+          ) : appsTab === "steam" ? (
+            <QamDesktopApps notify={notify} after={onClose} />
           ) : (
             <>
               {plugins.length ? <PluginIcons plugins={plugins} onOpen={openPlugin} /> : <Info label="Plugins" value="Decky no tiene plugins cargados" />}
