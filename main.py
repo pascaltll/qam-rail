@@ -607,6 +607,12 @@ class Plugin:
         t.add_done_callback(self._bg_tasks.discard)
 
     @property
+    def _qam_keys(self) -> set:
+        if not hasattr(self, "_qam_keys_v"):
+            self._qam_keys_v = set()
+        return self._qam_keys_v
+
+    @property
     def _desk_classes(self) -> dict:
         if not hasattr(self, "_desk_classes_v"):
             self._desk_classes_v = {}
@@ -705,7 +711,8 @@ class Plugin:
         for i in range(28):
             await asyncio.sleep(0.7)
             wins = await self._x_windows(prefix, display)
-            pick = qam_desktop.windows_to_tag(wins, before, known)
+            pick = [w for w in qam_desktop.windows_to_tag(wins, before, known)
+                    if not any(re.search(r"steam|mangoapp|gamescope", c or "", re.I) for c in w["classes"])]
             if i in (0, 5, 13, 27):
                 self._tag_log(f"  intento {i}: {len(wins)} ventanas, a marcar {[w['id'] for w in pick]}")
             for w in pick:
@@ -736,7 +743,7 @@ class Plugin:
         if qam_desktop is None:
             return {"ok": False}
         try:
-            if on and not (await self.desktop_running()).get("keys"):
+            if on and not (await self.desktop_running()).get("keys") and not self._qam_keys:
                 return {"ok": True, "skipped": True}
             prefix, seen = await self._user_session()
             display = seen.get("DISPLAY") or ":0"
@@ -1247,8 +1254,23 @@ class Plugin:
             return {"ok": False}
         import shlex
         cmd = ["bash", os.path.join(app["path"], app["launch"]), *shlex.split(str(args or ""))]
+        before: set = set()
+        prefix: list = []
+        display = ":0"
+        tag = qam_desktop is not None and not str(args or "").strip()
+        if tag:  # abrir sin argumentos: si la app crea una ventana X (Forgeinator, pygame), gamescope solo la muestra con STEAM_GAME
+            try:
+                prefix, seen = await self._user_session()
+                display = seen.get("DISPLAY") or ":0"
+                self._xauth = seen.get("XAUTHORITY") or None
+                before = {w["id"] for w in await self._x_windows(prefix, display)}
+            except Exception:
+                tag = False
         await asyncio.create_subprocess_exec(*cmd, cwd=app["path"], env=self._user_env(), stdin=asyncio.subprocess.DEVNULL,
                                              stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL, start_new_session=True)
+        if tag:
+            self._qam_keys.add(f"qam:{app_id}")
+            self._spawn(self._desk_tag(f"qam:{app_id}", prefix, display, before))
         return {"ok": True}
 
     async def apps_control(self, app_id: str, action: str) -> dict:
@@ -1265,6 +1287,10 @@ class Plugin:
                                                  stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL, start_new_session=True)
         except OSError as e:
             return {"ok": False, "error": str(e)[:100]}
+        if action in ("minimize", "close", "kill") and qam_desktop is not None:
+            await self._base_off(f"qam:{app_id}")
+            if action != "minimize":
+                self._qam_keys.discard(f"qam:{app_id}")
         return {"ok": True}
 
     async def keyboard_url(self, close: bool = False) -> dict:
