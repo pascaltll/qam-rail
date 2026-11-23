@@ -99,6 +99,15 @@ def _t054_base():
     assert d.baselayer_without([g, 413091, 769], g) == [413091, 769]
 
 
+def _t054_opts():
+    assert d.clean_opts({"scale": 1.4, "touch": 1}) == {"scale": 1.5, "touch": True}
+    assert d.clean_opts("x") == {"scale": 1.0, "touch": False} and d.clean_opts({"scale": 9})["scale"] == 2.0
+    assert d.apply_opts(["flatpak", "run", "com.microsoft.Edge"], "chromium", {"scale": 1.5, "touch": True}) == ["flatpak", "run", "com.microsoft.Edge", "--force-device-scale-factor=1.5", "--touch-events=enabled"]
+    assert d.apply_opts(["flatpak", "run", "org.mozilla.firefox"], "firefox", {"scale": 1.25}) == ["flatpak", "run", "--env=GDK_DPI_SCALE=1.25", "org.mozilla.firefox"]
+    assert d.apply_opts(["/usr/bin/firefox"], "firefox", {"scale": 2}) == ["env", "GDK_DPI_SCALE=2", "/usr/bin/firefox"]
+    assert d.apply_opts(["/usr/bin/x"], "other", {"scale": 2}) == ["/usr/bin/x"] and d.apply_opts(["a"], "chromium", {}) == ["a"]
+
+
 def _t054():
     import qam_desktop as D
     w = lambda c: "/usr/bin/" + c
@@ -133,3 +142,4 @@ _t054()
 _t054_exec()
 _t054_x()
 _t054_base()
+_t054_opts()

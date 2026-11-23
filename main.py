@@ -571,6 +571,8 @@ class Plugin:
             plan = qam_desktop.launch_plan(app, home=_home())
         except ValueError as e:
             return {"ok": False, "error": str(e)}
+        if plan.get("browser"):
+            plan["argv"] = qam_desktop.apply_opts(plan["argv"], plan["browser"], self._desk_opts().get(str(key)))
         return {"ok": True, "name": app["name"], "source": app["source"], "icon_path": qam_desktop.icon_path(app.get("icon"), _home()), **plan}
 
     async def _user_session(self) -> tuple[list, dict]:
@@ -978,6 +980,34 @@ class Plugin:
             icon = self._icon_data(a)
             out.append({"key": k, "name": a.get("name", k), "source": a.get("source", ""), "icon": icon})
         return {"pins": out}
+
+    def _desk_opts(self) -> dict:
+        try:
+            with open(_path("desktop-opts.json"), encoding="utf-8") as fh:
+                raw = json.load(fh)
+        except (OSError, ValueError):
+            return {}
+        return {k: v for k, v in raw.items() if isinstance(k, str) and len(k) <= 120} if isinstance(raw, dict) else {}
+
+    async def desktop_opts(self, key: str, scale: float | None = None, touch: bool | None = None) -> dict:
+        """Ajustes de lanzamiento de una app de escritorio (hoy solo navegadores: zoom y táctil). Se aplican al abrirla de nuevo."""
+        if qam_desktop is None:
+            return {"ok": False}
+        app = await self._desk_find(str(key))
+        kind = qam_desktop.browser_kind(app) if app else None
+        allo = self._desk_opts()
+        cur = qam_desktop.clean_opts(allo.get(str(key)))
+        if kind in ("chromium", "firefox") and (scale is not None or touch is not None):
+            cur = qam_desktop.clean_opts({"scale": cur["scale"] if scale is None else scale, "touch": cur["touch"] if touch is None else touch})
+            allo[str(key)] = cur
+            tmp = _path("desktop-opts.json.tmp")
+            try:
+                with open(tmp, "w", encoding="utf-8") as fh:
+                    json.dump(allo, fh)
+                os.replace(tmp, _path("desktop-opts.json"))
+            except OSError as e:
+                return {"ok": False, "error": str(e)[:100]}
+        return {"ok": True, "browser": kind, **cur}
 
     async def desktop_pin_set(self, key: str, on: bool) -> dict:
         keys = [k for k in self._desk_pins() if k != str(key)]

@@ -219,6 +219,43 @@ def launch_plan(app: dict, which=None, home: str = "", fullscreen: bool = True) 
             "fullscreen": fs, "browser": kind}
 
 
+SCALES = (1.0, 1.25, 1.5, 1.75, 2.0)
+
+
+def clean_opts(raw) -> dict:
+    """Ajustes de lanzamiento de un navegador: `scale` (zoom de la interfaz, 1,0–2,0 en pasos de 0,25) y `touch` (eventos táctiles)."""
+    raw = raw if isinstance(raw, dict) else {}
+    try:
+        sc = float(raw.get("scale", 1.0))
+    except (TypeError, ValueError):
+        sc = 1.0
+    sc = min(SCALES, key=lambda x: abs(x - sc)) if sc == sc else 1.0
+    return {"scale": sc, "touch": bool(raw.get("touch", False))}
+
+
+def apply_opts(argv: list, kind, opts: dict) -> list:
+    """Añade los ajustes de lanzamiento (solo navegadores). Chromium/Edge: `--force-device-scale-factor` y `--touch-events=enabled`.
+    Firefox no tiene opción de línea de órdenes: se usan variables de entorno (`GDK_DPI_SCALE`, `MOZ_USE_XINPUT2`), con `--env=` si es Flatpak. Sin shell."""
+    o = clean_opts(opts)
+    if kind not in ("chromium", "firefox") or (o["scale"] == 1.0 and not o["touch"]):
+        return list(argv)
+    out = list(argv)
+    if kind == "chromium":
+        if o["scale"] != 1.0:
+            out.append(f"--force-device-scale-factor={o['scale']:g}")
+        if o["touch"]:
+            out.append("--touch-events=enabled")
+        return out
+    env = []
+    if o["scale"] != 1.0:
+        env.append(f"GDK_DPI_SCALE={o['scale']:g}")
+    if o["touch"]:
+        env.append("MOZ_USE_XINPUT2=1")
+    if os.path.basename(out[0]) == "flatpak" and len(out) > 1 and out[1] == "run":
+        return out[:2] + [f"--env={e}" for e in env] + out[2:]
+    return ["env", *env, *out]
+
+
 def icon_path(icon: str | None, home: str, isfile=os.path.isfile):
     """Ruta de archivo del icono si es absoluta o se encuentra en los temas habituales (hicolor); si no, None."""
     if not icon:

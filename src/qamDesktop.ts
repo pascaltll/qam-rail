@@ -21,6 +21,10 @@ export const desktopStop = callable<[key: string], { ok: boolean; error?: string
 export const desktopOverlay = callable<[on: boolean], { ok: boolean; skipped?: boolean; error?: string }>("desktop_overlay");
 export const desktopMinimize = callable<[key: string], { ok: boolean; error?: string | null }>("desktop_minimize");
 export const desktopKill = callable<[key: string], { ok: boolean; error?: string | null }>("desktop_kill");
+export interface DeskOpts { ok: boolean; browser?: "chromium" | "firefox" | "other" | null; scale: number; touch: boolean }
+export const desktopOpts = callable<[key: string, scale?: number | null, touch?: boolean | null], DeskOpts>("desktop_opts");
+export const SCALES = [1, 1.25, 1.5, 1.75, 2] as const;
+export const scaleLabel = (s: number) => `${Math.round(s * 100)} %`;
 export const desktopPins = callable<[], { pins: Pin[] }>("desktop_pins");
 export const desktopPinSet = callable<[key: string, on: boolean], { ok: boolean; error?: string }>("desktop_pin_set");
 

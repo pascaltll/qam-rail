@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState, type FC } from "react";
 
 import {
-  closeDesktopApp, killDesktopApp, loadRunning, menuOptions, minimizeDesktopApp, openDesktopApp, runningCached,
+  closeDesktopApp, desktopOpts, killDesktopApp, loadRunning, SCALES, scaleLabel, type DeskOpts, menuOptions, minimizeDesktopApp, openDesktopApp, runningCached,
 } from "./qamDesktop";
 import { takeFocus } from "./nav";
 import { appsControl } from "./qamApps";
@@ -13,6 +13,10 @@ export const DeskMenu: FC<{ app: { key: string; name: string; qam?: { id: string
   const [running, setRunning] = useState<boolean>(() => (app.qam ? (app.qam.running ?? true) : false) || runningCached().includes(app.key));
   const [busy, setBusy] = useState(false);
   const box = useRef<HTMLDivElement | null>(null);
+  // Navegadores: zoom de la interfaz y táctil al abrirlos (se aplican en la próxima apertura).
+  const [bopts, setOpts] = useState<DeskOpts | null>(null);
+  useEffect(() => { if (app.qam) return; let on = true; void desktopOpts(app.key).then((o) => { if (on) setOpts(o); }).catch(() => null); return () => { on = false; }; }, [app.key]);
+  const setOpt = (scale: number | null, touch: boolean | null) => void desktopOpts(app.key, scale, touch).then(setOpts).catch(() => null);
   useEffect(() => { if (app.qam) return; let on = true; void loadRunning(true).then((k) => { if (on) setRunning(k.includes(app.key)); }); return () => { on = false; }; }, [app.key]);
   useEffect(() => { const t = window.setTimeout(() => { takeFocus(box.current?.querySelector<HTMLElement>("[data-qr]") ?? null); }, 80); return () => window.clearTimeout(t); }, []);
 
@@ -47,6 +51,13 @@ export const DeskMenu: FC<{ app: { key: string; name: string; qam?: { id: string
         </div>
         <Row gap={6}>{opts.slice(0, 2).map((o) => <Chip key={o.id} compact active={o.id === "open" || o.id === "show"} icon={icon(o.id)} onClick={() => void go(o.id)}>{o.label}</Chip>)}</Row>
         {opts.length > 2 && <Row gap={6}>{opts.slice(2).map((o) => <Chip key={o.id} compact icon={icon(o.id)} onClick={() => void go(o.id)}>{o.label}</Chip>)}</Row>}
+        {bopts?.ok && (bopts.browser === "chromium" || bopts.browser === "firefox") && (
+          <>
+            <div style={{ fontSize: 11, color: COLORS.muted }}>Tamaño de la interfaz del navegador (al abrirlo de nuevo)</div>
+            <Row gap={6}>{SCALES.map((sc) => <Chip key={sc} compact active={bopts.scale === sc} onClick={() => setOpt(sc, null)}>{scaleLabel(sc)}</Chip>)}</Row>
+            <Row gap={6}><Chip compact active={bopts.touch} onClick={() => setOpt(null, !bopts.touch)}>{bopts.touch ? "Táctil: sí" : "Táctil: no"}</Chip></Row>
+          </>
+        )}
         <Row gap={6}>
           {app.qam && onOptions && <Chip compact icon={ICONS2.plug} onClick={() => { const id = app.qam?.id; onClose(); if (id) onOptions(id); }}>Opciones…</Chip>}
           <Chip compact onClick={onClose}>Cancelar</Chip>
