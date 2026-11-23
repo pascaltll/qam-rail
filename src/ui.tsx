@@ -2,7 +2,7 @@ import { DENSITY, currentPalette, uiPrefs } from "./appearance";
 import { useTap } from "./tap";
 import { ensureCss, pressFx } from "./fx";
 import { DialogButton, Focusable } from "@decky/ui";
-import { useEffect, useRef, useState, type CSSProperties, type FC, type PointerEvent as RPointerEvent, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useRef, useState, type CSSProperties, type FC, type PointerEvent as RPointerEvent, type ReactNode } from "react";
 
 // Piezas visuales del QAM propio (modelo C): tarjetas redondeadas, acento, controles con mando.
 // Colores vivos: siguen la apariencia elegida (por defecto, el tema de Panel de Control). Se leen al pintar.
@@ -53,6 +53,14 @@ export const cardStyle: CSSProperties = {
   get gap() { return DENSITY[uiPrefs().density].gap; },
   boxSizing: "border-box",
 };
+/** Profundidad de tarjetas anidadas (0 = en la sección). Una tarjeta dentro de otra lleva esquinas CONCÉNTRICAS (radio de fuera menos el
+ *  margen), no el mismo radio: con «Redondas» (28) una barra dentro de una tarjeta se veía como un segundo marco igual de redondo. */
+export const CardDepth = createContext(0);
+export const nestedRadius = (outer: number): number => Math.max(10, outer - 12);
+export function useCardStyle(): CSSProperties {
+  const depth = useContext(CardDepth);
+  return depth > 0 ? { ...cardStyle, borderRadius: nestedRadius(currentPalette().cardRadius) } : { ...cardStyle };
+}
 /** Separación entre tarjetas de una sección (según la densidad elegida en Apariencia). */
 export const paneGap = () => DENSITY[uiPrefs().density].pane;
 
@@ -108,11 +116,12 @@ export const XSlider: FC<{
   const pct = Math.min(100, Math.max(0, ((value - min) / Math.max(1e-9, max - min)) * 100));
   const nudge = (dir: number) => onChange(Math.min(max, Math.max(min, Math.round((value + dir * step) / step) * step)));
   const drag = useDrag(min, max, step, onChange);
+  const base = useCardStyle();
   return (
     <Focusable
       data-qr="item"
       data-qr-h="1"
-      style={{ ...cardStyle, ...focusRing(focused) }}
+      style={{ ...base, ...focusRing(focused) }}
       noFocusRing
       onGamepadFocus={() => setFocused(true)}
       onGamepadBlur={() => setFocused(false)}

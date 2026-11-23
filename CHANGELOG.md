@@ -1,5 +1,11 @@
 # Cambios
 
+## dev.65
+
+- **Esquinas concéntricas:** una tarjeta dentro de otra (la barra «Calidez» dentro de Color, el refuerzo dentro de Sonido…) ya no lleva el mismo radio que la de fuera —con «Redondas» (28) se veía un segundo marco igual de redondo—, sino el radio de fuera menos el margen (`nestedRadius`: 28 → 16, mínimo 10).
+- **«Más»:** el nombre «Panel de Control» se cortaba («Panel de…») porque su texto de ayuda era largo (lo introduje en dev.64). Ahora el nombre manda y el texto de ayuda se recorta (y es más corto: «CPU, GPU, mandos»).
+- **Apps › Sistema:** el filtro «Todas / Flatpak / AppImage / Sistema» se partía en 3 + 1 (la opción elegida quedaba sola en la segunda fila); con 4 opciones va en una fila.
+
 ## dev.64
 
 - **Menos paradas de mando muertas o repetidas:** Conexiones ya no trae la fila «Remote Play · próximamente» (era una parada sin función); en Apps › Plugins, el aviso de «sin plugins» es solo texto. **Más:** «Mandos (remapeo)» y «Panel de Control» abrían lo mismo, ahora es una sola entrada («CPU, GPU, mandos, perfiles»); «Pruebas y diagnóstico» y «Prueba de CPU por vatios» van dentro de un plegable «Pruebas y herramientas» (una parada en vez de dos), y «QAM de Steam» pasa a Sistema, con los demás ajustes del sistema.

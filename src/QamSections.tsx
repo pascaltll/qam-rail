@@ -1,5 +1,5 @@
 import { DialogButton, Focusable } from "@decky/ui";
-import { useEffect, useRef, useState, type CSSProperties, type FC, type ReactNode } from "react";
+import { useContext, useEffect, useRef, useState, type CSSProperties, type FC, type ReactNode } from "react";
 
 import { readApps, curate, type AppEntry } from "./apps";
 import { appsRun, appsRunning, drawerCached, loadDrawerApps, shortcutOf, type QamApp } from "./qamApps";
@@ -21,14 +21,14 @@ import { onHomeModesChange } from "./homeModes";
 import { saveSection } from "./diagStore";
 import type { UseTdp } from "./tdpControl";
 import { PAUSED, PLAYING, albumArt, albumById, music, musicState, musicOutputLost, musicStopped, musicSubscribe, readAlbums, soundtrackName, type Album } from "./music";
-import { dockSurface } from "./appearance";
+import { currentPalette, dockSurface } from "./appearance";
 import { AudioControls } from "./QamAudio";
 import { perfStore, readExtras, readPerf, setExtra, step, type PerfView } from "./steamPerf";
 import { useTap } from "./tap";
 import { DeskMenu } from "./QamDeskMenu";
 import { loadPins, loadRunning, openDesktopApp, pinsCached, runningAppsCached, runningCached, type Pin } from "./qamDesktop";
 import { tickEvery } from "./ticker";
-import { COLORS, Chip, ICONS, ICONS2, Icon, Keep, Row, Segments, ToggleRow, XSlider, cardStyle, colorFor, focusRing } from "./ui";
+import { CardDepth, COLORS, Chip, ICONS, ICONS2, Icon, Keep, Row, Segments, ToggleRow, XSlider, cardStyle, nestedRadius, colorFor, focusRing } from "./ui";
 
 export const small = { fontSize: 12, get color() { return COLORS.muted; }, lineHeight: "16px" };
 
@@ -40,8 +40,11 @@ export const Label: FC<{ children: ReactNode }> = ({ children }) => (
 /**
  * Tarjeta. Con `help` (clave de help.ts): Y sobre cualquier control de dentro, o tocar el «?», explica qué hace.
  */
-export const Card: FC<{ title?: string; right?: ReactNode; children: ReactNode; help?: string }> = ({ title, right, children, help }) => (
-  <div style={{ ...cardStyle }} {...(help ? { "data-qr-help": help } : {})}>
+export const Card: FC<{ title?: string; right?: ReactNode; children: ReactNode; help?: string }> = ({ title, right, children, help }) => {
+  const depth = useContext(CardDepth);
+  return (
+  <CardDepth.Provider value={depth + 1}>
+  <div style={{ ...cardStyle, ...(depth > 0 ? { borderRadius: nestedRadius(currentPalette().cardRadius) } : {}) }} {...(help ? { "data-qr-help": help } : {})}>
     {title && (
       <div style={{ display: "flex", alignItems: "center", gap: 8, minHeight: 20 }}>
         <span style={{ fontSize: 12, fontWeight: 700, letterSpacing: 0.3, color: COLORS.muted, flexGrow: 1, textTransform: "uppercase" }}>{title}</span>
@@ -51,7 +54,9 @@ export const Card: FC<{ title?: string; right?: ReactNode; children: ReactNode; 
     )}
     {children}
   </div>
-);
+  </CardDepth.Provider>
+  );
+};
 /** El «?» del título (para el dedo; con mando es Y). No es parada de la cruceta. */
 const HelpDot: FC<{ id: string }> = ({ id }) => (
   <span role="button" title="Ayuda" onClick={(e) => { e.stopPropagation(); showHelp(id); }}
@@ -104,8 +109,8 @@ export const Shortcut: FC<{ label: string; hint?: string; onOpen: () => void; ic
     <Focusable data-qr="item" noFocusRing onActivate={tap} onClick={tap} onGamepadFocus={() => setF(true)} onGamepadBlur={() => setF(false)}
       style={{ ...cardStyle, flexDirection: "row", alignItems: "center", gap: 10, height: 46, padding: "0 14px", ...focusRing(f) }}>
       {icon}
-      <span style={{ flexGrow: 1, fontSize: 14, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{label}</span>
-      {hint && <span style={{ fontSize: 12, color: COLORS.muted, whiteSpace: "nowrap" }}>{hint}</span>}
+      <span style={{ flexGrow: 1, flexShrink: 0, fontSize: 14, whiteSpace: "nowrap" }}>{label}</span>
+      {hint && <span style={{ fontSize: 12, color: COLORS.muted, whiteSpace: "nowrap", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" }}>{hint}</span>}
       <Icon d="M9 6l6 6-6 6" size={18} color={COLORS.muted} />
     </Focusable>
   );

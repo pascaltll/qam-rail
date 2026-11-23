@@ -86,7 +86,7 @@ export const QamDesktopApps: FC<{ notify: (t: string) => void; after?: () => voi
   return (
     <Keep id="qam-desktop-apps" loading={apps === null}>
       <Card title="Apps del equipo" help="steam" right={<span style={small}>{apps?.length ? `${apps.length}` : ""}</span>}>
-        {opts.length > 2 && <Segments opts={opts} value={src} onPick={(v: Src) => setSrc(v)} perRow={3} />}
+        {opts.length > 2 && <Segments opts={opts} value={src} onPick={(v: Src) => setSrc(v)} perRow={opts.length === 4 ? 4 : 3} />}
         {err && <div style={small}>{err}</div>}
         {apps !== null && !apps.length && !err && <div style={small}>No se encontraron apps de escritorio.</div>}
         {apps !== null && !!apps.length && <div style={{ ...small, fontSize: 11 }}>A abre · X (o mantener pulsado) opciones: cerrar, agregar a QAM, tamaño…</div>}

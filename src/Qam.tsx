@@ -527,7 +527,7 @@ export const QamApp: FC<{ log: (m: string) => void; onNative: (tab?: number) => 
       ) : (
         <>
           <Shortcut icon={<ShortIcon d={MORE_ICON.look} />} label="Apariencia" hint="colores, acento, fluidez del panel" onOpen={() => { setLook(true); window.setTimeout(() => focusBody(), 90); }} />
-          <Shortcut icon={<ShortIcon d={MORE_ICON.panel} />} label="Panel de Control" hint="CPU, GPU, mandos (remapeo), perfiles" onOpen={openPanel} />
+          <Shortcut icon={<ShortIcon d={MORE_ICON.panel} />} label="Panel de Control" hint="CPU, GPU, mandos" onOpen={openPanel} />
           <QamChannelCard notify={notify} />
           <QamSelfUpdateCard notify={notify} />
           <Label>Sistema</Label>
