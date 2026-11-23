@@ -853,6 +853,8 @@ Compartido: `~/homebrew/qam-apps` (mismo esquema de manifiestos) y la carpeta `s
 
 **Red de seguridad.** Al arrancar el backend de dev siendo activo se cuenta un arranque en `settings/qam-rail-dev/arranques-sin-confirmar`; el frontend lo pone a 0 con `channel_ok()` 20 s después de asentarse Steam. Con 2 arranques seguidos sin confirmar, el siguiente deja la bandera en `estable` (si la estable existe), escribe un aviso y el panel de dev queda en pausa; la estable muestra el aviso una vez (toast). Sin estable instalada no hay a dónde volver y no se cambia nada.
 
+**Lección (dev.1 → dev.2) [V en el equipo].** `@decky/api` incrusta `plugin.json.name` en el bundle (alias `@decky/manifest` de rollup) y con él conecta cada `callable` con su backend. Cambiar solo el `plugin.json` del zip no basta: el bundle dev seguía conectado al backend «QAM Rail» (estable), `channel_info` devolvía `me=stable` y las dos copias se creían en pausa → el panel no abría. Ahora `rollup.config.js` acepta `QAM_MANIFEST_DIR`, `package.sh --dev` recompila con «QAM Rail Dev» (apartando y restaurando `dist/`) y comprueba el nombre del bundle antes de empaquetar (y que el estable no lleve el de dev). CI ejecuta `package.sh --dev 1`.
+
 **Pendiente de verificar en el equipo [H].** Que Decky acepte dos plugins con nombres distintos a la vez; que `DECKY_PLUGIN_SETTINGS_DIR` sea por carpeta (`settings/qam-rail-dev`); que `callable` apunte al backend de cada plugin; que el aviso (toast) salga tras el reinicio.
 
 **Pruebas.** `tests/py/test_channel.py` (activo, cambio, red de seguridad), `tests/sh/test_scripts.sh` (instalar dev al lado, `--dev`, `canal.sh`), `tests/v053.test.ts` (lógica de la UI).

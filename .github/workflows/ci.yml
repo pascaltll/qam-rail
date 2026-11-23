@@ -22,3 +22,4 @@ jobs:
       - run: python3 tests/py/test_channel.py
       - run: for f in scripts/*.sh; do bash -n "$f"; done
       - run: pnpm build
+      - run: bash scripts/package.sh --dev 1  # el bundle dev debe llevar su propio nombre
