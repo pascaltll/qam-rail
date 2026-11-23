@@ -16,7 +16,7 @@ export interface Pin { key: string; name: string; source: string; icon: string |
 
 export const desktopPlan = callable<[key: string], DesktopPlan>("desktop_plan");
 export const desktopRun = callable<[key: string], { ok: boolean; error?: string }>("desktop_run");
-export const desktopRunning = callable<[], { keys: string[] }>("desktop_running");
+export const desktopRunning = callable<[], { keys: string[]; apps?: Pin[] }>("desktop_running");
 export const desktopStop = callable<[key: string], { ok: boolean; error?: string | null }>("desktop_stop");
 export const desktopOverlay = callable<[on: boolean], { ok: boolean; skipped?: boolean; error?: string }>("desktop_overlay");
 export const desktopMinimize = callable<[key: string], { ok: boolean; error?: string | null }>("desktop_minimize");
@@ -96,12 +96,14 @@ export async function killDesktopApp(key: string, name: string): Promise<{ ok: b
 }
 
 // Apps abiertas por QAM Rail (compartido por el cajón y la pestaña Steam).
-let runCache: { at: number; keys: string[] } | null = null;
+let runCache: { at: number; keys: string[]; apps: Pin[] } | null = null;
 export const runningCached = (): string[] => runCache?.keys ?? [];
+/** Apps de escritorio abiertas (con nombre e icono), estén o no agregadas a QAM. */
+export const runningAppsCached = (): Pin[] => runCache?.apps ?? [];
 export async function loadRunning(force = false): Promise<string[]> {
   if (!force && runCache && Date.now() - runCache.at < 4000) return runCache.keys;
   const r = await desktopRunning().catch(() => null);
-  runCache = { at: Date.now(), keys: Array.isArray(r?.keys) ? r!.keys : [] };
+  runCache = { at: Date.now(), keys: Array.isArray(r?.keys) ? r!.keys : [], apps: Array.isArray(r?.apps) ? r!.apps : [] };
   return runCache.keys;
 }
 

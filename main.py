@@ -639,21 +639,82 @@ class Plugin:
         except (OSError, asyncio.TimeoutError):
             return 1, ""
 
+    def _icon_data(self, a: dict) -> str | None:
+        """Icono de una app de escritorio como data URL (con caché: se pide cada pocos segundos)."""
+        import base64
+        cache = self.__dict__.setdefault("_icon_cache", {})
+        k = a.get("key")
+        if k in cache:
+            return cache[k]
+        icon = None
+        p = qam_desktop.icon_path(a.get("icon"), _home()) if qam_desktop else None
+        if p and os.path.getsize(p) < 1_500_000:
+            try:
+                with open(p, "rb") as fh:
+                    low = p.lower()
+                    kind = "svg+xml" if low.endswith(".svg") else "jpeg" if low.endswith((".jpg", ".jpeg")) else "png"
+                    icon = f"data:image/{kind};base64," + base64.b64encode(fh.read()).decode()
+            except OSError:
+                icon = None
+        cache[k] = icon
+        return icon
+
+    async def _live_claim_keys(self) -> set:
+        """Claves de apps de escritorio con alguna ventana marcada que sigue abierta (apps que delegan en otro proceso, como KDE Connect,
+        terminan su unidad al instante y la ventana vive aparte)."""
+        claims = {w: k for w, k in self._claims.items() if not str(k).startswith("qam:")}
+        if not claims:
+            return set()
+        try:
+            prefix, seen = await self._user_session()
+            self._xauth = seen.get("XAUTHORITY") or None
+            alive = {w["id"] for w in await self._x_windows(prefix, seen.get("DISPLAY") or ":0")}
+        except Exception:
+            return set()
+        for w in [w for w in self._claims if w not in alive]:
+            self._claims.pop(w, None)
+        return {k for w, k in claims.items() if w in alive}
+
     async def desktop_running(self) -> dict:
-        """Claves de las apps de escritorio que QAM Rail abrió y siguen en marcha."""
+        """Apps de escritorio que QAM Rail abrió y siguen abiertas (unidad activa o ventana viva), con nombre e icono para gestionarlas."""
         code, out = await self._systemctl_user("list-units", "qam-desk-*", "--state=active,activating", "--plain", "--no-legend", "--no-pager")
         units = {ln.split()[0].removesuffix(".service") for ln in out.splitlines() if ln.strip() and ln.split()[0].startswith("qam-desk-")} if code == 0 else set()
-        if not units:
-            return {"keys": []}
+        live = await self._live_claim_keys()
+        if not units and not live:
+            return {"keys": [], "apps": []}
         data = await self.desktop_scan(False)
-        return {"keys": [a["key"] for a in data.get("apps", []) if self._desk_unit(a.get("key", "")) in units]}
+        apps = [a for a in data.get("apps", []) if self._desk_unit(a.get("key", "")) in units or a.get("key") in live]
+        return {"keys": [a["key"] for a in apps],
+                "apps": [{"key": a["key"], "name": a.get("name", a["key"]), "source": a.get("source", ""), "icon": self._icon_data(a)} for a in apps]}
+
+    async def _kill_windows_of(self, key: str, sig: int) -> int:
+        """Señal a los procesos dueños de las ventanas marcadas de la app (para las que escapan de su unidad). Nunca a PIDs < 100 (hilos del núcleo)."""
+        wids = [w for w, k in self._claims.items() if k == key]
+        if not wids:
+            return 0
+        prefix, seen = await self._user_session()
+        display = seen.get("DISPLAY") or ":0"
+        self._xauth = seen.get("XAUTHORITY") or None
+        n = 0
+        for pid in {pid for pid in [await self._win_pid(prefix, display, w) for w in wids] if pid and pid >= 100 and pid != os.getpid()}:
+            try:
+                os.kill(pid, sig)
+                n += 1
+            except OSError:
+                pass
+        return n
 
     async def desktop_stop(self, key: str) -> dict:
-        """Cierra la app que abrió QAM Rail (para su unidad: termina todos sus procesos)."""
+        """Cierra la app que abrió QAM Rail: para su unidad (termina todos sus procesos) y, si su ventana vive en otro proceso, le envía SIGTERM."""
+        import signal
         unit = self._desk_unit(key) + ".service"
         code, out = await self._systemctl_user("stop", unit)
+        n = await self._kill_windows_of(key, signal.SIGTERM)
         await self._base_off(key)
-        return {"ok": code == 0, "error": out.strip().splitlines()[-1][:120] if code and out.strip() else None}
+        if n:
+            await asyncio.sleep(0.8)
+            await self._live_claim_keys()
+        return {"ok": code == 0 or n > 0, "error": out.strip().splitlines()[-1][:120] if code and not n and out.strip() else None}
 
     async def _base_off(self, key: str) -> None:
         """Quita la app de la capa base de gamescope (al cerrarla) para que vuelva a verse Steam."""
@@ -834,8 +895,12 @@ class Plugin:
         unit = self._desk_unit(key) + ".service"
         await self._systemctl_user("kill", "--signal=SIGKILL", unit)
         code, out = await self._systemctl_user("stop", unit)
+        import signal
+        n = await self._kill_windows_of(key, signal.SIGKILL)
         await self._base_off(key)
-        return {"ok": code == 0, "error": out.strip().splitlines()[-1][:120] if code and out.strip() else None}
+        for w in [w for w, k in self._claims.items() if k == key]:
+            self._claims.pop(w, None)
+        return {"ok": code == 0 or n > 0, "error": out.strip().splitlines()[-1][:120] if code and not n and out.strip() else None}
 
     async def desktop_run(self, key: str) -> dict:
         """Abre la app de escritorio dentro de la sesión del usuario (`systemd-run --user`: entorno limpio, sin los límites del servicio de Decky,
@@ -910,16 +975,7 @@ class Plugin:
             a = by.get(k)
             if not a:
                 continue
-            icon = None
-            p = qam_desktop.icon_path(a.get("icon"), _home())
-            if p and os.path.getsize(p) < 1_500_000:
-                try:
-                    with open(p, "rb") as fh:
-                        low = p.lower()
-                        kind = "svg+xml" if low.endswith(".svg") else "jpeg" if low.endswith((".jpg", ".jpeg")) else "png"
-                        icon = f"data:image/{kind};base64," + base64.b64encode(fh.read()).decode()
-                except OSError:
-                    icon = None
+            icon = self._icon_data(a)
             out.append({"key": k, "name": a.get("name", k), "source": a.get("source", ""), "icon": icon})
         return {"pins": out}
 
