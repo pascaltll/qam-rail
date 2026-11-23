@@ -15,7 +15,7 @@ import { VisibleContext } from "./visible";
 import { DiagView, FluencyBanner } from "./QamDiag";
 import { AppearanceCard } from "./QamAppearance";
 import { toggleKeyboard } from "./keyboard";
-import { QamAppsCard } from "./QamAppsCard";
+import { QamAppOptions, QamStore } from "./QamAppsCard";
 import { QamDesktopApps } from "./QamDesktopApps";
 import { QamChannelCard } from "./QamChannel";
 import { QamSelfUpdateCard } from "./QamSelfUpdate";
@@ -87,6 +87,8 @@ export const QamApp: FC<{ log: (m: string) => void; onNative: (tab?: number) => 
     setSectionRaw(id);
   }, []);
   const [appsTab, setAppsTab] = useState<"apps" | "steam" | "plugins">("apps");
+  const [store, setStore] = useState(false);
+  const [appOpt, setAppOpt] = useState<string | null>(null);
   const [bright, setBright] = useState(0.5);
   const [vol, setVol] = useState(0.5);
   const [toast, setToast] = useState("");
@@ -485,8 +487,12 @@ export const QamApp: FC<{ log: (m: string) => void; onNative: (tab?: number) => 
           </Row>
           {appsTab === "apps" ? (
             <>
-              <AppGrid apps={[...apps.pinned, ...apps.more]} notify={notify} after={onClose} />
-              <QamAppsCard notify={notify} />
+              {store ? <QamStore notify={notify} onBack={() => setStore(false)} /> : (
+                <>
+                  {appOpt && <QamAppOptions id={appOpt} notify={notify} onClose={() => setAppOpt(null)} />}
+                  <AppGrid apps={[...apps.pinned, ...apps.more]} notify={notify} after={onClose} onOptions={setAppOpt} onStore={() => setStore(true)} />
+                </>
+              )}
             </>
           ) : appsTab === "steam" ? (
             <QamDesktopApps notify={notify} after={onClose} />

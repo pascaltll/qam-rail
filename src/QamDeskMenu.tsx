@@ -9,7 +9,7 @@ import { appsControl } from "./qamApps";
 import { COLORS, Chip, ICONS2, Row, cardStyle } from "./ui";
 
 /** `qam`: app de QAM (MiniTube…) con las órdenes de su lanzador; sin él, app de escritorio. */
-export const DeskMenu: FC<{ app: { key: string; name: string; qam?: { id: string; controls: string[]; running?: boolean } }; notify: (t: string) => void; onClose: () => void; after?: () => void }> = ({ app, notify, onClose, after }) => {
+export const DeskMenu: FC<{ app: { key: string; name: string; qam?: { id: string; controls: string[]; running?: boolean } }; notify: (t: string) => void; onClose: () => void; after?: () => void; onOptions?: (id: string) => void }> = ({ app, notify, onClose, after, onOptions }) => {
   const [running, setRunning] = useState<boolean>(() => (app.qam ? (app.qam.running ?? true) : false) || runningCached().includes(app.key));
   const [busy, setBusy] = useState(false);
   const box = useRef<HTMLDivElement | null>(null);
@@ -47,7 +47,10 @@ export const DeskMenu: FC<{ app: { key: string; name: string; qam?: { id: string
         </div>
         <Row gap={6}>{opts.slice(0, 2).map((o) => <Chip key={o.id} compact active={o.id === "open" || o.id === "show"} icon={icon(o.id)} onClick={() => void go(o.id)}>{o.label}</Chip>)}</Row>
         {opts.length > 2 && <Row gap={6}>{opts.slice(2).map((o) => <Chip key={o.id} compact icon={icon(o.id)} onClick={() => void go(o.id)}>{o.label}</Chip>)}</Row>}
-        <Row gap={6}><Chip compact onClick={onClose}>Cancelar</Chip></Row>
+        <Row gap={6}>
+          {app.qam && onOptions && <Chip compact icon={ICONS2.plug} onClick={() => { const id = app.qam?.id; onClose(); if (id) onOptions(id); }}>Opciones…</Chip>}
+          <Chip compact onClick={onClose}>Cancelar</Chip>
+        </Row>
       </div>
     </div>
   );

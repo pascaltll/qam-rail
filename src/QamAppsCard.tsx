@@ -1,4 +1,4 @@
-// Apps › «Apps de QAM»: como la tienda de Decky pero para apps propias. Carpeta ~/homebrew/qam-apps/<id>,
+// Apps de QAM: opciones de cada app (menú largo › Opciones) y «Tienda» (por ahora, instalar desde archivo; luego una lista de apps pensadas para Big Picture). Carpeta ~/homebrew/qam-apps/<id>,
 // instalar/actualizar desde un .zip (Descargas, Games…), añadir a Steam con su arte, acciones rapidas y desinstalar.
 import { openFilePicker } from "@decky/api";
 import { Focusable } from "@decky/ui";
@@ -9,7 +9,7 @@ import {
   type FoundZip, type QamApp,
 } from "./qamApps";
 import { Card, Label, small } from "./QamSections";
-import { COLORS, Chip, ICONS2, Keep, Row, colorFor } from "./ui";
+import { COLORS, Chip, ICONS2, Keep, Row } from "./ui";
 
 const newer = (a: string | null | undefined, b: string | null | undefined) => {
   if (!a || !b) return false;
@@ -18,15 +18,14 @@ const newer = (a: string | null | undefined, b: string | null | undefined) => {
   return false;
 };
 
-export const QamAppsCard: FC<{ notify: (t: string) => void; onChanged?: () => void }> = ({ notify, onChanged }) => {
+/** Estado y acciones compartidas por las opciones de una app y la tienda. */
+function useAppMgr(notify: (t: string) => void, onChanged?: () => void) {
   const [data, setData] = useState<{ dir: string; apps: QamApp[] } | null>(null);
   const [zips, setZips] = useState<FoundZip[] | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [ask, setAsk] = useState<string | null>(null);
   // Primera instalacion de una app con instalador propio: se pregunta antes de ejecutarlo.
   const [confirm, setConfirm] = useState<{ app: QamApp; answer: (yes: boolean) => void } | null>(null);
-  // Instalar es ocasional: va plegado (antes ocupaba media sección).
-  const [inst, setInst] = useState(false);
   const reload = () => {
     void appsList().then((d) => setData({ dir: d?.dir ?? "?", apps: Array.isArray(d?.apps) ? d.apps : [] }), () => setData({ dir: "?", apps: [] }));
     void appsFindZips().then((z) => setZips(Array.isArray(z) ? z : []), () => setZips([]));
@@ -63,77 +62,90 @@ export const QamAppsCard: FC<{ notify: (t: string) => void; onChanged?: () => vo
       .then((r) => (folder === "link" ? run("Añadiendo carpeta…", async () => { const x = await appsAddFolder(r.realpath ?? r.path); await loadDrawerApps(true); return x.ok ? `${x.app?.name} añadida (se usa desde su carpeta)` : `No se pudo: ${x.error}`; }) : install(r.realpath ?? r.path)))
       .catch(() => null);
   };
-
   const apps = data?.apps ?? [];
   const pending = (zips ?? []).filter((z) => { const a = apps.find((x) => x.id === z.id); return !a || newer(z.version, a.version); });
+  return { data, zips, busy, ask, setAsk, confirm, gh, checkGh, run, install, updateGh, pick, apps, pending };
+}
 
+const Status: FC<{ m: ReturnType<typeof useAppMgr> }> = ({ m }) => (
+  <>
+    {m.busy && <div style={{ ...small, color: COLORS.text }}>{m.busy}</div>}
+    {m.confirm && (
+      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+        <div style={{ fontSize: 13, fontWeight: 700 }}>¿Instalar {m.confirm.app.name}{m.confirm.app.version ? ` ${m.confirm.app.version}` : ""}?</div>
+        <div style={{ ...small, fontSize: 11 }}>Esta app ejecuta su propio instalador ({m.confirm.app.install}). Instálala solo si confías en quien la publica.</div>
+        <Row gap={6}>
+          <Chip compact active icon={ICONS2.download} onClick={() => m.confirm?.answer(true)}>Instalar</Chip>
+          <Chip compact onClick={() => m.confirm?.answer(false)}>Cancelar</Chip>
+        </Row>
+      </div>
+    )}
+  </>
+);
+
+/** Opciones de UNA app de QAM: abrir, actualizar, volver a la anterior, añadir a Steam, acciones rápidas y desinstalar. */
+export const QamAppOptions: FC<{ id: string; notify: (t: string) => void; onClose: () => void; onChanged?: () => void }> = ({ id, notify, onClose, onChanged }) => {
+  const m = useAppMgr(notify, onChanged);
+  const a = m.apps.find((x) => x.id === id);
+  if (!a) return <Keep id={`qam-app-opt-${id}`} loading={m.data === null}><Card title="Opciones"><div style={small}>Esa app ya no está instalada.</div><Row gap={6}><Chip compact onClick={onClose}>Cerrar</Chip></Row></Card></Keep>;
+  const sc = shortcutOf(a);
+  const update = (m.zips ?? []).find((z) => z.id === a.id && newer(z.version, a.version));
   return (
-    <Keep id="qam-apps-card" loading={data === null || zips === null}>
-    <Card title="Apps de QAM" right={<span style={small}>{apps.length ? `${apps.length} instaladas` : ""}</span>}>
-      {busy && <div style={{ ...small, color: COLORS.text }}>{busy}</div>}
-      {confirm && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-          <div style={{ fontSize: 13, fontWeight: 700 }}>¿Instalar {confirm.app.name}{confirm.app.version ? ` ${confirm.app.version}` : ""}?</div>
-          <div style={{ ...small, fontSize: 11 }}>Esta app ejecuta su propio instalador ({confirm.app.install}). Instálala solo si confías en quien la publica.</div>
-          <Row gap={6}>
-            <Chip compact active icon={ICONS2.download} onClick={() => confirm.answer(true)}>Instalar</Chip>
-            <Chip compact onClick={() => confirm.answer(false)}>Cancelar</Chip>
-          </Row>
-        </div>
-      )}
-      {apps.length === 0 && <div style={small}>Aún no hay apps de QAM instaladas.</div>}
-      {apps.map((a) => {
-        const sc = shortcutOf(a);
-        const update = (zips ?? []).find((z) => z.id === a.id && newer(z.version, a.version));
-        return (
-          <Focusable key={a.id} style={{ display: "flex", flexDirection: "column", gap: 8, padding: "8px 0 2px", borderTop: `1px solid ${COLORS.track}` }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              <div style={{ width: 36, height: 36, borderRadius: 11, background: colorFor(a.name), display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, fontWeight: 800, color: "#fff", flexShrink: 0 }}>{a.name.slice(0, 1).toUpperCase()}</div>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 14, fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{a.name}</div>
-                <div style={{ ...small, fontSize: 11 }}>{a.version ? `v${a.version}` : "sin versión"}{a.external ? " · carpeta propia" : ""}{a.deducido ? " · deducida" : ""}{a.check?.errors?.length ? " · revisar" : ""}</div>
-              </div>
-              <Chip compact grow={false} active icon={ICONS2.play} onClick={() => void appsRun(a.id, "").then(() => notify(`Abriendo ${a.name}`))}>Abrir</Chip>
-            </div>
-            <Row gap={6}>
-              {update && <Chip compact active icon={ICONS2.refresh} onClick={() => install(update.zip)}>Actualizar a {update.version}</Chip>}
-              {!update && updateLabel(gh[a.id]) && <Chip compact active icon={ICONS2.download} onClick={() => updateGh(a.id)}>{updateLabel(gh[a.id])}</Chip>}
-              {a.has_previous && <Chip compact icon={ICONS2.refresh} onClick={() => run("Volviendo…", async () => { const r = await appsRollback(a.id); await loadDrawerApps(true); return r.ok ? `${a.name}: ahora la ${r.app?.version ?? "anterior"}` : `No se pudo volver: ${r.error ?? "?"}`; })}>Volver a {a.previous_version ?? "la anterior"}</Chip>}
-              {!sc && <Chip compact icon={ICONS2.plus} onClick={() => run("Añadiendo a Steam…", async () => { const s = await addToSteam(a); return s.appid ? `En Steam (${s.art} imágenes)` : `No se pudo: ${s.error}`; })}>A Steam</Chip>}
-              {(a.actions ?? []).slice(0, 3).map((x) => <Chip compact key={x.label} onClick={() => void appsRun(a.id, x.args).then(() => notify(`${a.name}: ${x.label}`))}>{x.label}</Chip>)}
-              <Chip compact grow={false} icon={ICONS2.trash} onClick={() => {
-                if (ask !== a.id) { setAsk(a.id); window.setTimeout(() => setAsk(null), 4000); return; }
-                setAsk(null);
-                void run("Quitando…", async () => { const r = await appsUninstall(a.id); removeFromSteam(sc ?? r.appid); return r.removed ? `${a.name} desinstalada` : `${a.name} ya no se gestiona aquí (la carpeta sigue)`; });
-              }}>{ask === a.id ? "¿Seguro?" : a.external ? "Olvidar" : ""}</Chip>
-            </Row>
-          </Focusable>
-        );
-      })}
-      {inst && pending.length > 0 && (
+    <Keep id={`qam-app-opt-${id}`} loading={m.data === null}>
+    <Card title={`${a.name} · opciones`} right={<span style={small}>{a.version ? `v${a.version}` : "sin versión"}</span>}>
+      <Status m={m} />
+      <div style={{ ...small, fontSize: 11 }}>{a.external ? "Usa su carpeta propia. " : ""}{a.deducido ? "Datos deducidos (sin qam-app.json). " : ""}{a.check?.errors?.length ? "Revisar su manifiesto. " : ""}</div>
+      <Focusable style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+        <Row gap={6}>
+          {update && <Chip compact active icon={ICONS2.refresh} onClick={() => m.install(update.zip)}>Actualizar a {update.version}</Chip>}
+          {!update && updateLabel(m.gh[a.id]) && <Chip compact active icon={ICONS2.download} onClick={() => m.updateGh(a.id)}>{updateLabel(m.gh[a.id])}</Chip>}
+          {!update && !updateLabel(m.gh[a.id]) && <Chip compact icon={ICONS2.refresh} onClick={() => { m.checkGh(true); notify("Buscando actualizaciones…"); }}>Buscar actualización</Chip>}
+          {a.has_previous && <Chip compact icon={ICONS2.refresh} onClick={() => m.run("Volviendo…", async () => { const r = await appsRollback(a.id); await loadDrawerApps(true); return r.ok ? `${a.name}: ahora la ${r.app?.version ?? "anterior"}` : `No se pudo volver: ${r.error ?? "?"}`; })}>Volver a {a.previous_version ?? "la anterior"}</Chip>}
+        </Row>
+        <Row gap={6}>
+          {!sc && <Chip compact icon={ICONS2.plus} onClick={() => m.run("Añadiendo a Steam…", async () => { const s = await addToSteam(a); return s.appid ? `En Steam (${s.art} imágenes)` : `No se pudo: ${s.error}`; })}>Añadir a Steam</Chip>}
+          {(a.actions ?? []).slice(0, 3).map((x) => <Chip compact key={x.label} onClick={() => void appsRun(a.id, x.args).then(() => notify(`${a.name}: ${x.label}`))}>{x.label}</Chip>)}
+        </Row>
+        <Row gap={6}>
+          <Chip compact icon={ICONS2.trash} onClick={() => {
+            if (m.ask !== a.id) { m.setAsk(a.id); window.setTimeout(() => m.setAsk(null), 4000); return; }
+            m.setAsk(null);
+            void m.run("Quitando…", async () => { const r = await appsUninstall(a.id); removeFromSteam(sc ?? r.appid); onClose(); return r.removed ? `${a.name} desinstalada` : `${a.name} ya no se gestiona aquí (la carpeta sigue)`; });
+          }}>{m.ask === a.id ? "¿Seguro?" : a.external ? "Olvidar" : "Desinstalar"}</Chip>
+          <Chip compact onClick={onClose}>Cerrar</Chip>
+        </Row>
+      </Focusable>
+    </Card>
+    </Keep>
+  );
+};
+
+/** «Tienda»: por ahora instalar desde archivo o carpeta; después, una lista de apps pensadas para Big Picture (Forgeinator, MiniTube…). */
+export const QamStore: FC<{ notify: (t: string) => void; onBack: () => void; onChanged?: () => void }> = ({ notify, onBack, onChanged }) => {
+  const m = useAppMgr(notify, onChanged);
+  return (
+    <Keep id="qam-store" loading={m.data === null || m.zips === null}>
+    <Card title="Tienda de apps" right={<span style={small}>{m.apps.length ? `${m.apps.length} instaladas` : ""}</span>}>
+      <Status m={m} />
+      <div style={{ ...small, fontSize: 11 }}>Próximamente: una lista de apps pensadas para el modo Big Picture (Forgeinator, MiniTube…) para instalarlas con un toque. Mientras tanto se instalan desde un archivo.</div>
+      {m.pending.length > 0 && (
         <>
           <Label>Encontradas en tus carpetas</Label>
-          {pending.slice(0, 4).map((z) => (
+          {m.pending.slice(0, 4).map((z) => (
             <Row key={z.zip} gap={6}>
-              <Chip compact icon={ICONS2.download} onClick={() => install(z.zip)}>{apps.some((a) => a.id === z.id) ? "Actualizar" : "Instalar"} {z.name} {z.version ?? ""}</Chip>
+              <Chip compact icon={ICONS2.download} onClick={() => m.install(z.zip)}>{m.apps.some((a) => a.id === z.id) ? "Actualizar" : "Instalar"} {z.name} {z.version ?? ""}</Chip>
             </Row>
           ))}
         </>
       )}
-      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-        <Chip compact grow={false} icon={ICONS2.download} active={inst} onClick={() => setInst(!inst)}>{inst ? "Cerrar" : pending.length ? `Instalar (${pending.length} encontradas)` : "Instalar app"}</Chip>
-      </div>
-      {inst && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-          <Row gap={6}>
-            <Chip compact icon={ICONS2.download} onClick={() => pick("zip")}>.zip</Chip>
-            <Chip compact icon={ICONS2.folder} onClick={() => pick("copy")}>Carpeta</Chip>
-            <Chip compact icon={ICONS2.link} onClick={() => pick("link")}>En su sitio</Chip>
-            <Chip compact icon={ICONS2.refresh} onClick={() => { checkGh(true); notify("Buscando actualizaciones…"); }}>Buscar ahora</Chip>
-          </Row>
-          <div style={{ ...small, fontSize: 11 }}>Se guarda en {data?.dir ?? "…"}. «Carpeta» copia tu repositorio; «En su sitio» la usa desde donde está (para desarrollar).</div>
-        </div>
-      )}
+      <Label>Instalar desde…</Label>
+      <Row gap={6}>
+        <Chip compact icon={ICONS2.download} onClick={() => m.pick("zip")}>.zip</Chip>
+        <Chip compact icon={ICONS2.folder} onClick={() => m.pick("copy")}>Carpeta</Chip>
+        <Chip compact icon={ICONS2.link} onClick={() => m.pick("link")}>En su sitio</Chip>
+      </Row>
+      <div style={{ ...small, fontSize: 11 }}>Se guarda en {m.data?.dir ?? "…"}. «Carpeta» copia tu repositorio; «En su sitio» la usa desde donde está (para desarrollar).</div>
+      <Row gap={6}><Chip compact onClick={onBack}>Volver</Chip></Row>
     </Card>
     </Keep>
   );

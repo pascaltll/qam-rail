@@ -820,21 +820,22 @@ export const AppRow: FC<{ apps: AppEntry[]; notify: (t: string) => void; onAll: 
   );
 };
 
-export const AppGrid: FC<{ apps: AppEntry[]; notify: (t: string) => void; after: () => void }> = ({ apps, notify, after }) => {
+export const AppGrid: FC<{ apps: AppEntry[]; notify: (t: string) => void; after: () => void; onOptions?: (id: string) => void; onStore?: () => void }> = ({ apps, notify, after, onOptions, onStore }) => {
   const q = useDrawerApps();
   const dp = useDesktopPins();
   const dm = useDeskMenu();
   const steam = notQam(apps, q.apps);
   return steam.length || q.apps.length || dp.length ? (
     <>
-    {dm.menu && <DeskMenu app={dm.menu} notify={notify} after={after} onClose={() => dm.setMenu(null)} />}
+    {dm.menu && <DeskMenu app={dm.menu} notify={notify} after={after} onClose={() => dm.setMenu(null)} onOptions={onOptions} />}
     <GridNav>
       {q.apps.map((a) => <QamAppIcon key={`q:${a.id}`} a={a} icon={q.icons[a.id]} notify={notify} after={after} onMenu={dm.setMenu} running={dm.running.includes(`q:${a.id}`)} />)}
       {dp.map((p) => <DeskIcon key={`d:${p.key}`} p={p} notify={notify} after={after} onMenu={dm.setMenu} running={dm.running.includes(p.key)} />)}
       {steam.map((a) => <AppIcon key={a.appid} name={a.name} capsule={a.capsule} onTap={() => launchApp(a, notify, after)} />)}
+      {onStore && <AppIcon name="Tienda" icon={<Icon d={ICONS2.plus} size={26} color="#fff" />} bg={COLORS.track} onTap={onStore} />}
     </GridNav>
     </>
-  ) : <div style={{ ...small, padding: 4 }}>Aún no hay apps. Instala una abajo («Apps de QAM») o añade un atajo no‑Steam.</div>;
+  ) : <div style={{ ...small, padding: 4 }}>Aún no hay apps. Abre la «Tienda» para instalar una o añade un atajo no‑Steam.{onStore && <div style={{ marginTop: 8 }}><GridNav row><AppIcon name="Tienda" icon={<Icon d={ICONS2.plus} size={26} color="#fff" />} bg={COLORS.track} onTap={onStore} /></GridNav></div>}</div>;
 };
 
 /** Plugins de Decky como iconos (con el icono del propio plugin). Se abren en la columna. */
