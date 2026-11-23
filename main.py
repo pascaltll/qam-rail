@@ -183,19 +183,26 @@ class Plugin:
             return True
 
     def _touch_cfg(self):
-        """Scroll táctil: None si está apagado o si el panel/teclado de QAM están delante (el toque es para ellos); si no, la correspondencia de ejes forzada ({} = aprenderla)."""
+        """Scroll táctil: None si está apagado o si el panel/teclado de QAM están delante (el toque es para ellos); si no, la correspondencia de ejes forzada ({} = aprenderla).
+        Cada cambio de motivo se anota en pad.log («táctil: …»)."""
+        why, res = "", {}
         try:
             with open(_path("touch-scroll.json"), encoding="utf-8") as fh:
                 cfg = json.load(fh)
         except (OSError, ValueError):
             cfg = {}
         if not isinstance(cfg, dict) or not cfg.get("on", True):
-            return None
-        ui = self._ui()
-        if ui.get("panel") or ui.get("kb"):
-            return None
-        m = cfg.get("map")
-        return m if isinstance(m, dict) else {}
+            why, res = "apagado en el ajuste", None
+        else:
+            ui = self._ui()
+            if ui.get("panel") or ui.get("kb"):
+                why, res = "el panel o el teclado grande figuran abiertos", None
+            elif isinstance(cfg.get("map"), dict):
+                res = cfg["map"]
+        if why != getattr(self, "_touch_why", None):
+            self._touch_why = why
+            self._pad_log("táctil: " + (f"en pausa — {why}" if why else "activo"))
+        return res
 
     async def pad_touch(self, on=None) -> dict:
         """Interruptor «scroll táctil» (activado por defecto): arrastrar con el dedo en una app de escritorio hace de rueda."""

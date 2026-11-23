@@ -1,5 +1,9 @@
 # Cambios
 
+## dev.57
+
+- **Scroll táctil, diagnóstico:** `pad.log` anota ahora «táctil: activo» o «táctil: en pausa — motivo» (ajuste apagado, o panel/teclado grande figurando abiertos) cada vez que cambia, y cualquier error al buscar la pantalla táctil, que ya no puede parar el lector del mando. La detección se comprobó con el bloque real de la pantalla del Ally (`NVTK0603:00 0603:F200`, `event5`).
+
 ## dev.56
 
 - **Scroll táctil en apps de escritorio:** arrastrar con un dedo mueve la rueda (≈ un clic cada 34 px, con inercia al soltar; un toque nuevo la detiene). gamescope solo convierte el toque en clics del puntero, por eso no se desplazaba. Se leen las pantallas táctiles en solo lectura (sin agarrarlas: Steam y el panel siguen recibiendo el toque igual) y solo con una app de escritorio delante y sin panel ni teclado grande abiertos. La pantalla del Ally es vertical y gamescope la gira, así que la correspondencia ejes del táctil → pantalla se **aprende sola** comparando el dedo con el puntero; `pad.log` anota los dispositivos y los ejes aprendidos (líneas «táctil: …»). Interruptor «Scroll táctil» en Inicio › Abiertas ahora (activado por defecto). [H] sin probar en el equipo; el arrastre también sigue moviendo el puntero con el botón pulsado, así que en algunas páginas puede seleccionar texto a la vez.

@@ -851,7 +851,12 @@ class PadRunner:
                 if now >= scan_at:
                     self._scan()
                     if self.touch_fn() is not None:
-                        self._scan_touch()
+                        try:
+                            self._scan_touch()
+                        except Exception as e:  # noqa: BLE001  (un fallo del táctil no debe parar el mando)
+                            if "scan" not in self._tnoted:
+                                self._tnoted.add("scan")
+                                self.log(f"táctil: error al buscar la pantalla: {e!r}")
                     elif self._tfds:
                         self._close_touch()
                     scan_at = now + 2.0
