@@ -1,5 +1,8 @@
 # Cambios
 
+## dev.66
+- Integración con Panel de Control v0.95: se leen también `--pdc-theme-radius-sm` (radio de las tarjetas internas), `--pdc-theme-stroke` (grosor del borde de las tarjetas) y `--pdc-theme-label-transform` (mayúsculas/minúsculas de los títulos). Con «Del tema» el QAM sigue esos valores; sin ellos, todo queda como antes.
+
 ## dev.65
 
 - **Esquinas concéntricas:** una tarjeta dentro de otra (la barra «Calidez» dentro de Color, el refuerzo dentro de Sonido…) ya no lleva el mismo radio que la de fuera —con «Redondas» (28) se veía un segundo marco igual de redondo—, sino el radio de fuera menos el margen (`nestedRadius`: 28 → 16, mínimo 10).

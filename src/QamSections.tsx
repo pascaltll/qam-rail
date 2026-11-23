@@ -28,7 +28,7 @@ import { useTap } from "./tap";
 import { DeskMenu } from "./QamDeskMenu";
 import { loadPins, loadRunning, openDesktopApp, pinsCached, runningAppsCached, runningCached, type Pin } from "./qamDesktop";
 import { tickEvery } from "./ticker";
-import { CardDepth, COLORS, Chip, ICONS, ICONS2, Icon, Keep, Row, Segments, ToggleRow, XSlider, cardStyle, nestedRadius, colorFor, focusRing } from "./ui";
+import { CardDepth, COLORS, Chip, ICONS, ICONS2, Icon, Keep, Row, Segments, ToggleRow, XSlider, cardStyle, nestedRadius, labelCase, colorFor, focusRing } from "./ui";
 
 export const small = { fontSize: 12, get color() { return COLORS.muted; }, lineHeight: "16px" };
 
@@ -44,10 +44,10 @@ export const Card: FC<{ title?: string; right?: ReactNode; children: ReactNode; 
   const depth = useContext(CardDepth);
   return (
   <CardDepth.Provider value={depth + 1}>
-  <div style={{ ...cardStyle, ...(depth > 0 ? { borderRadius: nestedRadius(currentPalette().cardRadius) } : {}) }} {...(help ? { "data-qr-help": help } : {})}>
+  <div style={{ ...cardStyle, ...(depth > 0 ? { borderRadius: nestedRadius(currentPalette().cardRadius, currentPalette().radiusSm) } : {}) }} {...(help ? { "data-qr-help": help } : {})}>
     {title && (
       <div style={{ display: "flex", alignItems: "center", gap: 8, minHeight: 20 }}>
-        <span style={{ fontSize: 12, fontWeight: 700, letterSpacing: 0.3, color: COLORS.muted, flexGrow: 1, textTransform: "uppercase" }}>{title}</span>
+        <span style={{ fontSize: 12, fontWeight: 700, letterSpacing: 0.3, color: COLORS.muted, flexGrow: 1, textTransform: labelCase() }}>{title}</span>
         {right}
         {help && <HelpDot id={help} />}
       </div>

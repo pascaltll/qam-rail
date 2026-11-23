@@ -15,6 +15,8 @@ export type AppearanceMode = "panel" | "accent" | "rail" | `own:${string}`;
 export interface Palette {
   panel: string; card: string; track: string; text: string; muted: string;
   accent: string; onAccent: string; focus: string; outline: string | null; cardRadius: number;
+  /** Del tema (--pdc-theme-*): radio de las piezas dentro de una tarjeta, grosor del borde y mayusculas de los titulos. */
+  radiusSm?: number; stroke?: number; labelTransform?: "none" | "uppercase" | "capitalize" | "lowercase";
   /** Tema «cristal»: superficies translúcidas con desenfoque de fondo (se apaga en modo ligero). */
   glass?: boolean;
 }
@@ -22,6 +24,7 @@ export interface Palette {
 export interface ThemeTokens {
   accent?: string; surface?: string; surfaceRaised?: string; hairline?: string; outline?: string;
   text?: string; textMuted?: string; onAccent?: string; selectedFill?: string; radiusMd?: number;
+  radiusSm?: number; stroke?: number; labelTransform?: "none" | "uppercase" | "capitalize" | "lowercase";
 }
 
 /** Fondo del tema activo (la capa que cubre la pantalla de Big Picture), para continuarlo en el panel. */
@@ -134,15 +137,28 @@ export function buildPalette(mode: AppearanceMode, src: AppearanceSource): Palet
     focus: "#ffffff",
     outline: t.outline ?? t.hairline ?? PDC_BASE.hairline,
     cardRadius: t.radiusMd !== undefined ? Math.max(8, Math.min(28, t.radiusMd + 6)) : 20,
+    ...(t.radiusSm !== undefined ? { radiusSm: Math.max(6, Math.min(24, t.radiusSm + 4)) } : {}),
+    ...(t.stroke !== undefined ? { stroke: Math.max(0, Math.min(3, t.stroke)) } : {}),
+    ...(t.labelTransform ? { labelTransform: t.labelTransform } : {}),
   };
 }
 
-const TOKEN_PROPS: Array<[keyof ThemeTokens, string, "color" | "triplet" | "radius"]> = [
+const TOKEN_PROPS: Array<[keyof ThemeTokens, string, "color" | "triplet" | "radius" | "stroke" | "transform"]> = [
   ["accent", "accent", "triplet"], ["surface", "surface", "color"], ["surfaceRaised", "surface-raised", "color"],
   ["hairline", "hairline", "color"], ["outline", "outline", "color"], ["text", "text", "color"],
   ["textMuted", "text-muted", "color"], ["onAccent", "on-accent", "color"], ["selectedFill", "selected-fill", "color"],
-  ["radiusMd", "radius-md", "radius"],
+  ["radiusMd", "radius-md", "radius"], ["radiusSm", "radius-sm", "radius"],
+  ["stroke", "stroke", "stroke"], ["labelTransform", "label-transform", "transform"],
 ];
+
+export function parseStroke(v: string | null | undefined): number | null {
+  const m = /^(\d(?:\.\d+)?)(?:px)?$/.exec((v ?? "").trim());
+  return m ? Number(m[1]) : null;
+}
+export function parseTransform(v: string | null | undefined): "none" | "uppercase" | "capitalize" | "lowercase" | null {
+  const t = (v ?? "").trim().replace(/^["']|["']$/g, "").toLowerCase();
+  return t === "none" || t === "uppercase" || t === "capitalize" || t === "lowercase" ? t : null;
+}
 
 /** Lee los tokens de un documento: primero --qrail-*, si no --pdc-theme-*. */
 export function readTokens(get: (prop: string) => string): ThemeTokens {
@@ -150,7 +166,7 @@ export function readTokens(get: (prop: string) => string): ThemeTokens {
   for (const [key, name, kind] of TOKEN_PROPS) {
     for (const prefix of ["--qrail-", "--pdc-theme-"]) {
       const raw = get(prefix + name);
-      const v = kind === "color" ? parseColor(raw) : kind === "triplet" ? tripletToHex(raw) ?? parseColor(raw) : parseRadius(raw);
+      const v = kind === "color" ? parseColor(raw) : kind === "triplet" ? tripletToHex(raw) ?? parseColor(raw) : kind === "stroke" ? parseStroke(raw) : kind === "transform" ? parseTransform(raw) : parseRadius(raw);
       if (v !== null && v !== undefined) { (out as Record<string, unknown>)[key] = v; break; }
     }
   }

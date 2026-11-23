@@ -46,7 +46,7 @@ export const cardStyle: CSSProperties = {
   get background() { return currentPalette().card; },
   get borderRadius() { return currentPalette().cardRadius; },
   // Con el aspecto de Panel las tarjetas llevan su borde fino.
-  get boxShadow() { const o = currentPalette().outline; return o ? `inset 0 0 0 1px ${o}` : undefined; },
+  get boxShadow() { const pl = currentPalette(), o = pl.outline; return o ? `inset 0 0 0 ${pl.stroke !== undefined ? Math.max(1, Math.round(pl.stroke)) : 1}px ${o}` : undefined; },
   get padding() { return DENSITY[uiPrefs().density].pad; },
   display: "flex",
   flexDirection: "column",
@@ -56,10 +56,11 @@ export const cardStyle: CSSProperties = {
 /** Profundidad de tarjetas anidadas (0 = en la sección). Una tarjeta dentro de otra lleva esquinas CONCÉNTRICAS (radio de fuera menos el
  *  margen), no el mismo radio: con «Redondas» (28) una barra dentro de una tarjeta se veía como un segundo marco igual de redondo. */
 export const CardDepth = createContext(0);
-export const nestedRadius = (outer: number): number => Math.max(10, outer - 12);
+export const nestedRadius = (outer: number, sm?: number): number => sm !== undefined ? Math.max(8, Math.min(sm, outer - 6)) : Math.max(10, outer - 12);
+export const labelCase = (): "none" | "uppercase" | "capitalize" | "lowercase" => currentPalette().labelTransform ?? "uppercase";
 export function useCardStyle(): CSSProperties {
   const depth = useContext(CardDepth);
-  return depth > 0 ? { ...cardStyle, borderRadius: nestedRadius(currentPalette().cardRadius) } : { ...cardStyle };
+  return depth > 0 ? { ...cardStyle, borderRadius: nestedRadius(currentPalette().cardRadius, currentPalette().radiusSm) } : { ...cardStyle };
 }
 /** Separación entre tarjetas de una sección (según la densidad elegida en Apariencia). */
 export const paneGap = () => DENSITY[uiPrefs().density].pane;
