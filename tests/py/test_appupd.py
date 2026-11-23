@@ -76,7 +76,7 @@ asyncio.run(t())
 asyncio.run(t_uninstall())
 
 def t_ssl():
-    import ssl, tempfile
+    import ssl
     ctx = main.Plugin._ssl_ctx()
     assert isinstance(ctx, ssl.SSLContext) and ctx.verify_mode == ssl.CERT_REQUIRED and ctx.check_hostname
     pem = "/etc/ssl/certs/ca-certificates.crt"

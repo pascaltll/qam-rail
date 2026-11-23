@@ -1,10 +1,33 @@
 // Franja de Inicio con las apps de escritorio abiertas: Mostrar (toca el nombre), Volver a Steam y el interruptor «mando como ratón».
-import { useEffect, useState, type FC } from "react";
+import { Focusable } from "@decky/ui";
+import { useEffect, useState, type FC, type ReactNode } from "react";
 
 import { backToSteam, desktopAnim, desktopCursor, desktopRepair, loadRunning, openDesktopApp, padMouse, runningAppsCached, showOpenStrip, type Pin } from "./qamDesktop";
 import { openBigKeyboard } from "./bigKeyboard";
+import { Card } from "./QamSections";
+import { useTap } from "./tap";
 import { tickEvery } from "./ticker";
-import { COLORS, Chip, ICONS2, Row, cardStyle } from "./ui";
+import { AppGlyph, COLORS, Chip, Icon, ICONS2, Row, focusRing } from "./ui";
+
+/** Ficha de app abierta: icono grande, nombre y un punto verde; una sola parada del mando, toque con respuesta inmediata. */
+const OpenTile: FC<{ name: string; icon?: string | null; glyph?: ReactNode; accent?: boolean; onTap: () => void }> = ({ name, icon, glyph, accent, onTap }) => {
+  const tap = useTap(onTap);
+  const [f, setF] = useState(false);
+  return (
+    <Focusable data-qr="item" noFocusRing onActivate={tap} onClick={tap} onGamepadFocus={() => setF(true)} onGamepadBlur={() => setF(false)}
+      style={{ width: 78, minHeight: 74, display: "flex", flexDirection: "column", alignItems: "center", gap: 5, padding: "6px 4px", borderRadius: 16, boxSizing: "border-box", background: f ? COLORS.track : "transparent", ...focusRing(f) }}>
+      {glyph ? (
+        <div style={{ width: 44, height: 44, borderRadius: 14, display: "flex", alignItems: "center", justifyContent: "center", background: accent ? COLORS.accent : COLORS.track }}>{glyph}</div>
+      ) : (
+        <div style={{ position: "relative" }}>
+          <AppGlyph name={name} src={icon} size={44} />
+          <span style={{ position: "absolute", right: -2, bottom: -2, width: 11, height: 11, borderRadius: 6, background: "#3ecf8e", boxShadow: `0 0 0 2px ${COLORS.card}` }} />
+        </div>
+      )}
+      <div style={{ fontSize: 11.5, lineHeight: 1.15, textAlign: "center", width: "100%", maxHeight: 27, overflow: "hidden", color: COLORS.text }}>{name}</div>
+    </Focusable>
+  );
+};
 
 export const OpenAppsStrip: FC<{ notify: (t: string) => void; after: () => void }> = ({ notify, after }) => {
   const [apps, setApps] = useState<Pin[]>(() => runningAppsCached());
@@ -27,21 +50,25 @@ export const OpenAppsStrip: FC<{ notify: (t: string) => void; after: () => void 
   }, []);
   if (!showOpenStrip(apps)) return null;
   return (
-    <div style={{ ...cardStyle, display: "flex", flexDirection: "column", gap: 8 }}>
-      <div style={{ fontSize: 12, color: COLORS.muted }}>Apps abiertas · tocar para mostrar</div>
-      <Row gap={6}>
-        {apps.slice(0, 3).map((a) => (
-          <Chip key={a.key} compact icon={ICONS2.play} onClick={() => { void openDesktopApp(a.key, a.name).then((r) => { if (!r.ok) notify(`No se pudo mostrar ${a.name}: ${r.error ?? "?"}`); else after(); }); }}>{a.name}</Chip>
+    <Card title="Abiertas ahora" right={<span style={{ fontSize: 11, color: COLORS.muted }}>tocar para mostrar</span>}>
+      <Focusable style={{ display: "flex", gap: 4, flexWrap: "wrap" }} flow-children="row">
+        {apps.slice(0, 4).map((a) => (
+          <OpenTile key={a.key} name={a.name} icon={a.icon} onTap={() => { void openDesktopApp(a.key, a.name).then((r) => { if (!r.ok) notify(`No se pudo mostrar ${a.name}: ${r.error ?? "?"}`); else after(); }); }} />
         ))}
-        <Chip compact active icon={ICONS2.home} onClick={() => { void backToSteam().then((r) => { if (!r.ok) notify("No se pudo volver a Steam"); else after(); }); }}>Volver a Steam</Chip>
-      </Row>
+        <OpenTile name="Volver a Steam" accent glyph={<Icon d={ICONS2.home} size={24} color={COLORS.onAccent} />}
+          onTap={() => { void backToSteam().then((r) => { if (!r.ok) notify("No se pudo volver a Steam"); else after(); }); }} />
+      </Focusable>
+      <div style={{ height: 1, background: COLORS.track, margin: "2px 0" }} />
+      <div style={{ fontSize: 11, color: COLORS.muted }}>Escritorio</div>
       <Row gap={6}>
         {pad !== null && <Chip compact active={pad} onClick={() => void padMouse(!pad).then((p) => { setPad(p.on); notify(p.on ? "Mando como ratón: sí" : "Mando como ratón: no"); })}>{pad ? "Mando: ratón" : "Mando: normal"}</Chip>}
         {cur !== null && <Chip compact active={cur} onClick={() => void desktopCursor(!cur).then((p) => { setCur(p.on); notify(p.on ? "Puntero Xbox: sí (se aplica al mover el puntero)" : "Puntero Xbox: no (reabre la app para volver al normal)"); })}>{cur ? "Puntero Xbox: sí" : "Puntero Xbox: no"}</Chip>}
         {anim !== null && <Chip compact active={anim} onClick={() => void desktopAnim(!anim).then((p) => { setAnim(p.on); notify(p.on ? "Animación al volver: sí" : "Animación al volver: no"); })}>{anim ? "Animación: sí" : "Animación: no"}</Chip>}
-        <Chip compact onClick={() => { after(); window.setTimeout(() => { if (!openBigKeyboard()) notify("No se pudo abrir el teclado grande"); }, 350); }}>Teclado</Chip>
-        <Chip compact onClick={() => void desktopRepair().then((r) => notify(r.ok ? (r.fixed?.length ? `Reparado: ${r.fixed.join(", ")}` : "Nada que reparar") : `No se pudo reparar: ${r.error ?? "?"}`)).catch(() => notify("No se pudo reparar"))}>Reparar</Chip>
       </Row>
-    </div>
+      <Row gap={6}>
+        <Chip compact icon={ICONS2.terminal} onClick={() => { after(); window.setTimeout(() => { if (!openBigKeyboard()) notify("No se pudo abrir el teclado grande"); }, 350); }}>Teclado</Chip>
+        <Chip compact icon={ICONS2.refresh} onClick={() => void desktopRepair().then((r) => notify(r.ok ? (r.fixed?.length ? `Reparado: ${r.fixed.join(", ")}` : "Nada que reparar") : `No se pudo reparar: ${r.error ?? "?"}`)).catch(() => notify("No se pudo reparar"))}>Reparar</Chip>
+      </Row>
+    </Card>
   );
 };

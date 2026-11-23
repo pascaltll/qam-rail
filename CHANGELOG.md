@@ -1,5 +1,15 @@
 # Cambios
 
+## dev.55
+
+Revisión general (código, diseño, toque).
+
+- **Código limpio:** retirado el código muerto verificado (16 funciones/exportaciones de TypeScript sin ningún uso y 6 imports de Python sin usar). Sin cambios de comportamiento.
+- **Apps de escritorio con icono:** cada fila del menú «Apps del equipo» muestra el icono de la app (el de su `.desktop`; si no tiene, la inicial de siempre). Se piden **solo para las filas visibles**, en lotes de 16, con icono pequeño (64/48 px, ≤200 KB) y caché en el backend y en la interfaz: los grupos plegados no cuestan nada y un icono ya pedido no se vuelve a pedir. Nueva llamada `desktop_icons`; los iconos vectoriales (`scalable`) también se encuentran ahora.
+- **Zona «Abiertas ahora» de Inicio rediseñada:** tarjeta con el mismo título y estilo que el resto, fichas con el icono grande y un punto verde, «Volver a Steam» como ficha de acento, y los ajustes (mando ratón, puntero, animación, teclado, reparar) en dos filas ordenadas bajo «Escritorio».
+- **Teclado grande:** fondo siempre opaco (también con temas de cristal) y sombra superior; la fila «Cerrar teclado» pasa a un botón «✕ Cerrar» dentro de la línea de vista previa, así el teclado es ~40 px más bajo y tapa menos la barra de búsqueda.
+- **Toque:** respuesta inmediata al apoyar el dedo en cualquier ficha o botón (se hunde un poco y se aclara, antes solo animaba al soltar), sin retardo de doble toque ni resaltado gris del sistema. Es una regla global, así que vale para todas las zonas.
+
 ## dev.54
 
 - Diagnóstico del teclado grande en Firefox: cada línea «tecla … → ventana … ok=True» de `desktop-tag.log` lleva ahora `foco=0x…` (la ventana de X que tiene el foco de teclado justo después de devolvérselo a la app). Si no es la de la app ni una hija suya, las letras no llegan a la caja de texto aunque salga `ok=True`.

@@ -183,12 +183,6 @@ const MenuZones: FC<{ min: number; max: number }> = ({ min, max }) => {
   );
 };
 
-/** Tarjeta autonoma (lleva su propio controlador). */
-export const TdpCard: FC<{ log: (m: string) => void; variant?: "full" | "compact"; live?: boolean; label?: string }> = ({ log, variant = "full", live = false, label }) => {
-  const t = useTdp(log, live ? { liveMs: 3000 } : {});
-  return <PowerCard t={t} variant={variant} showDraw={live} label={label} />;
-};
-
 /** Energía: una sola tarjeta de potencia (barra, zonas del panel, modos, lo aprendido y el ahorro del panel dentro). */
 export const EnergyTdp: FC<{ log: (m: string) => void; modes?: ReactNode; saver?: ReactNode; kind?: (t: UseTdp) => ReactNode }> = ({ log, modes, saver, kind }) => {
   const t = useTdp(log, { liveMs: 3000 });

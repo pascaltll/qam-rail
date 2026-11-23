@@ -24,14 +24,3 @@ export const findPlugin = (name: string): HostedPlugin | null => hostablePlugins
 // [H] rutas de Decky Loader: /decky/store y /decky/settings (con subpaginas /plugins y /general).
 export const DECKY_ROUTES = { store: "/decky/store", settings: "/decky/settings", plugins: "/decky/settings/plugins", general: "/decky/settings/general" } as const;
 
-interface DeckyPublic { updates?: Map<string, unknown> | Record<string, unknown> | null; hasLoaderUpdate?: boolean; versionInfo?: { current?: string } | null }
-
-/** Cuantos plugins tienen actualizacion y si la tiene el propio Decky. */
-export function deckyUpdates(): { plugins: string[]; loader: boolean } {
-  try {
-    const st = (window as unknown as { DeckyPluginLoader?: { deckyState?: { publicState?: () => DeckyPublic } } }).DeckyPluginLoader?.deckyState?.publicState?.();
-    const u = st?.updates;
-    const plugins = u instanceof Map ? [...u.keys()].map(String) : u && typeof u === "object" ? Object.keys(u) : [];
-    return { plugins, loader: st?.hasLoaderUpdate === true };
-  } catch { return { plugins: [], loader: false }; }
-}

@@ -60,9 +60,6 @@ export function showKeyboard(): string | null {
   return null;
 }
 
-/** ¿Hay algún teclado con un método para mostrarlo? (en 0.33 la sonda no encontró ninguno: el atajo se oculta). */
-export const keyboardAvailable = (): boolean => keyboards().some((kb) => ["ShowVirtualKeyboard", "ShowKeyboard", "Show", "SetVisible"].some((m) => typeof kb[m] === "function"));
-
 // ---- Enlace profundo de Steam (el mismo que usa SDL): steam://open/keyboard y steam://close/keyboard [H en el equipo] ----
 export const KEYBOARD_URL = { open: "steam://open/keyboard", close: "steam://close/keyboard" } as const;
 const urlBackend = callable<[close?: boolean], { ok: boolean }>("keyboard_url");

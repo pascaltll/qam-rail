@@ -756,6 +756,37 @@ class Plugin:
         cache[k] = icon
         return icon
 
+    ICON_LIST_MAX = 200_000  # bytes: en listas, un icono mayor se queda con su letra
+
+    def _icon_small(self, a: dict) -> str | None:
+        """Icono pequeño (≤200 KB) de una app para las listas del menú de apps. Caché propia: se lee una vez por app y sesión."""
+        import base64
+        cache = self.__dict__.setdefault("_icon_small_cache", {})
+        k = a.get("key")
+        if k in cache:
+            return cache[k]
+        icon = None
+        p = qam_desktop.icon_path(a.get("icon"), _home(), sizes=qam_desktop.ICON_SIZES_SMALL) if qam_desktop else None
+        try:
+            if p and os.path.getsize(p) <= self.ICON_LIST_MAX:
+                with open(p, "rb") as fh:
+                    low = p.lower()
+                    kind = "svg+xml" if low.endswith(".svg") else "jpeg" if low.endswith((".jpg", ".jpeg")) else "png"
+                    icon = f"data:image/{kind};base64," + base64.b64encode(fh.read()).decode()
+        except OSError:
+            icon = None
+        cache[k] = icon
+        return icon
+
+    async def desktop_icons(self, keys: list) -> dict:
+        """Iconos pequeños (data URL o null) de las apps pedidas, máx. 24 por llamada. Lo pide el menú de apps solo para las filas que muestra."""
+        if qam_desktop is None or not isinstance(keys, list):
+            return {}
+        data = await self.desktop_scan(False)
+        by = {a.get("key"): a for a in data.get("apps", [])}
+        want = [by[k] for k in keys[:24] if isinstance(k, str) and k in by]
+        return await asyncio.to_thread(lambda: {a["key"]: self._icon_small(a) for a in want})
+
     async def _live_claim_keys(self) -> set:
         """Claves de apps de escritorio con alguna ventana marcada que sigue abierta (apps que delegan en otro proceso, como KDE Connect,
         terminan su unidad al instante y la ventana vive aparte)."""
@@ -1588,7 +1619,6 @@ class Plugin:
 
     async def desktop_pins(self) -> dict:
         """Apps de escritorio que el usuario agregó a QAM, con su icono (data URL) para el cajón de apps."""
-        import base64
         keys = self._desk_pins()
         if not keys or qam_desktop is None:
             return {"pins": []}
@@ -2505,7 +2535,6 @@ class Plugin:
 
     async def audio_state(self, raw: bool = False) -> dict:
         """Salidas y micrófonos que se pueden elegir (con el filtro de altavoces en vez de la tarjeta en crudo)."""
-        import qam_audio
         # Caché de 4 s (lo pide cada tarjeta de audio abierta): cada lectura lanza 5 procesos contra PipeWire.
         c = getattr(self, "_audio_cache", None)
         if not raw and c and time.monotonic() - c[0] < 4.0:

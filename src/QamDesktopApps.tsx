@@ -12,7 +12,8 @@ import { DeskMenu } from "./QamDeskMenu";
 import { Card, Label, small } from "./QamSections";
 import { useTap } from "./tap";
 import { tickEvery } from "./ticker";
-import { COLORS, Chip, ICONS2, Keep, Row, Segments, colorFor, focusRing } from "./ui";
+import { useDeskIcons } from "./deskIcons";
+import { AppGlyph, COLORS, Chip, ICONS2, Keep, Row, Segments, focusRing } from "./ui";
 
 type Src = "all" | "flatpak" | "appimage" | "system";
 
@@ -65,12 +66,15 @@ export const QamDesktopApps: FC<{ notify: (t: string) => void; after?: () => voi
   const opts = (["all", "flatpak", "appimage", "system"] as Src[]).filter((k) => k === "all" || counts[k]).map((k) => ({ value: k, label: `${k === "all" ? "Todas" : sourceLabel(k)} ${counts[k] ?? 0}` }));
 
   const rowOf = (a: DesktopApp, showGroup = false) => (
-    <DeskRow key={a.key} app={a} showGroup={showGroup} running={isRunning(a.key, running)} pinned={isPinned(a.key, pins)} busy={busy === a.key}
+    <DeskRow key={a.key} app={a} icon={iconOf(a.key)} showGroup={showGroup} running={isRunning(a.key, running)} pinned={isPinned(a.key, pins)} busy={busy === a.key}
       onTap={() => void open(a)} onMenu={() => setMenuKey(menuKey === a.key ? null : a.key)}>
       {menuKey === a.key && <DeskMenu app={a} notify={notify} after={after} onClose={() => { setMenuKey(null); refreshRunning(); }} pinned={isPinned(a.key, pins)} onPin={() => void toggle(a)} />}
     </DeskRow>
   );
   const sections = useMemo(() => buildSections(shown, running, pins.map((p) => p.key), recent, folds), [shown, running, pins, recent, folds]);
+  // Iconos solo de lo que se ve: abiertas, favoritas, recientes y grupos desplegados (los plegados no cuestan nada).
+  const visible = useMemo(() => [...sections.open, ...sections.favs, ...sections.recent, ...sections.groups.filter((g) => !g.collapsed).flatMap((g) => g.apps)].map((a) => a.key), [sections]);
+  const iconOf = useDeskIcons(visible);
   const fold = (g: string, now: boolean) => { const nf = { ...folds, [g]: !now }; setFolds(nf); lsSet("qr.deskFolds", nf); };
   const top = (title: string, list: DesktopApp[]) => list.length > 0 && (
     <div key={title} style={{ display: "flex", flexDirection: "column", gap: 4 }}>
@@ -108,7 +112,7 @@ export const QamDesktopApps: FC<{ notify: (t: string) => void; after?: () => voi
 const LONG_MS = 650;
 
 /** Una app = una sola parada del mando: A abre o muestra, X (o mantener pulsado) abre el menú con todo lo demás. */
-const DeskRow: FC<{ app: DesktopApp; showGroup?: boolean; running: boolean; pinned: boolean; busy: boolean; onTap: () => void; onMenu: () => void; children?: ReactNode }> = ({ app, showGroup, running, pinned, busy, onTap, onMenu, children }) => {
+const DeskRow: FC<{ app: DesktopApp; icon?: string | null; showGroup?: boolean; running: boolean; pinned: boolean; busy: boolean; onTap: () => void; onMenu: () => void; children?: ReactNode }> = ({ app, icon, showGroup, running, pinned, busy, onTap, onMenu, children }) => {
   const long = useRef(false);
   const timer = useRef<number | null>(null);
   const tap = useTap(() => { if (long.current) { long.current = false; return; } onTap(); });
@@ -120,7 +124,7 @@ const DeskRow: FC<{ app: DesktopApp; showGroup?: boolean; running: boolean; pinn
       <Focusable data-qr="item" noFocusRing onActivate={tap} onClick={tap} onGamepadFocus={() => setF(true)} onGamepadBlur={() => setF(false)}
         onSecondaryButton={onMenu} onSecondaryActionDescription="Opciones" onPointerDown={start} onPointerUp={stop} onPointerLeave={stop} onPointerCancel={stop}
         style={{ display: "flex", alignItems: "center", gap: 10, minHeight: 44, padding: "4px 6px", borderRadius: 12, background: f ? COLORS.track : "transparent", ...focusRing(f) }}>
-        <div style={{ width: 32, height: 32, borderRadius: 10, background: colorFor(app.name), display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, fontWeight: 800, color: "#fff", flexShrink: 0 }}>{app.name.slice(0, 1).toUpperCase()}</div>
+        <AppGlyph name={app.name} src={icon} />
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: 14, fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{running ? "● " : ""}{app.name}</div>
           <div style={{ ...small, fontSize: 11 }}>{noteFor(app, pinned) + (showGroup && app.group ? ` · ${app.group}` : "") + (running ? " · abierta" : "")}</div>

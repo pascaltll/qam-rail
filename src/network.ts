@@ -37,16 +37,12 @@ export function sortBt(devs: BtDevice[]): { connected: BtDevice[]; paired: BtDev
   };
 }
 
-/** Resultado de una operacion de Steam: result 1 = OK (EResult). */
-export const okResp = (r: Resp) => !r || typeof r !== "object" || !("result" in (r as object)) || (r as { result?: number }).result === 1;
-
 export interface WifiNet { ssid: string; active: boolean; signal: number; security: string; channel: string; saved: boolean }
 export interface WifiState { ok: boolean; radio?: boolean; networks?: WifiNet[]; saved?: string[]; error?: string }
 export const wifiState = callable<[rescan: boolean], WifiState>("wifi_state");
 export const wifiConnect = callable<[ssid: string], { ok: boolean; detail: string }>("wifi_connect");
 export const wifiRadio = callable<[on: boolean], { ok: boolean; detail: string }>("wifi_radio");
 
-export const bars = (signal: number) => (signal >= 75 ? "▂▄▆█" : signal >= 50 ? "▂▄▆" : signal >= 25 ? "▂▄" : "▂");
 /** Puro (probado): nivel de señal 1–4 (para el icono de abanico del Wi‑Fi). */
 export const wifiLevel = (signal: number) => (signal >= 75 ? 4 : signal >= 50 ? 3 : signal >= 25 ? 2 : 1);
 
@@ -55,7 +51,6 @@ export interface BzDevice { mac: string; name: string; icon: string; connected: 
 export interface BzState { ok: boolean; powered?: boolean; discovering?: boolean; devices?: BzDevice[]; error?: string }
 export const btState = callable<[], BzState>("bt_state");
 export const btAction = callable<[action: string, mac: string], { ok: boolean; detail: string }>("bt_action");
-export const btScan = callable<[seconds: number], { ok: boolean; seconds: number }>("bt_scan");
 
 /** Icono de BlueZ («audio-headset», «input-gaming»…) → tipo legible. Puro (probado). */
 export function bzKind(icon: string): { label: string; icon: string; audio?: boolean } {

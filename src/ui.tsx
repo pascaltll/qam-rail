@@ -182,6 +182,15 @@ export const Row: FC<{ children: ReactNode; gap?: number }> = ({ children, gap =
   <Focusable style={{ display: "flex", gap }} flow-children="row">{children}</Focusable>
 );
 
+/** Icono de app: su imagen si la hay; si no, la inicial sobre un color propio del nombre. */
+export const AppGlyph: FC<{ name: string; src?: string | null; size?: number }> = ({ name, src, size = 32 }) => (
+  <div style={{ width: size, height: size, borderRadius: Math.round(size * 0.3), overflow: "hidden", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center",
+    background: src ? "rgba(255,255,255,0.08)" : colorFor(name), backgroundImage: src ? undefined : "linear-gradient(160deg, rgba(255,255,255,0.16), rgba(0,0,0,0.12))",
+    color: "#fff", fontSize: Math.round(size * 0.44), fontWeight: 800, boxShadow: "0 1px 4px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.16)" }}>
+    {src ? <img src={src} alt="" decoding="async" draggable={false} style={{ width: "100%", height: "100%", objectFit: "contain" }} /> : name.slice(0, 1).toUpperCase()}
+  </div>
+);
+
 const PALETTE = ["#e5484d", "#12a594", "#3b82f6", "#d9902f", "#8b5cf6", "#4a5160"];
 export const colorFor = (name: string): string => {
   let h = 0;
@@ -324,7 +333,6 @@ export const Keep: FC<{ id: string; loading: boolean; children: ReactNode }> = (
   const h = loading ? keptHeights.get(id) : undefined;
   return <div ref={ref} style={{ display: "flex", flexDirection: "column", gap: 10, ...(h ? { minHeight: h } : {}) }}>{children}</div>;
 };
-export const keptHeight = (id: string) => keptHeights.get(id);
 
 /**
  * Abrir en dos tiempos: lo de dentro se monta DESPUÉS del primer fotograma del panel (así abrir pinta solo lo de

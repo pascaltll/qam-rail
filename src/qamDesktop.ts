@@ -14,7 +14,6 @@ export interface DesktopPlan {
 }
 export interface Pin { key: string; name: string; source: string; icon: string | null }
 
-export const desktopPlan = callable<[key: string], DesktopPlan>("desktop_plan");
 export const desktopRun = callable<[key: string], { ok: boolean; error?: string }>("desktop_run");
 export const desktopRunning = callable<[], { keys: string[]; apps?: Pin[] }>("desktop_running");
 export const desktopStop = callable<[key: string], { ok: boolean; error?: string | null }>("desktop_stop");

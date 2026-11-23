@@ -23,16 +23,6 @@ export function installedPluginNames(): string[] {
 
 export const coloresInstalled = (): boolean => installedPluginNames().includes(COLORES_PLUGIN_NAME);
 
-/** Deja Colores como plugin activo; el llamador abre despues la pestaña Decky (999). */
-export function activateColores(): boolean {
-  try {
-    const set = host().DeckyPluginLoader?.deckyState?.setActivePlugin;
-    if (!set) return false;
-    set.call(host().DeckyPluginLoader?.deckyState, COLORES_PLUGIN_NAME);
-    return true;
-  } catch { return false; }
-}
-
 /** Deja un plugin cualquiera como activo en la pestaña Decky (respaldo si no se puede alojar en la columna). */
 export function activatePlugin(name: string): boolean {
   try {

@@ -213,3 +213,15 @@ _t054_exec()
 _t054_x()
 _t054_base()
 _t054_opts()
+
+
+def test_icon_path_small_sizes_and_scalable():
+    import qam_desktop as d
+    have = {"/usr/share/icons/hicolor/512x512/apps/x.png", "/usr/share/icons/hicolor/48x48/apps/x.png"}
+    isf = lambda p: p in have  # noqa: E731
+    assert d.icon_path("x", "/h", isf).endswith("512x512/apps/x.png")
+    assert d.icon_path("x", "/h", isf, sizes=d.ICON_SIZES_SMALL).endswith("48x48/apps/x.png")
+    svg = {"/usr/share/icons/hicolor/scalable/apps/y.svg"}
+    assert d.icon_path("y", "/h", lambda p: p in svg).endswith("scalable/apps/y.svg")
+    assert d.icon_path("z", "/h", lambda p: False) is None
+test_icon_path_small_sizes_and_scalable()

@@ -1,10 +1,6 @@
-import { callable } from "@decky/api";
-
 // Herramienta de diagnostico de geometria: explica POR QUE el panel no llega al borde derecho.
 // Mide la ventana, el zoom, la cadena de ancestros del panel y que elemento hay realmente en el borde,
 // y lo guarda en ~/homebrew/settings/qam-rail/diag/dock-latest.json (no hace falta pegar nada en la consola).
-
-const diagSave = callable<[data: unknown], string>("diag_save");
 
 const r4 = (n: number) => Math.round(n * 10) / 10;
 const rect = (e: Element) => {
@@ -78,34 +74,4 @@ export function geomReport(el: HTMLElement | null): Record<string, unknown> {
     probes,
     wideElements: wide,
   };
-}
-
-/** Lineas de referencia en pantalla: rojo = borde real de la ventana (innerWidth), azul = borde del panel. */
-export function showRulers(doc: Document, panel: HTMLElement | null): void {
-  hideRulers(doc);
-  const view = doc.defaultView ?? window;
-  const mk = (id: string, css: string) => {
-    const d = doc.createElement("div");
-    d.id = id;
-    d.style.cssText = `position:fixed;top:0;bottom:0;width:2px;pointer-events:none;z-index:2147483647;${css}`;
-    doc.body.appendChild(d);
-  };
-  mk("qr-ruler-win", "right:0;background:#ff2d2d;");
-  if (panel) {
-    const r = panel.getBoundingClientRect();
-    mk("qr-ruler-panel", `left:${Math.round(Math.min(r.right, view.innerWidth - 3))}px;background:#2d8bff;`);
-  }
-}
-export function hideRulers(doc: Document): void {
-  doc.getElementById("qr-ruler-win")?.remove();
-  doc.getElementById("qr-ruler-panel")?.remove();
-}
-
-export async function saveGeom(el: HTMLElement | null): Promise<string> {
-  const rep = geomReport(el);
-  try {
-    return await diagSave(rep);
-  } catch (e) {
-    return `error: ${String(e)}`;
-  }
 }

@@ -52,5 +52,4 @@ export function learnFrom(s: Stats, g: Group): Learned | null {
   return { fluidW, samples: table.reduce((a, r) => a + r.n, 0), table };
 }
 export const learned = (g: Group) => learnFrom(stats(), g);
-export const resetMenuStats = () => { mem = {}; try { window.localStorage?.removeItem(LS); } catch { /* nada */ } };
 export const menuStatsRaw = () => ({ ...stats() });

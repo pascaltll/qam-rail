@@ -1,5 +1,5 @@
 """Rendimiento del backend (dev.27): sesión en caché, desktop_running compartido y overlay sin procesos de más. python3 tests/py/test_perf.py"""
-import asyncio, logging, os, sys, tempfile, time, types
+import asyncio, logging, os, sys, tempfile, types
 
 ROOT = os.path.join(os.path.dirname(__file__), "..", "..")
 sys.path.insert(0, ROOT)

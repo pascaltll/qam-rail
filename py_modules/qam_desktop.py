@@ -331,20 +331,30 @@ def firefox_profiles(home: str) -> list:
     return out
 
 
-def icon_path(icon: str | None, home: str, isfile=os.path.isfile):
-    """Ruta de archivo del icono si es absoluta o se encuentra en los temas habituales (hicolor); si no, None."""
+ICON_SIZES = ("512x512", "256x256", "128x128", "64x64", "48x48")
+ICON_SIZES_SMALL = ("64x64", "48x48", "128x128", "96x96", "256x256")
+
+
+def icon_path(icon: str | None, home: str, isfile=os.path.isfile, sizes: tuple = ICON_SIZES):
+    """Ruta de archivo del icono si es absoluta o se encuentra en los temas habituales (hicolor); si no, None.
+    `sizes`: tamaños a probar, por orden (las listas piden los pequeños: pesan menos)."""
     if not icon:
         return None
     if os.path.isabs(icon):
         return icon if isfile(icon) else None
     roots = ("/usr/share/icons/hicolor", "/var/lib/flatpak/exports/share/icons/hicolor", os.path.join(home, ".local/share/flatpak/exports/share/icons/hicolor"),
              os.path.join(home, ".local/share/icons/hicolor"))
-    for size in ("512x512", "256x256", "128x128", "64x64", "48x48"):
+    for size in sizes:
         for root in roots:
             for ext in ("png", "svg"):
                 p = os.path.join(root, size, "apps", f"{icon}.{ext}")
                 if isfile(p):
                     return p
+    if icon:
+        for root in roots:  # iconos vectoriales (Flatpak y sistema los traen en scalable)
+            p = os.path.join(root, "scalable", "apps", f"{icon}.svg")
+            if isfile(p):
+                return p
     return None
 
 

@@ -85,6 +85,7 @@ export const PanelKeyboard: FC<{ notify?: (t: string) => void; onClose?: () => v
           {!err && <span style={{ color: COLORS.muted }}>▏</span>}
         </div>
         <span style={{ fontSize: 11, color: COLORS.muted, whiteSpace: "nowrap", fontFamily: "inherit" }}>X borrar · Menú espacio · Start Intro · B cerrar</span>
+        {onClose && <Chip compact grow={false} onClick={onClose}>✕ Cerrar</Chip>}
       </div>
       {row([...ROWS[0].map((k) => ch(k)), rep(2, big("⌫"), "BackSpace")], "r1")}
       {row([act(1.5, "Tab", "Tab"), ...ROWS[1].map((k) => ch(k)), <Gap key="g" w={2.5} />], "r2")}

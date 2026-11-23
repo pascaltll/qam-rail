@@ -65,11 +65,4 @@ function start(): void {
   timer = window.setTimeout(tick, 500);
 }
 
-/** Pruebas. */
-export function resetBootForTest(settled: boolean): void {
-  info.readyAt = settled ? Date.now() : null;
-  info.settledAt = settled ? Date.now() : null;
-  if (timer !== null) { window.clearTimeout(timer); timer = null; }
-}
-
 start();

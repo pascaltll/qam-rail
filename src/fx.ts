@@ -14,6 +14,10 @@ const CSS = `
 .qr-chip { background: var(--qr-bg) !important; color: var(--qr-fg) !important; box-shadow: var(--qr-sh, none); }
 .qr-chip.gpfocus, .qr-chip:focus, .qr-chip:hover, .qr-chip:active { background: var(--qr-bg) !important; color: var(--qr-fg) !important; }
 
+/* Toque: respuesta inmediata al apoyar el dedo (antes solo se animaba al soltar), sin retardo de doble toque ni resaltado del sistema. */
+[data-qr="item"], .qr-chip { -webkit-tap-highlight-color: transparent; touch-action: manipulation; user-select: none; -webkit-user-select: none; transition: transform 90ms ease-out, filter 90ms ease-out; }
+[data-qr="item"]:active, .qr-chip:active { transform: scale(0.97); filter: brightness(1.14); }
+
 @keyframes qrPressBounce { 0% { transform: scale(1); } 30% { transform: scale(0.9); } 65% { transform: scale(1.04); } 100% { transform: scale(1); } }
 @keyframes qrPressSoft { 0% { transform: scale(1); } 40% { transform: scale(0.96); } 100% { transform: scale(1); } }
 @keyframes qrIconPop { 0% { transform: scale(1) rotate(0); } 40% { transform: scale(1.22) rotate(-8deg); } 100% { transform: scale(1) rotate(0); } }

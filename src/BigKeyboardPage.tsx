@@ -6,7 +6,16 @@ import { closeBigKeyboard, isBigKeyboardOpen } from "./bigKeyboard";
 import { kbNote } from "./keyboard";
 import { qamEvent } from "./qamDesktop";
 import { PanelKeyboard } from "./QamKeyboard";
-import { COLORS, Chip, Row } from "./ui";
+import { COLORS } from "./ui";
+
+/** El teclado tapa parte de la app: su fondo nunca es translúcido (temas de cristal), se mezcla con negro. */
+export function solid(c: string): string {
+  const m = /^rgba?\(\s*(\d+)[\s,]+(\d+)[\s,]+(\d+)(?:[\s,/]+([\d.]+))?\s*\)$/i.exec(c.trim());
+  if (!m) return c;
+  const a = m[4] === undefined ? 1 : Math.min(1, Math.max(0, Number(m[4])));
+  const k = (v: string) => Math.round(Number(v) * a);
+  return `rgb(${k(m[1])}, ${k(m[2])}, ${k(m[3])})`;
+}
 
 export const BigKeyboardPage: FC = () => {
   // Si la ruta aparece sin que nosotros la abriéramos (entrada vieja del historial de Steam al cerrar con B: se vio el teclado «sin overlay»), se sale de ella.
@@ -31,9 +40,8 @@ export const BigKeyboardPage: FC = () => {
   if (stale) return <div />;
   return (
     <div ref={ref} style={{ position: "fixed", inset: 0, background: "transparent", display: "flex", flexDirection: "column", justifyContent: "flex-end" }}>
-      <div style={{ padding: "6px 10px 8px", background: COLORS.panel, display: "flex", flexDirection: "column", gap: 3 }}>
+      <div style={{ padding: "6px 10px 8px", background: solid(COLORS.panel), boxShadow: "0 -6px 18px rgba(0,0,0,0.45)", display: "flex", flexDirection: "column", gap: 3 }}>
         <PanelKeyboard onClose={closeBigKeyboard} />
-        <Row gap={6}><Chip compact active onClick={() => closeBigKeyboard()}>Cerrar teclado (B)</Chip></Row>
       </div>
     </div>
   );

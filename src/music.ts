@@ -258,7 +258,6 @@ export function readAlbums(): Album[] {
   return list;
 }
 export const albumById = (appid: number): Album | undefined => { readAlbums(); return albumCache?.byId.get(appid); };
-export const resetAlbumsForTest = () => { albumCache = null; };
 
 /** Sonda para el diagnostico: que expone Steam sobre musica (sin llamar a nada). */
 export function probeMusicDeep(): Record<string, unknown> {

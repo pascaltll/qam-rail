@@ -64,7 +64,6 @@ export function markRead(id: number | null): void {
   if (id === null) return;
   try { (store()?.MarkNotificationRead as ((i: number) => void) | undefined)?.call(store(), id); } catch { /* nada */ }
 }
-export function markAllRead(list: Notice[]): void { for (const n of list) if (n.isNew) markRead(n.id); }
 
 /** Aviso inmediato cuando cambia la bandeja. */
 export function onTrayChange(cb: () => void): () => void {

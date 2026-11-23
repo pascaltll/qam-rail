@@ -1,6 +1,6 @@
 import sys, os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "py_modules"))
-from qam_audio import parse_status, kind_of, choices, inspect_id, sink_names, eq_target
+from qam_audio import parse_status, choices, inspect_id, sink_names, eq_target
 
 # Como en el ROG Ally con Bazzite: la tarjeta en crudo + filtro de altavoces + un loopback de rol que no se ofrece.
 ALLY = """Audio

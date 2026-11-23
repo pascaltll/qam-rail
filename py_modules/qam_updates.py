@@ -5,7 +5,6 @@ solo HTTPS a hosts de GitHub, el .zip se verifica con SHA256SUMS, nada se instal
 """
 import fnmatch
 import json
-import os
 import re
 import time
 from urllib.parse import urlparse
