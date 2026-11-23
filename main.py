@@ -607,6 +607,12 @@ class Plugin:
         t.add_done_callback(self._bg_tasks.discard)
 
     @property
+    def _claims(self) -> dict:
+        if not hasattr(self, "_claims_v"):
+            self._claims_v = {}
+        return self._claims_v
+
+    @property
     def _qam_keys(self) -> set:
         if not hasattr(self, "_qam_keys_v"):
             self._qam_keys_v = set()
@@ -703,22 +709,57 @@ class Plugin:
         rc2, _o, err2 = await self._x_run(prefix, display, "xprop", "-root", "-f", qam_desktop.BASELAYER, "32c", "-set", qam_desktop.BASELAYER, ", ".join(str(x) for x in new))
         self._tag_log(f"  capa base {'+' if on else '-'}{gid}: {cur} → {new} (código {rc2} {err2.strip()[:80]})")
 
-    async def _desk_tag(self, key: str, prefix: list, display: str, before: set) -> None:
-        """Game Mode (gamescope) solo muestra ventanas con la propiedad STEAM_GAME: se la ponemos a las ventanas nuevas de la app durante ~20 s."""
+    async def _win_pid(self, prefix: list, display: str, wid: str) -> int | None:
+        rc, out, _e = await self._x_run(prefix, display, "xprop", "-id", wid, "_NET_WM_PID")
+        m = re.search(r"=\s*(\d+)", out) if rc == 0 else None
+        return int(m.group(1)) if m else None
+
+    async def _app_pids(self, path: str) -> set:
+        """PIDs de los procesos cuya orden contiene la carpeta de la app (para saber qué ventana es suya)."""
+        try:
+            proc = await asyncio.create_subprocess_exec("pgrep", "-f", path, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL)
+            out, _ = await asyncio.wait_for(proc.communicate(), 3)
+            return {int(x) for x in out.decode().split() if x.isdigit()}
+        except Exception:
+            return set()
+
+    async def _desk_tag(self, key: str, prefix: list, display: str, before: set, path: str | None = None) -> None:
+        """Game Mode (gamescope) solo muestra ventanas con la propiedad STEAM_GAME: se la ponemos a las ventanas de la app durante ~20 s.
+        Apps de QAM (`path`): se reconocen por el PID de la ventana (también si ya estaba abierta). Apps de escritorio: ventanas nuevas.
+        Una ventana ya marcada por otra app no se toca."""
         known = self._desk_classes.setdefault(str(key), set())
+        claims = self._claims
         done: set = set()
-        self._tag_log(f"== {key}: ventanas antes {len(before)}, clases conocidas {sorted(known)}")
+        pidcache: dict = {}
+        self._tag_log(f"== {key}: ventanas antes {len(before)}, clases conocidas {sorted(known)}" + (f", por PID ({path})" if path else ""))
         for i in range(28):
             await asyncio.sleep(0.7)
             wins = await self._x_windows(prefix, display)
-            pick = [w for w in qam_desktop.windows_to_tag(wins, before, known)
-                    if not any(re.search(r"steam|mangoapp|gamescope", c or "", re.I) for c in w["classes"])]
+            alive = {w["id"] for w in wins}
+            for k in [k for k in claims if k not in alive]:
+                claims.pop(k, None)
+            nosteam = [w for w in wins if not any(re.search(r"steam|mangoapp|gamescope", c or "", re.I) for c in w["classes"])]
+            if path:
+                pids = await self._app_pids(path)
+                pick = []
+                for w in nosteam:
+                    if min(w["w"], w["h"]) < 200:
+                        continue
+                    if w["id"] not in pidcache:
+                        pidcache[w["id"]] = await self._win_pid(prefix, display, w["id"])
+                    if pidcache[w["id"]] in pids:
+                        pick.append(w)
+            else:
+                nosteam_ids = {w["id"] for w in nosteam}
+                pick = [w for w in qam_desktop.windows_to_tag(wins, before, known) if w["id"] in nosteam_ids]
+            pick = [w for w in pick if claims.get(w["id"], key) == key]
             if i in (0, 5, 13, 27):
                 self._tag_log(f"  intento {i}: {len(wins)} ventanas, a marcar {[w['id'] for w in pick]}")
             for w in pick:
                 if w["id"] in done:
                     continue
                 done.add(w["id"])
+                claims[w["id"]] = key
                 known.update(c for c in w["classes"] if c)
                 rc, _o, err = await self._x_run(prefix, display, "xprop", "-id", w["id"], "-f", "STEAM_GAME", "32c", "-set", "STEAM_GAME", str(qam_desktop.app_gameid(key)))
                 _rc2, chk, _e = await self._x_run(prefix, display, "xprop", "-id", w["id"], "STEAM_GAME")
@@ -1270,7 +1311,7 @@ class Plugin:
                                              stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL, start_new_session=True)
         if tag:
             self._qam_keys.add(f"qam:{app_id}")
-            self._spawn(self._desk_tag(f"qam:{app_id}", prefix, display, before))
+            self._spawn(self._desk_tag(f"qam:{app_id}", prefix, display, before, app["path"]))
         return {"ok": True}
 
     async def apps_control(self, app_id: str, action: str) -> dict:
