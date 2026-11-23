@@ -18,6 +18,7 @@ export const desktopPlan = callable<[key: string], DesktopPlan>("desktop_plan");
 export const desktopRun = callable<[key: string], { ok: boolean; error?: string }>("desktop_run");
 export const desktopRunning = callable<[], { keys: string[] }>("desktop_running");
 export const desktopStop = callable<[key: string], { ok: boolean; error?: string | null }>("desktop_stop");
+export const desktopOverlay = callable<[on: boolean], { ok: boolean; skipped?: boolean; error?: string }>("desktop_overlay");
 export const desktopMinimize = callable<[key: string], { ok: boolean; error?: string | null }>("desktop_minimize");
 export const desktopKill = callable<[key: string], { ok: boolean; error?: string | null }>("desktop_kill");
 export const desktopPins = callable<[], { pins: Pin[] }>("desktop_pins");

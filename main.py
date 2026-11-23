@@ -730,6 +730,38 @@ class Plugin:
         await self._base_layer(prefix, display, key, False)
         return {"ok": True}
 
+    async def desktop_overlay(self, on: bool) -> dict:
+        """Con el panel abierto y alguna app de escritorio en marcha, sube STEAM_OVERLAY=1 en la ventana de Steam (gamescope dibuja entonces
+        la interfaz de Steam —el panel, el teclado— por encima de la app, como con un juego). Al cerrar devuelve el valor anterior."""
+        if qam_desktop is None:
+            return {"ok": False}
+        try:
+            if on and not (await self.desktop_running()).get("keys"):
+                return {"ok": True, "skipped": True}
+            prefix, seen = await self._user_session()
+            display = seen.get("DISPLAY") or ":0"
+            self._xauth = seen.get("XAUTHORITY") or None
+            rc, out, _e = await self._x_run(prefix, display, "xwininfo", "-root", "-tree")
+            wid = next((l.split()[0] for l in out.splitlines() if '"Steam Big Picture Mode"' in l), None) if rc == 0 else None
+            if not wid:
+                return {"ok": False, "error": "no hay ventana de Steam"}
+            if on:
+                _r, cur, _e = await self._x_run(prefix, display, "xprop", "-id", wid, "STEAM_OVERLAY")
+                m = re.search(r"=\s*(\d+)", cur)
+                if getattr(self, "_ov_prev", None) is None:
+                    self._ov_prev = int(m.group(1)) if m else 0
+                val = 1
+            else:
+                val = getattr(self, "_ov_prev", None)
+                if val is None:
+                    return {"ok": True, "skipped": True}
+                self._ov_prev = None
+            rc2, _o, err = await self._x_run(prefix, display, "xprop", "-id", wid, "-f", "STEAM_OVERLAY", "32c", "-set", "STEAM_OVERLAY", str(val))
+            self._tag_log(f"  overlay {'on' if on else 'off'} {wid} → {val} (código {rc2} {err.strip()[:60]})")
+            return {"ok": rc2 == 0}
+        except Exception as e:  # nunca debe afectar al panel
+            return {"ok": False, "error": str(e)[:100]}
+
     async def desktop_kill(self, key: str) -> dict:
         """Forzar el cierre: SIGKILL a todos los procesos de la app."""
         unit = self._desk_unit(key) + ".service"

@@ -14,6 +14,7 @@ import { dockRight } from "./ui";
 import { BYPASS_MS, decide } from "./pilotLogic";
 import { guardNavigation } from "./navGuard";
 import { markClosed, markCloseReason, markOpenStart } from "./perfLog";
+import { desktopOverlay } from "./qamDesktop";
 import { dismissKeyboard, inputFocused } from "./keyboard";
 
 export interface PilotHooks {
@@ -30,6 +31,11 @@ interface PanelProps {
 }
 
 const PilotPanel: FC<PanelProps> = ({ closeModal, onClosed, onNative, hooks }) => {
+  useEffect(() => {
+    // Con una app de escritorio abierta, la interfaz de Steam (el panel) se dibuja por encima de ella.
+    desktopOverlay(true).catch(() => undefined);
+    return () => { desktopOverlay(false).catch(() => undefined); };
+  }, []);
   useEffect(() => () => {
     // Al cerrar: fuera el foco del campo de texto y el teclado de Steam (no debe quedarse activo detras).
     dismissKeyboard((window as unknown as { __qamRailModalEl?: HTMLElement | null }).__qamRailModalEl?.ownerDocument);
