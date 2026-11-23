@@ -63,6 +63,12 @@ export const HELP: Record<string, HelpEntry> = {
     "Enciende o apaga el Bluetooth y conecta dispositivos ya emparejados (auriculares, mandos).",
     "Para emparejar uno nuevo, usa «Emparejar otro», que abre los ajustes de Steam.",
   ] },
+  actualizar: { title: "Actualizaciones", text: [
+    "Busca una versión nueva de QAM Rail en GitHub (como mucho cada 6 horas; «Buscar actualización» lo fuerza).",
+    "Nada se instala solo: al pulsar «Actualizar» se descarga, se comprueba su SHA-256 y se guarda una copia de la versión actual.",
+    "Decky se reinicia unos segundos. Si algo va mal, «Volver a X» restaura la copia.",
+    "Estable = solo versiones probadas. Beta = también las de prueba.",
+  ] },
   panel: { title: "Fluidez del panel", text: [
     "Con pocos vatios este panel va más lento. Por debajo del límite de ahorro quita animaciones y desenfoque para responder mejor.",
     "Impulso al abrir: sube un poco la potencia mientras el panel está abierto y la devuelve al cerrar.",

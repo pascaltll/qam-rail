@@ -29,6 +29,10 @@ try:
     import qam_desktop
 except ImportError:
     qam_desktop = None
+try:
+    import qam_self
+except ImportError:
+    qam_self = None
 
 
 def _home() -> str:
@@ -355,6 +359,114 @@ class Plugin:
         self._apps_job = {"state": "running", "step": "verificando y preparando", "source": str(source), "started": time.time(), "force": bool(force)}
         asyncio.get_running_loop().create_task(self._apps_install_task(str(source), bool(confirmed), str(sha256 or "")))
         return {"ok": True, "started": True}
+
+    # ---- Auto-actualización de QAM Rail (0.52; py_modules/qam_self.py) ----
+    SELF_REPO = "pascaltll/qam-rail"
+
+    def _self_cfg(self) -> dict:
+        try:
+            with open(_path("self-update.json"), encoding="utf-8") as fh:
+                d = json.load(fh)
+            return d if isinstance(d, dict) else {}
+        except (OSError, ValueError):
+            return {}
+
+    def _self_cfg_save(self, cfg: dict) -> None:
+        tmp = _path("self-update.json.tmp")
+        with open(tmp, "w", encoding="utf-8") as fh:
+            json.dump(cfg, fh)
+        os.replace(tmp, _path("self-update.json"))
+
+    async def self_info(self) -> dict:
+        cfg = self._self_cfg()
+        bl = qam_self.backups(_path("backups")) if qam_self else []
+        return {"version": getattr(decky, "DECKY_PLUGIN_VERSION", None), "channel": "beta" if cfg.get("channel") == "beta" else "stable",
+                "last_check": cfg.get("last_check"), "backup_version": bl[0][1] if bl else None, "repo": self.SELF_REPO}
+
+    async def self_set_channel(self, channel: str) -> dict:
+        cfg = self._self_cfg()
+        cfg["channel"] = "beta" if channel == "beta" else "stable"
+        self._self_cfg_save(cfg)
+        return await self.self_info()
+
+    async def self_check(self, force: bool = False) -> dict:
+        """¿Hay versión nueva de QAM Rail? Misma regla que las apps: ETag, 6 h salvo force, solo avisa."""
+        if qam_updates is None:
+            return {"state": "error", "error": "no disponible"}
+        cfg = self._self_cfg()
+        app = {"id": "qam-rail", "version": getattr(decky, "DECKY_PLUGIN_VERSION", None),
+               "update": {"provider": "github-release", "repo": self.SELF_REPO, "asset": "qam-rail-[0-9]*.zip",
+                          "channel": "beta" if cfg.get("channel") == "beta" else "stable"}}
+        cache = self._upd_cache()
+        c = cache.setdefault("qam-rail", {})
+        res = await asyncio.to_thread(qam_updates.check_app, app, c, self._http, None, bool(force))
+        try:
+            tmp = _path("updates.json.tmp")
+            with open(tmp, "w", encoding="utf-8") as fh:
+                json.dump(cache, fh)
+            os.replace(tmp, _path("updates.json"))
+            cfg["last_check"] = int(time.time())
+            self._self_cfg_save(cfg)
+        except OSError:
+            pass
+        return res
+
+    @staticmethod
+    def _restart_decky_later(seconds: int = 3) -> None:
+        """Reinicia plugin_loader sin esperar (este proceso muere con él): desligado de la sesión, con retraso para responder antes."""
+        import subprocess
+        subprocess.Popen(["/bin/sh", "-c", f"sleep {int(seconds)}; systemctl restart plugin_loader"], start_new_session=True,
+                         stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+    async def self_update(self) -> dict:
+        """Descarga la release, la verifica (SHA-256 obligatorio), guarda copia, cambia la carpeta y reinicia Decky."""
+        import shutil
+        import tempfile
+        if qam_self is None or qam_updates is None or qam_pipeline is None:
+            return {"ok": False, "error": "no disponible"}
+        if getattr(self, "_self_busy", False):
+            return {"ok": False, "error": "ya hay una actualización en marcha"}
+        res = await self.self_check(False)
+        if res.get("state") != "update":
+            return {"ok": False, "error": "no hay una versión nueva"}
+        if not res.get("sums_url"):
+            return {"ok": False, "error": "la release no trae SHA256SUMS: no se instala sin verificar"}
+        plugin_dir = getattr(decky, "DECKY_PLUGIN_DIR", None)
+        if not plugin_dir or os.path.basename(plugin_dir.rstrip(os.sep)) != qam_self.PLUGIN_DIRNAME:
+            return {"ok": False, "error": "carpeta del plugin no reconocida"}
+        self._self_busy = True
+        work = tempfile.mkdtemp(prefix=".qam-rail-upd-", dir=os.path.dirname(plugin_dir.rstrip(os.sep)))
+        try:
+            dest = os.path.join(work, os.path.basename(res["name"]))
+            await asyncio.to_thread(qam_updates.download, res["url"], dest, self._opener)
+            st, _, sums_text = await asyncio.to_thread(self._http, res["sums_url"], None)
+            want = qam_pipeline.parse_sums(sums_text).get(res["name"]) if st == 200 else None
+            if not want:
+                raise ValueError("no se pudo verificar la descarga (SHA256SUMS)")
+            v = await asyncio.to_thread(qam_pipeline.verify, dest, want)
+            if not v.get("ok"):
+                raise ValueError(v.get("error") or "la descarga no coincide con su SHA-256")
+            root = await asyncio.to_thread(qam_self.stage, dest, os.path.join(work, "x"), res.get("latest"))
+            r = await asyncio.to_thread(qam_self.swap, plugin_dir, root, _path("backups"), 3)
+            self._restart_decky_later(3)
+            return {"ok": True, "restarting": True, **r}
+        except Exception as e:  # noqa: BLE001
+            return {"ok": False, "error": str(e)[:200]}
+        finally:
+            self._self_busy = False
+            shutil.rmtree(work, ignore_errors=True)
+
+    async def self_rollback(self) -> dict:
+        """Vuelve a la copia de seguridad más reciente y reinicia Decky."""
+        if qam_self is None:
+            return {"ok": False, "error": "no disponible"}
+        plugin_dir = getattr(decky, "DECKY_PLUGIN_DIR", None)
+        try:
+            r = await asyncio.to_thread(qam_self.restore, plugin_dir, _path("backups"))
+        except Exception as e:  # noqa: BLE001
+            return {"ok": False, "error": str(e)[:200]}
+        self._restart_decky_later(3)
+        return {"ok": True, "restarting": True, **r}
 
     # ---- Apps de escritorio (pestaña «Steam» de Apps, 0.52 a; py_modules/qam_desktop.py) ----
     async def desktop_scan(self, force: bool = False) -> dict:

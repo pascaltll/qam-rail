@@ -11,12 +11,18 @@ Android/Xiaomi. Plugin nuevo escrito desde cero (GPL-3.0); de Panel de Control (
 - **B** dentro de la sección vuelve al riel; **B** en el riel cierra el QAM (como siempre).
 - El icono de este plugin (cuadrícula) abre **Apps**: favoritas (X para fijar) y recientes, incluye atajos no-Steam.
 
-## Instalar
-1. Descarga `qam-rail-X.zip` y `SHA256SUMS` de [Releases](https://github.com/pascaltll/qam-rail/releases) y comprueba: `sha256sum -c SHA256SUMS --ignore-missing`.
-2. En la consola:
+## Instalar en un dispositivo nuevo
+Requisitos: **Bazzite (o similar) en Modo Juego con [Decky Loader](https://decky.xyz)** (en Bazzite: `ujust setup-decky`). Recomendado: el plugin **Panel de Control** (tienda de Decky) para potencia, color y sonido.
 ```bash
-unzip qam-rail-X.zip -d ~/homebrew/plugins/
-sudo systemctl restart plugin_loader
+curl -fsSL https://github.com/pascaltll/qam-rail/releases/latest/download/instalar.sh | bash
+```
+Revisa el dispositivo (Decky, Panel de Control, `wpctl`, `bluetoothctl`, `nmcli`, `flatpak`…), dice qué falta y cómo arreglarlo, y después instala la última versión estable (SHA-256 verificado). `./instalar.sh --doctor` solo revisa.
+
+Dónde queda: el plugin en `~/homebrew/plugins/qam-rail`, sus ajustes en `~/homebrew/settings/qam-rail` y las apps de QAM en `~/homebrew/qam-apps`.
+
+Instalación manual: descarga `qam-rail-X.zip` y `SHA256SUMS` de [Releases](https://github.com/pascaltll/qam-rail/releases), comprueba con `sha256sum -c SHA256SUMS --ignore-missing`, y:
+```bash
+unzip qam-rail-X.zip -d ~/homebrew/plugins/ && sudo systemctl restart plugin_loader
 ```
 
 ### Actualizar
@@ -28,7 +34,7 @@ Con `scripts/install.sh` (cópialo a una carpeta tuya):
 ./install.sh --version 0.51.1   # una versión concreta
 ./limpiar.sh                    # muestra qué zips viejos sobran; --aplicar los archiva; --borrar los elimina
 ```
-Las apps de QAM se actualizan desde el propio QAM (Apps › «Actualizar a X»).
+**Desde el propio QAM:** Más › Actualizaciones › «Buscar actualización» (QAM Rail) y Apps › «Actualizar a X» (apps de QAM). Se avisa, nunca se instala solo; instalar guarda una copia y se puede «Volver a X».
 
 ## Desarrollo
 ```bash

@@ -18,4 +18,6 @@ jobs:
       - run: python3 tests/py/test_updates.py
       - run: python3 tests/py/test_desktop.py
       - run: bash tests/sh/test_scripts.sh
+      - run: python3 tests/py/test_self.py
+      - run: for f in scripts/*.sh; do bash -n "$f"; done
       - run: pnpm build
