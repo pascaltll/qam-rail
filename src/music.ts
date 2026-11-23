@@ -70,6 +70,9 @@ export const racing = (dp: number, dt: number) => dt >= RACE_WINDOW_S && dp > dt
 export const RACE_STRIKES = 2;
 /** Puro (probado): ¿hay que pausar? `strikes` = ventanas seguidas con `racing` hasta esta (incluida). */
 export const shouldAutoPause = (strikes: number) => strikes >= RACE_STRIKES;
+/** Puro (probado): qué hacer con un ritmo raro. Primero se intenta reabrir el audio (pausa y play); si vuelve a pasar, se pausa. */
+export const raceAction = (strikes: number, tries: number): "nada" | "reabrir" | "pausar" =>
+  !shouldAutoPause(strikes) ? "nada" : tries < 1 ? "reabrir" : "pausar";
 
 // Vigilancia de la velocidad de la posicion (para la prueba de musica: cuanto avanza por segundo real).
 const rateLog: number[] = [];
@@ -88,14 +91,23 @@ export function pauseMusic(reason: string): boolean {
   return true;
 }
 
+/** Intento de recuperar el audio sin reiniciar Steam: pausa y, enseguida, play (Steam reabre su salida). [H] sin confirmar en el equipo. */
+function reopenAudio(): void {
+  if (!state || state.status !== PLAYING) return;
+  crumb("música: contador raro, se intenta reabrir el audio (pausa y play)");
+  api()?.TogglePlayPause?.();
+  window.setTimeout(() => { if (state && state.status !== PLAYING) api()?.TogglePlayPause?.(); }, 800);
+}
+
 export function startMusicWatch(): () => void {
   const a = api();
   // Inicio de la ventana de medida: se reinicia al pausar, cambiar de pista o saltar hacia atras.
   let win: { p: number; t: number; track: number } | null = null;
   let strikes = 0;
+  let tries = 0;
   const h1 = a?.RegisterForMusicPlaybackChanges?.((t) => {
     state = toState(t, state);
-    if (state?.status === PLAYING) outputLost = false; else { win = null; strikes = 0; }
+    if (state?.status === PLAYING) outputLost = false; else { win = null; strikes = 0; tries = 0; }
     emit();
   });
   const h2 = a?.RegisterForMusicPlaybackPosition?.((raw) => {
@@ -114,8 +126,10 @@ export function startMusicWatch(): () => void {
       if (racing(dp, dt)) {
         strikes += 1;
         crumb(`música: contador raro (x${Math.round((dp / dt) * 10) / 10})`);
-        if (shouldAutoPause(strikes)) { strikes = 0; pauseMusic("el contador corre mucho más rápido que el reloj (Steam sin salida de audio: reinícialo)"); }
-      } else strikes = 0;
+        const todo = raceAction(strikes, tries);
+        if (todo === "reabrir") { strikes = 0; tries += 1; reopenAudio(); }
+        else if (todo === "pausar") { strikes = 0; pauseMusic("el contador corre mucho más rápido que el reloj (Steam sin salida de audio: reinícialo)"); }
+      } else { strikes = 0; tries = 0; }
       win = { p, t: now, track: state.track };
     }
     state = { ...state, positionS: p };
