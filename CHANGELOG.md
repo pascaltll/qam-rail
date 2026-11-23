@@ -4,13 +4,12 @@
 
 Apps › pestaña «Steam»: apps de escritorio del equipo (Flatpak, AppImage, sistema).
 
-- «Abrir» lanza la app directamente (sin shell); si ya es atajo de Steam se abre por Steam.
-- «A Steam» crea el atajo (ejecutable, opciones, carpeta de inicio e icono) y lo anota en `apps-steam.json`; «Quitar de Steam» solo borra atajos creados por QAM Rail. Si el atajo desapareció de Steam se ofrece «Volver a Steam».
-- Navegadores Chromium se lanzan con `--start-fullscreen`; Firefox no (no hay opción fiable).
-- Filtro por origen (Todas / Flatpak / AppImage / Sistema), grupos por categoría, dos filas por app para el mando.
-- Ayuda «steam» (incluye la plantilla de mando «Gamepad with Mouse Trackpad» para usar el mando como ratón).
-- Backend: `desktop_plan`, `desktop_run`, `desktop_reg_get`, `desktop_reg_set`; `qam_desktop.launch_plan/browser_kind/icon_path/clean_registry`.
-- [H] Sin verificar en el equipo: AddShortcut/SetShortcutIcon con rutas de Flatpak y `RunGame` con el atajo creado.
+- «Abrir» lanza la app **como el usuario de la sesión** (Decky corre como root: `runuser` + `DISPLAY`/`XDG_RUNTIME_DIR`/D-Bus) y espera 1,5 s; si se cierra con error, el aviso dice por qué (última línea de su salida, `desktop-run.log`).
+- «Agregar a QAM» pone la app en Apps (y en la fila de Inicio) de este panel, con su icono, y se abre desde ahí. **No se crea nada en Steam.** `desktop-pins.json`.
+- Navegadores Chromium con `--start-fullscreen`; Firefox no (no hay opción fiable).
+- Filtro por origen, grupos por categoría, dos filas por app para el mando.
+- Backend: `desktop_plan`, `desktop_run`, `desktop_pins`, `desktop_pin_set`.
+- [H] Sin verificar en el equipo: que la ventana de la app se vea en Game Mode al lanzarla así (gamescope).
 
 ## 0.53.0
 

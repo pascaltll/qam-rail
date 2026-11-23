@@ -4,8 +4,8 @@ import { Focusable } from "@decky/ui";
 import { useEffect, useMemo, useState, type FC } from "react";
 
 import {
-  addDesktopToSteam, currentShortcuts, desktopRegGet, desktopScan, filterApps, groupApps, noteFor, openDesktopApp, removeDesktopFromSteam, sourceLabel, steamState,
-  type DesktopApp, type Registry,
+  desktopScan, filterApps, groupApps, isPinned, loadPins, noteFor, openDesktopApp, setPinned, sourceLabel,
+  type DesktopApp, type Pin,
 } from "./qamDesktop";
 import { Card, Label, small } from "./QamSections";
 import { COLORS, Chip, ICONS2, Keep, Row, Segments, colorFor } from "./ui";
@@ -14,40 +14,37 @@ type Src = "all" | "flatpak" | "appimage" | "system";
 
 export const QamDesktopApps: FC<{ notify: (t: string) => void; after?: () => void }> = ({ notify, after }) => {
   const [apps, setApps] = useState<DesktopApp[] | null>(null);
-  const [reg, setReg] = useState<Registry>({});
+  const [pins, setPins] = useState<Pin[]>([]);
   const [src, setSrc] = useState<Src>("all");
   const [busy, setBusy] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
   const load = (force = false) => {
     void desktopScan(force).then((d) => { setApps(Array.isArray(d?.apps) ? d.apps : []); setErr(d?.ok === false ? d.error ?? "no se pudo leer" : null); }, () => { setApps([]); setErr("no se pudo leer"); });
-    void desktopRegGet().then((r) => setReg(r ?? {}), () => null);
+    void loadPins(true).then(setPins, () => null);
   };
   useEffect(() => { load(false); }, []);
 
   const shown = useMemo(() => filterApps((apps ?? []).filter((a) => src === "all" || a.source === src), ""), [apps, src]);
   const groups = useMemo(() => groupApps(shown), [shown]);
-  const sc = currentShortcuts();
 
   const act = async (a: DesktopApp, fn: () => Promise<string | void>) => {
     if (busy) return;
     setBusy(a.key);
     try { const m = await fn(); if (m) notify(m); } catch (e) { notify(`Error: ${String(e).slice(0, 80)}`); }
     setBusy(null);
-    void desktopRegGet().then((r) => setReg(r ?? {}), () => null);
+    void loadPins().then(setPins, () => null);
   };
   const open = (a: DesktopApp) => act(a, async () => {
-    const r = await openDesktopApp(a, reg);
+    const r = await openDesktopApp(a.key, a.name);
     if (!r.ok) return `No se pudo abrir ${a.name}: ${r.error ?? "?"}`;
     after?.();
     return `Abriendo ${a.name}`;
   });
   const toggle = (a: DesktopApp) => act(a, async () => {
-    const st = steamState(a.key, reg, sc);
-    if (st === "si") { await removeDesktopFromSteam(a.key, reg); return `${a.name}: quitada de Steam`; }
-    if (st === "perdida") await removeDesktopFromSteam(a.key, reg); // limpia la nota vieja y vuelve a crearla
-    const r = await addDesktopToSteam(a);
-    return r.ok ? `${a.name} en Steam${r.fullscreen ? " (pantalla completa)" : ""}` : `No se pudo: ${r.error}`;
+    const on = !isPinned(a.key, pins);
+    const r = await setPinned(a, on);
+    return r.ok ? (on ? `${a.name} agregada a QAM (Apps)` : `${a.name} quitada de QAM`) : `No se pudo: ${r.error}`;
   });
 
   const counts = useMemo(() => { const c: Record<string, number> = { all: apps?.length ?? 0 }; for (const a of apps ?? []) c[a.source] = (c[a.source] ?? 0) + 1; return c; }, [apps]);
@@ -63,19 +60,19 @@ export const QamDesktopApps: FC<{ notify: (t: string) => void; after?: () => voi
           <div key={g.group} style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             <Label>{g.group}</Label>
             {g.apps.map((a) => {
-              const st = steamState(a.key, reg, sc);
+              const pinned = isPinned(a.key, pins);
               return (
                 <Focusable key={a.key} style={{ display: "flex", flexDirection: "column", gap: 6, padding: "6px 0 2px", borderTop: `1px solid ${COLORS.track}` }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                     <div style={{ width: 32, height: 32, borderRadius: 10, background: colorFor(a.name), display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, fontWeight: 800, color: "#fff", flexShrink: 0 }}>{a.name.slice(0, 1).toUpperCase()}</div>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontSize: 14, fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{a.name}</div>
-                      <div style={{ ...small, fontSize: 11 }}>{noteFor(a, st)}</div>
+                      <div style={{ ...small, fontSize: 11 }}>{noteFor(a, pinned)}</div>
                     </div>
                   </div>
                   <Row gap={6}>
                     <Chip compact active icon={ICONS2.play} onClick={() => void open(a)}>Abrir</Chip>
-                    <Chip compact active={st === "si"} icon={st === "si" ? ICONS2.trash : ICONS2.plus} onClick={() => void toggle(a)}>{busy === a.key ? "…" : st === "si" ? "Quitar de Steam" : st === "perdida" ? "Volver a Steam" : "A Steam"}</Chip>
+                    <Chip compact active={pinned} icon={pinned ? ICONS2.trash : ICONS2.plus} onClick={() => void toggle(a)}>{busy === a.key ? "…" : pinned ? "Quitar de QAM" : "Agregar a QAM"}</Chip>
                   </Row>
                 </Focusable>
               );

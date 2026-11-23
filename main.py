@@ -573,18 +573,109 @@ class Plugin:
             return {"ok": False, "error": str(e)}
         return {"ok": True, "name": app["name"], "source": app["source"], "icon_path": qam_desktop.icon_path(app.get("icon"), _home()), **plan}
 
+    def _user_launch(self, argv: list) -> list:
+        """Decky corre como root: la app debe abrirse como el usuario de la sesión y con su pantalla (X :0 / Wayland) y D-Bus."""
+        if os.getuid() != 0:
+            return list(argv)
+        user = getattr(decky, "DECKY_USER", "") or ""
+        if not user or user == "root":
+            return list(argv)
+        try:
+            import pwd
+            uid = pwd.getpwnam(user).pw_uid
+        except (KeyError, ImportError):
+            return list(argv)
+        run = f"/run/user/{uid}"
+        env = [f"HOME={_home()}", f"USER={user}", f"XDG_RUNTIME_DIR={run}", f"DBUS_SESSION_BUS_ADDRESS=unix:path={run}/bus", "DISPLAY=:0"]
+        try:
+            wl = sorted(n for n in os.listdir(run) if n.startswith("wayland-") and not n.endswith(".lock"))
+            if wl:
+                env.append(f"WAYLAND_DISPLAY={wl[0]}")
+        except OSError:
+            pass
+        return ["runuser", "-u", user, "--", "env", *env, *argv]
+
     async def desktop_run(self, key: str) -> dict:
-        """Abre la app directamente (sin pasar por Steam): como el usuario, sin shell, sin esperar. Para las que están «En Steam» se lanza por Steam."""
+        """Abre la app de escritorio como el usuario, sin shell. Espera 1,5 s: si se cierra con error, devuelve el final de su salida."""
         pl = await self.desktop_plan(key)
         if not pl.get("ok"):
             return pl
+        log = _path("desktop-run.log")
         try:
-            await asyncio.create_subprocess_exec(*pl["argv"], cwd=pl["dir"] if os.path.isdir(pl["dir"]) else _home(), env=self._user_env(),
-                                                 stdin=asyncio.subprocess.DEVNULL, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL,
-                                                 start_new_session=True)
+            fh = open(log, "wb")
+        except OSError:
+            fh = None
+        try:
+            env = self._user_env()
+            env.setdefault("DISPLAY", ":0")
+            proc = await asyncio.create_subprocess_exec(*self._user_launch(pl["argv"]), cwd=pl["dir"] if os.path.isdir(pl["dir"]) else _home(), env=env,
+                                                        stdin=asyncio.subprocess.DEVNULL, stdout=fh or asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.STDOUT,
+                                                        start_new_session=True)
         except OSError as e:
             return {"ok": False, "error": str(e)[:120]}
-        return {"ok": True}
+        finally:
+            if fh:
+                fh.close()
+        try:
+            await asyncio.wait_for(proc.wait(), 1.5)
+        except asyncio.TimeoutError:
+            return {"ok": True}  # sigue en marcha: se abrió
+        if proc.returncode == 0:
+            return {"ok": True}
+        tail = ""
+        try:
+            with open(log, "rb") as r:
+                tail = r.read()[-300:].decode("utf-8", "replace").strip().splitlines()[-1][:140]
+        except (OSError, IndexError):
+            pass
+        return {"ok": False, "error": f"salió con código {proc.returncode}" + (f": {tail}" if tail else "")}
+
+    def _desk_pins(self) -> list:
+        try:
+            with open(_path("desktop-pins.json"), encoding="utf-8") as fh:
+                raw = json.load(fh)
+        except (OSError, ValueError):
+            return []
+        return [k for k in raw if isinstance(k, str) and len(k) <= 120][:60] if isinstance(raw, list) else []
+
+    async def desktop_pins(self) -> dict:
+        """Apps de escritorio que el usuario agregó a QAM, con su icono (data URL) para el cajón de apps."""
+        import base64
+        keys = self._desk_pins()
+        if not keys or qam_desktop is None:
+            return {"pins": []}
+        data = await self.desktop_scan(False)
+        by = {a.get("key"): a for a in data.get("apps", [])}
+        out = []
+        for k in keys:
+            a = by.get(k)
+            if not a:
+                continue
+            icon = None
+            p = qam_desktop.icon_path(a.get("icon"), _home())
+            if p and os.path.getsize(p) < 1_500_000:
+                try:
+                    with open(p, "rb") as fh:
+                        low = p.lower()
+                        kind = "svg+xml" if low.endswith(".svg") else "jpeg" if low.endswith((".jpg", ".jpeg")) else "png"
+                        icon = f"data:image/{kind};base64," + base64.b64encode(fh.read()).decode()
+                except OSError:
+                    icon = None
+            out.append({"key": k, "name": a.get("name", k), "source": a.get("source", ""), "icon": icon})
+        return {"pins": out}
+
+    async def desktop_pin_set(self, key: str, on: bool) -> dict:
+        keys = [k for k in self._desk_pins() if k != str(key)]
+        if on:
+            keys.append(str(key))
+        tmp = _path("desktop-pins.json.tmp")
+        try:
+            with open(tmp, "w", encoding="utf-8") as fh:
+                json.dump(keys[:60], fh)
+            os.replace(tmp, _path("desktop-pins.json"))
+        except OSError as e:
+            return {"ok": False, "error": str(e)[:100]}
+        return {"ok": True, "keys": keys}
 
     def _desk_reg(self) -> dict:
         try:

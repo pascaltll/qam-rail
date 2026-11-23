@@ -25,6 +25,7 @@ import { dockSurface } from "./appearance";
 import { AudioControls } from "./QamAudio";
 import { perfStore, readExtras, readPerf, setExtra, step, type PerfView } from "./steamPerf";
 import { useTap } from "./tap";
+import { loadPins, openDesktopApp, pinsCached, type Pin } from "./qamDesktop";
 import { COLORS, Chip, ICONS, ICONS2, Icon, Keep, Row, Segments, ToggleRow, XSlider, cardStyle, colorFor, focusRing } from "./ui";
 
 export const small = { fontSize: 12, get color() { return COLORS.muted; }, lineHeight: "16px" };
@@ -757,18 +758,33 @@ function openQamApp(a: QamApp, notify: (t: string) => void, after: () => void): 
 const QamAppIcon: FC<{ a: QamApp; icon?: string; notify: (t: string) => void; after: () => void }> = ({ a, icon, notify, after }) => (
   <AppIcon name={a.name} capsule={icon ?? null} onTap={() => openQamApp(a, notify, after)} />
 );
+/** Apps de escritorio agregadas a QAM desde Apps › Steam: se abren directamente, sin pasar por Steam. */
+function useDesktopPins(): Pin[] {
+  const [p, setP] = useState<Pin[]>(() => pinsCached());
+  useEffect(() => { let on = true; void loadPins().then((x) => { if (on) setP(x); }); return () => { on = false; }; }, []);
+  return p;
+}
+function openDesktop(p: Pin, notify: (t: string) => void, after: () => void): void {
+  after();
+  window.setTimeout(() => { void openDesktopApp(p.key, p.name).then((r) => { if (!r.ok) notify(`No se pudo abrir ${p.name}: ${r.error ?? "?"}`); }); }, 400);
+}
+const DeskIcon: FC<{ p: Pin; notify: (t: string) => void; after: () => void }> = ({ p, notify, after }) => (
+  <AppIcon name={p.name} capsule={p.icon} onTap={() => openDesktop(p, notify, after)} />
+);
 /** Las de Steam que ya son apps de QAM (mismo nombre) no se repiten. */
 const notQam = (apps: AppEntry[], qam: QamApp[]) => apps.filter((x) => !qam.some((q) => q.name.trim().toLowerCase() === x.name.trim().toLowerCase()));
 
 /** Fila de Inicio: apps de QAM + apps ancladas de Steam (MiniTube, Recomp Hub…) + «Más apps». */
 export const AppRow: FC<{ apps: AppEntry[]; notify: (t: string) => void; onAll: () => void; after: () => void; limit?: number }> = ({ apps, notify, onAll, after, limit = 3 }) => {
   const q = useDrawerApps();
+  const dp = useDesktopPins();
   const steam = notQam(apps, q.apps);
   const own = q.apps.slice(0, limit);
   return (
     <GridNav row>
       {own.map((a) => <QamAppIcon key={`q:${a.id}`} a={a} icon={q.icons[a.id]} notify={notify} after={after} />)}
-      {steam.slice(0, Math.max(0, limit - own.length)).map((a) => <AppIcon key={a.appid} name={a.name} capsule={a.capsule} onTap={() => launchApp(a, notify, after)} />)}
+      {dp.slice(0, Math.max(0, limit - own.length)).map((p) => <DeskIcon key={`d:${p.key}`} p={p} notify={notify} after={after} />)}
+      {steam.slice(0, Math.max(0, limit - own.length - dp.length)).map((a) => <AppIcon key={a.appid} name={a.name} capsule={a.capsule} onTap={() => launchApp(a, notify, after)} />)}
       <AppIcon name={apps.length || own.length ? "Más apps" : "Apps"} icon={<Icon d={ICONS.grid} size={26} color="#fff" />} bg={COLORS.track} onTap={onAll} />
     </GridNav>
   );
@@ -776,10 +792,12 @@ export const AppRow: FC<{ apps: AppEntry[]; notify: (t: string) => void; onAll: 
 
 export const AppGrid: FC<{ apps: AppEntry[]; notify: (t: string) => void; after: () => void }> = ({ apps, notify, after }) => {
   const q = useDrawerApps();
+  const dp = useDesktopPins();
   const steam = notQam(apps, q.apps);
-  return steam.length || q.apps.length ? (
+  return steam.length || q.apps.length || dp.length ? (
     <GridNav>
       {q.apps.map((a) => <QamAppIcon key={`q:${a.id}`} a={a} icon={q.icons[a.id]} notify={notify} after={after} />)}
+      {dp.map((p) => <DeskIcon key={`d:${p.key}`} p={p} notify={notify} after={after} />)}
       {steam.map((a) => <AppIcon key={a.appid} name={a.name} capsule={a.capsule} onTap={() => launchApp(a, notify, after)} />)}
     </GridNav>
   ) : <div style={{ ...small, padding: 4 }}>Aún no hay apps. Instala una abajo («Apps de QAM») o añade un atajo no‑Steam.</div>;

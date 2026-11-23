@@ -861,14 +861,14 @@ Compartido: `~/homebrew/qam-apps` (mismo esquema de manifiestos) y la carpeta `s
 
 ## 59. Pestaña «Steam» de Apps (0.54)
 
-**Qué es.** Tercera pestaña de Apps (`src/QamDesktopApps.tsx`) con las apps de escritorio que ya escanea `qam_desktop.scan` (0.51.1): Flatpak, AppImage y del sistema.
+**Qué es.** Tercera pestaña de Apps (`src/QamDesktopApps.tsx`) con las apps de escritorio que escanea `qam_desktop.scan`: Flatpak, AppImage y del sistema. «Abrir» las lanza; «Agregar a QAM» las pone en el cajón de apps del panel. **Nada se crea en Steam** (decisión de Carlos tras la primera prueba: el atajo de Steam se descartó).
 
-**Backend.** `desktop_plan(key)` devuelve `argv/exe/args/dir/icon_path/fullscreen/browser`; `desktop_run(key)` lanza sin shell, sesión nueva y sin esperar; `desktop_reg_get/set` mantienen `apps-steam.json` (clave de la app → `{appid,name,source,added}`), el registro de los atajos NUESTROS. Solo se quita lo que está ahí: nunca otros atajos del usuario.
+**Lanzamiento.** Decky corre como root. `desktop_run` envuelve el comando con `runuser -u <usuario> -- env HOME USER XDG_RUNTIME_DIR DBUS_SESSION_BUS_ADDRESS DISPLAY=:0 [WAYLAND_DISPLAY] …` y sin shell. Espera 1,5 s: si el proceso muere con error devuelve la última línea de su salida (`desktop-run.log`). Chromium lleva `--start-fullscreen` (Firefox no).
 
-**Frontend.** `src/qamDesktop.ts` (lógica pura probada: `filterApps`, `groupApps`, `steamState` no/si/perdida, `noteFor`; y las llamadas a SteamClient: `AddShortcut`, `SetShortcutIcon`, `RemoveShortcut`, `RunGame`). Regla de navegación: dos filas por tarjeta (nombre / acciones), sin barras en una fila de chips.
+**Cajón.** `desktop_pins` (claves en `desktop-pins.json` + icono como data URL) y `desktop_pin_set`. `QamSections` añade los iconos a `AppGrid` y `AppRow` (`DeskIcon`), con el panel cerrado antes de lanzar (400 ms, igual que las demás apps).
 
-**Decisiones.** Chromium con `--start-fullscreen`; Firefox sin opción (no hay una fiable). El mando como ratón se resuelve con la plantilla de Steam Input «Gamepad with Mouse Trackpad» en el atajo (indicado en la ayuda); el Flatpak de Edge necesita lectura de `/run/udev`.
+**Frontend.** `src/qamDesktop.ts`: lógica pura probada (`filterApps`, `groupApps`, `isPinned`, `noteFor`) y caché de pins (`loadPins`, 60 s). Navegación: dos filas por tarjeta, sin barras en una fila de chips.
 
-**Pendiente [H].** Probar en el equipo `AddShortcut` con ejecutables de Flatpak, iconos, `RunGame` del atajo creado y «Volver a Steam».
+**Pendiente [H].** Comprobar que la ventana se muestra en gamescope al lanzar así (si no, habrá que lanzar por Steam o con variables de gamescope); `DISPLAY=:0`; Flatpak como usuario desde root.
 
 **Pruebas.** `tests/py/test_desktop.py` (`_t054`), `tests/v054.test.ts`.

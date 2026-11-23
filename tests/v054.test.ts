@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 vi.mock("@decky/api", () => ({ callable: () => async () => ({ ok: true }) }));
 
 import { HELP } from "../src/help";
-import { filterApps, groupApps, noteFor, sourceLabel, steamState, type DesktopApp } from "../src/qamDesktop";
+import { filterApps, groupApps, isPinned, noteFor, sourceLabel, type DesktopApp } from "../src/qamDesktop";
 
 const app = (name: string, source: DesktopApp["source"] = "flatpak", group = "Internet"): DesktopApp => ({ key: `${source}:${name}`, name, source, exec: [name], icon: null, group, desktop: null });
 
@@ -18,19 +18,17 @@ describe("0.54 · apps de escritorio", () => {
     expect(g.map((x) => x.group)).toEqual(["Internet", "Juegos", "Otras"]);
     expect(g[2].apps).toHaveLength(2);
   });
-  it("estado en Steam: no / si / perdida", () => {
-    const reg = { "flatpak:Brave": { appid: 7, name: "Brave", source: "flatpak", added: 1 } };
-    expect(steamState("flatpak:X", reg, [{ appid: 7 }])).toBe("no");
-    expect(steamState("flatpak:Brave", reg, [{ appid: 7 }])).toBe("si");
-    expect(steamState("flatpak:Brave", reg, [{ appid: 9 }])).toBe("perdida");
+  it("agregada a QAM o no", () => {
+    const pins = [{ key: "flatpak:Brave", name: "Brave", source: "flatpak", icon: null }];
+    expect(isPinned("flatpak:Brave", pins)).toBe(true);
+    expect(isPinned("flatpak:X", pins)).toBe(false);
   });
   it("notas de fila", () => {
     expect(sourceLabel("appimage")).toBe("AppImage");
-    expect(noteFor({ source: "flatpak" }, "si")).toBe("Flatpak · en Steam");
-    expect(noteFor({ source: "system" }, "perdida")).toContain("ya no está en Steam");
-    expect(noteFor({ source: "system" }, "no", true)).toBe("Sistema · pantalla completa");
+    expect(noteFor({ source: "flatpak" }, true)).toBe("Flatpak · en QAM");
+    expect(noteFor({ source: "system" }, false)).toBe("Sistema");
   });
   it("hay ayuda «steam»", () => {
-    expect(HELP.steam.text.join(" ")).toContain("Quitar de Steam");
+    expect(HELP.steam.text.join(" ")).toContain("Agregar a QAM");
   });
 });

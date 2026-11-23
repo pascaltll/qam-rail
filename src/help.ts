@@ -11,9 +11,9 @@ export const HELP: Record<string, HelpEntry> = {
   ] },
   steam: { title: "Apps del equipo", text: [
     "Aquí salen las apps de escritorio instaladas (Flatpak, AppImage y del sistema): navegadores, Discord, emuladores…",
-    "«Abrir» la lanza directamente. «A Steam» crea su atajo (con su icono) para abrirla también desde la biblioteca; «Quitar de Steam» solo borra los atajos que creó QAM Rail.",
+    "«Abrir» la lanza. «Agregar a QAM» la pone en Apps (y en Inicio) de este panel para abrirla desde su menú; no se crea nada en Steam.",
     "Los navegadores basados en Chromium se abren a pantalla completa. Firefox no tiene una opción fiable para eso.",
-    "Para usar el mando como ratón dentro de una app, en su atajo elige la plantilla de mando «Gamepad with Mouse Trackpad».",
+    "Si una app no abre, el aviso dice por qué (lo último que escribió al cerrarse).",
   ] },
   tipo: { title: "Tipo de juego", text: [
     "Dice al panel qué clase de juego es para adaptarse: qué plugins y ajustes quedan a mano.",
