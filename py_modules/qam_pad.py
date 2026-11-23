@@ -339,6 +339,17 @@ class XOut:
         for m in reversed(mods):
             self.xt.XTestFakeKeyEvent(self.dpy, m, 0, 0)
 
+    def zoom(self, n: int) -> None:
+        """Zoom del navegador: Ctrl + rueda (n > 0 acerca, n < 0 aleja)."""
+        ctrl = self._code("Control_L")
+        if not ctrl or not n:
+            return
+        self.xt.XTestFakeKeyEvent(self.dpy, ctrl, 1, 0)
+        for _ in range(abs(n)):
+            self.xt.XTestFakeButtonEvent(self.dpy, 4 if n > 0 else 5, 1, 0)
+            self.xt.XTestFakeButtonEvent(self.dpy, 4 if n > 0 else 5, 0, 0)
+        self.xt.XTestFakeKeyEvent(self.dpy, ctrl, 0, 0)
+
     def wheel(self, v: int, h: int) -> None:
         for n, b in ((v, 5 if v > 0 else 4), (h, 7 if h > 0 else 6)):
             for _ in range(abs(n)):
@@ -427,8 +438,13 @@ class TouchScroll:
         self.cov = [[0.0, 0.0], [0.0, 0.0]]   # cov[eje del táctil][eje de pantalla]
         self.learned: tuple | None = None
         self.mt = False
+        self.legacy = False
         self.slot = 0
-        self.down = False
+        self.pos: dict = {}          # slot → [x, y] de cada dedo apoyado
+        self.down = False            # arrastre de un dedo en curso
+        self.multi = False           # hay (o hubo, sin soltar todos) dos o más dedos
+        self.g = None                # gesto de dos dedos: estado
+        self.zoom = 0
         self.fling = (0.0, 0.0)
         self._reset()
 
@@ -476,18 +492,47 @@ class TouchScroll:
         if typ == EV_ABS:
             if code == ABS_MT_SLOT:
                 self.slot = val
-            elif code == ABS_MT_TRACKING_ID and self.slot == 0:
+            elif code == ABS_MT_TRACKING_ID:
                 self.mt = True
-                self._touch(val != -1, now)
-            elif self.slot == 0 and code in (ABS_MT_POSITION_X, 0):
-                self.cx = val
-            elif self.slot == 0 and code in (ABS_MT_POSITION_Y, 1):
-                self.cy = val
+                if val == -1:
+                    self.pos.pop(self.slot, None)
+                    self._fingers_changed(now)
+                else:
+                    self.pos[self.slot] = [None, None]
+                    self._fingers_changed(now)
+            elif code in (ABS_MT_POSITION_X, ABS_MT_POSITION_Y) or (code in (0, 1) and not self.mt):   # ABS_X/Y solo en táctiles de un contacto
+                if self.slot in self.pos:
+                    self.pos[self.slot][0 if code in (ABS_MT_POSITION_X, 0) else 1] = val
         elif typ == EV_KEY and code == BTN_TOUCH and not self.mt:
-            self._touch(val == 1, now)
+            self.legacy = val == 1
+            if val == 1:
+                self.pos[0] = [None, None]
+            else:
+                self.pos.pop(0, None)
+            self._fingers_changed(now)
         elif typ == EV_SYN and code == 0:
             return self._frame(now, ptr)
         return (0, 0)
+
+    def take_zoom(self) -> int:
+        """Pasos de zoom pendientes (+ acercar, − alejar), una sola vez."""
+        z, self.zoom = self.zoom, 0
+        return z
+
+    def _fingers_changed(self, now: float) -> None:
+        n = len(self.pos)
+        if n >= 2 and not self.multi:   # entra un segundo dedo: se acaba el arrastre de uno y empieza el gesto de dos
+            self.multi = True
+            self.fling = (0.0, 0.0)
+            self._reset()
+            self.down = False
+            self.g = None
+        if n == 0:
+            self._touch(False, now)
+            self.multi = False
+            self.g = None
+        elif n == 1 and not self.multi and not self.down:
+            self._touch(True, now)
 
     def _touch(self, on: bool, now: float) -> None:
         if on and not self.down:
@@ -503,9 +548,12 @@ class TouchScroll:
             self._reset()
 
     def _frame(self, now: float, ptr: tuple | None) -> tuple:
-        if not self.down or self.cx is None or self.cy is None:
+        pts = [tuple(v) for _k, v in sorted(self.pos.items()) if v[0] is not None and v[1] is not None]
+        if self.multi:
+            return self._gesture2(pts, now) if len(pts) >= 2 else (0, 0)
+        if not self.down or len(pts) != 1:
             return (0, 0)
-        cur = (self.cx, self.cy)
+        cur = pts[0]
         if ptr is not None:
             self.ptr = ptr
         if self.start is None:
@@ -526,6 +574,40 @@ class TouchScroll:
         self.vel[0] = 0.6 * self.vel[0] + 0.4 * (sx / dt)
         self.vel[1] = 0.6 * self.vel[1] + 0.4 * (sy / dt)
         return self._clicks(sx, sy)
+
+    PINCH_PX = 46.0   # variación de la distancia entre los dedos por cada paso de zoom
+    LOCK_PX = 22.0    # lo que hay que moverse para decidir si el gesto de dos dedos es zoom o desplazamiento
+
+    def _gesture2(self, pts: list, now: float) -> tuple:
+        """Dos dedos: separarlos/juntarlos = zoom (Ctrl + rueda); moverlos juntos = desplazar. Se decide una vez por gesto."""
+        (x0, y0), (x1, y1) = pts[0], pts[1]
+        mx, my = (x0 + x1) / 2, (y0 + y1) / 2
+        sx0, sy0 = self.to_screen(x0, y0)
+        sx1, sy1 = self.to_screen(x1, y1)
+        dist = ((sx1 - sx0) ** 2 + (sy1 - sy0) ** 2) ** 0.5
+        smx, smy = self.to_screen(mx, my)
+        if self.g is None:
+            self.g = {"d0": dist, "m0": (smx, smy), "dist": dist, "mid": (smx, smy), "mode": None, "acc": 0.0, "t": now}
+            self.acc = [0.0, 0.0]
+            return (0, 0)
+        g = self.g
+        if g["mode"] is None:
+            dd, dm = abs(dist - g["d0"]), ((smx - g["m0"][0]) ** 2 + (smy - g["m0"][1]) ** 2) ** 0.5
+            if max(dd, dm) < self.LOCK_PX:
+                g["dist"], g["mid"] = dist, (smx, smy)
+                return (0, 0)
+            g["mode"] = "zoom" if dd > 1.2 * dm else "scroll"
+            g["dist"], g["mid"] = g["d0"], g["m0"]   # lo recorrido hasta decidir también cuenta
+        if g["mode"] == "zoom":
+            g["acc"] += dist - g["dist"]
+            n = int(g["acc"] / self.PINCH_PX)
+            g["acc"] -= n * self.PINCH_PX
+            self.zoom += n
+            res = (0, 0)
+        else:
+            res = self._clicks(smx - g["mid"][0], smy - g["mid"][1])
+        g["dist"], g["mid"] = dist, (smx, smy)
+        return res
 
     def _clicks(self, sx: float, sy: float) -> tuple:
         self.acc[0] += sx
@@ -679,9 +761,13 @@ class PadRunner:
             v, h = ts.feed(typ, code, val, now, ptr)
             if ts.learned != was:
                 self.log(f"táctil: ejes aprendidos (eje Y de pantalla ← eje {ts.learned[0]} signo {ts.learned[1]}; eje X ← {ts.learned[2]} signo {ts.learned[3]})")
-            if v or h:
+            z = ts.take_zoom()
+            if v or h or z:
                 try:
-                    self._x.wheel(v, h)
+                    if v or h:
+                        self._x.wheel(v, h)
+                    if z:
+                        self._x.zoom(z)
                     self._x.flush()
                 except Exception as e:  # noqa: BLE001
                     self.log(f"táctil: error al mandar la rueda: {e}")
@@ -874,6 +960,10 @@ class PadRunner:
                             if tv or th:
                                 self._x.wheel(tv, th)
                                 wv = wv or tv
+                            tz = ts.take_zoom()
+                            if tz:
+                                self._x.zoom(tz)
+                                wv = wv or tz
                         if acts or dx or dy or wv or wh:
                             self._x.flush()
                     except Exception as e:  # noqa: BLE001

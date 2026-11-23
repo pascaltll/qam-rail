@@ -1,6 +1,8 @@
 # Cambios
 
-## dev.58 (en curso)
+## dev.58
+
+- **Táctil con dos dedos:** separar/juntar los dedos = zoom del navegador (Ctrl + rueda, un paso cada ~46 px); mover los dos dedos juntos = desplazar. El gesto se decide una vez (tras ~22 px) para que un desplazamiento no acabe en zoom, y tras un gesto de dos dedos el dedo que queda no arrastra hasta que sueltes todo. Un dedo sigue desplazando con inercia como en dev.56.
 
 - **Scroll táctil — permiso:** el log de dev.57 mostró la causa: `/dev/input/event5` (la pantalla táctil) es `root:input` 660 y el plugin corre como tu usuario, así que no podía leerla («Permission denied»). Nuevo `scripts/touch-permiso.sh`: instala una regla de udev con `uaccess` para las pantallas táctiles (solo lectura, se aplica al momento y sobrevive a reinicios; `--quitar` la retira). `install.sh` la instala una vez si falta.
 

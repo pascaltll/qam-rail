@@ -111,4 +111,48 @@ for i in range(21):
     st.feed(EV_ABS, 0, 500, i / 60); st.feed(EV_ABS, 1, 800 - 17 * i, i / 60)
     V += st.feed(EV_SYN, 0, 0, i / 60)[0]
 assert V >= 8, V
+
+# --- dos dedos (los dos con MT): separar = zoom, juntarlos = menos zoom, moverlos juntos = desplazar
+def two(ts, frames, t0=100.0, dt=1 / 60):
+    """frames: lista de ((x0,y0),(x1,y1)); devuelve (clics_v, clics_h, zoom)."""
+    V = H = 0
+    t = t0
+    for s_ in (0, 1):
+        ts.feed(EV_ABS, q.ABS_MT_SLOT, s_, t)
+        ts.feed(EV_ABS, q.ABS_MT_TRACKING_ID, 10 + s_, t)
+    for f in frames:
+        for s_ in (0, 1):
+            ts.feed(EV_ABS, q.ABS_MT_SLOT, s_, t)
+            ts.feed(EV_ABS, q.ABS_MT_POSITION_X, f[s_][0], t)
+            ts.feed(EV_ABS, q.ABS_MT_POSITION_Y, f[s_][1], t)
+        v, h = ts.feed(EV_SYN, 0, 0, t)
+        V, H, t = V + v, H + h, t + dt
+    Z = ts.take_zoom()
+    for s_ in (0, 1):
+        ts.feed(EV_ABS, q.ABS_MT_SLOT, s_, t)
+        ts.feed(EV_ABS, q.ABS_MT_TRACKING_ID, -1, t)
+    ts.feed(EV_SYN, 0, 0, t)
+    return V, H, Z
+
+tp = q.TouchScroll((0, 1920), (0, 1080), (1920, 1080))
+V, H, Z = two(tp, [((800 - 10 * i, 500), (1000 + 10 * i, 500)) for i in range(25)])   # se separan 500 px
+assert Z >= 8 and V == 0, (V, H, Z)
+tp = q.TouchScroll((0, 1920), (0, 1080), (1920, 1080))
+V, H, Z = two(tp, [((400 + 10 * i, 500), (1100 - 10 * i, 500)) for i in range(25)])  # se juntan
+assert Z <= -4 and V == 0, (V, H, Z)
+tp = q.TouchScroll((0, 1920), (0, 1080), (1920, 1080))
+V, H, Z = two(tp, [((700, 800 - 14 * i), (1000, 800 - 14 * i)) for i in range(25)])   # suben juntos 336 px
+assert V >= 8 and Z == 0, (V, H, Z)
+assert tp.fling == (0.0, 0.0)   # los dos dedos no dejan inercia
+# tras un gesto de dos dedos, el dedo que queda no arrastra hasta soltar todo
+tp = q.TouchScroll((0, 1920), (0, 1080), (1920, 1080))
+tp.feed(EV_ABS, q.ABS_MT_SLOT, 0, 0); tp.feed(EV_ABS, q.ABS_MT_TRACKING_ID, 1, 0)
+tp.feed(EV_ABS, q.ABS_MT_SLOT, 1, 0); tp.feed(EV_ABS, q.ABS_MT_TRACKING_ID, 2, 0)
+tp.feed(EV_ABS, q.ABS_MT_SLOT, 1, 0); tp.feed(EV_ABS, q.ABS_MT_TRACKING_ID, -1, 0)
+tp.feed(EV_ABS, q.ABS_MT_SLOT, 0, 0)
+V = 0
+for i in range(20):
+    tp.feed(EV_ABS, q.ABS_MT_POSITION_X, 500, i / 60); tp.feed(EV_ABS, q.ABS_MT_POSITION_Y, 800 - 20 * i, i / 60)
+    V += tp.feed(EV_SYN, 0, 0, i / 60)[0]
+assert V == 0, V
 print("test_touch OK")
