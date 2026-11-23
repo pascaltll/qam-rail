@@ -18,6 +18,8 @@ export const desktopPlan = callable<[key: string], DesktopPlan>("desktop_plan");
 export const desktopRun = callable<[key: string], { ok: boolean; error?: string }>("desktop_run");
 export const desktopRunning = callable<[], { keys: string[] }>("desktop_running");
 export const desktopStop = callable<[key: string], { ok: boolean; error?: string | null }>("desktop_stop");
+export const desktopMinimize = callable<[key: string], { ok: boolean; error?: string | null }>("desktop_minimize");
+export const desktopKill = callable<[key: string], { ok: boolean; error?: string | null }>("desktop_kill");
 export const desktopPins = callable<[], { pins: Pin[] }>("desktop_pins");
 export const desktopPinSet = callable<[key: string, on: boolean], { ok: boolean; error?: string }>("desktop_pin_set");
 
@@ -80,3 +82,31 @@ export async function closeDesktopApp(key: string, name: string): Promise<{ ok: 
 
 /** Puro: ¿está abierta? */
 export const isRunning = (key: string, running: string[]): boolean => running.includes(key);
+
+/** Minimizar: Steam vuelve a verse; la app sigue abierta. */
+export async function minimizeDesktopApp(key: string, name: string): Promise<{ ok: boolean; error?: string | null }> {
+  crumb(`minimizar app de escritorio: ${name}`);
+  try { return await desktopMinimize(key); } catch (err) { return { ok: false, error: String(err).slice(0, 80) }; }
+}
+/** Forzar el cierre (SIGKILL). */
+export async function killDesktopApp(key: string, name: string): Promise<{ ok: boolean; error?: string | null }> {
+  crumb(`forzar cierre de app de escritorio: ${name}`);
+  try { return await desktopKill(key); } catch (err) { return { ok: false, error: String(err).slice(0, 80) }; }
+}
+
+// Apps abiertas por QAM Rail (compartido por el cajón y la pestaña Steam).
+let runCache: { at: number; keys: string[] } | null = null;
+export const runningCached = (): string[] => runCache?.keys ?? [];
+export async function loadRunning(force = false): Promise<string[]> {
+  if (!force && runCache && Date.now() - runCache.at < 4000) return runCache.keys;
+  const r = await desktopRunning().catch(() => null);
+  runCache = { at: Date.now(), keys: Array.isArray(r?.keys) ? r!.keys : [] };
+  return runCache.keys;
+}
+
+/** Puro: opciones del menú de una app de escritorio (abierta o no), en el orden en que se muestran. */
+export function menuOptions(running: boolean): Array<{ id: "open" | "show" | "minimize" | "close" | "kill"; label: string }> {
+  return running
+    ? [{ id: "show", label: "Mostrar" }, { id: "minimize", label: "Minimizar" }, { id: "close", label: "Cerrar" }, { id: "kill", label: "Forzar cierre" }]
+    : [{ id: "open", label: "Abrir" }];
+}

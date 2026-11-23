@@ -671,6 +671,33 @@ class Plugin:
                 except (OSError, asyncio.TimeoutError):
                     pass
 
+    async def desktop_minimize(self, key: str) -> dict:
+        """Minimizar: quita STEAM_GAME a las ventanas de la app; gamescope deja de mostrarlas y vuelve Steam. La app sigue abierta («Abrir» la vuelve a mostrar)."""
+        if qam_desktop is None:
+            return {"ok": False}
+        prefix, seen = await self._user_session()
+        display = seen.get("DISPLAY") or ":0"
+        known = self._desk_classes.get(str(key), set())
+        n = 0
+        for w in qam_desktop.windows_to_tag(await self._x_windows(prefix, display), set(), known):
+            if not known:
+                break
+            try:
+                p = await asyncio.create_subprocess_exec(*prefix, "env", f"DISPLAY={display}", "xprop", "-id", w["id"], "-remove", "STEAM_GAME", env=self._user_env(),
+                                                         stdin=asyncio.subprocess.DEVNULL, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL)
+                await asyncio.wait_for(p.wait(), 3)
+                n += 1
+            except (OSError, asyncio.TimeoutError):
+                pass
+        return {"ok": n > 0, "windows": n, "error": None if n else "no encontré su ventana"}
+
+    async def desktop_kill(self, key: str) -> dict:
+        """Forzar el cierre: SIGKILL a todos los procesos de la app."""
+        unit = self._desk_unit(key) + ".service"
+        await self._systemctl_user("kill", "--signal=SIGKILL", unit)
+        code, out = await self._systemctl_user("stop", unit)
+        return {"ok": code == 0, "error": out.strip().splitlines()[-1][:120] if code and out.strip() else None}
+
     async def desktop_run(self, key: str) -> dict:
         """Abre la app de escritorio dentro de la sesión del usuario (`systemd-run --user`: entorno limpio, sin los límites del servicio de Decky,
         que hacían fallar el sandbox de Firefox con «CanCreateUserNamespace EPERM»). Espera 1,5 s: si se cierra con error devuelve el final de su salida."""

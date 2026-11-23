@@ -871,6 +871,8 @@ Compartido: `~/homebrew/qam-apps` (mismo esquema de manifiestos) y la carpeta `s
 
 **Ventana en Game Mode [H].** Con Firefox en marcha (`pgrep` [V]) no se veía: gamescope solo muestra ventanas con la propiedad X `STEAM_GAME` (cualquier valor ≠ 769 las pone encima de la principal; fuente: documentación de gamescope-session de ChimeraOS). `xprop` y `xwininfo` existen en el equipo [V]. `desktop_run` toma una foto de las ventanas de `:0` (`xwininfo -root -children`, `qam_desktop.parse_xwininfo`), y durante ~20 s pone `STEAM_GAME=1` (`xprop -id … -f STEAM_GAME 32c -set`) a las ventanas grandes (≥ 200 px) nuevas o de la misma clase que ya vimos abrir esa app (`windows_to_tag`). No se toca ninguna otra ventana (Steam no se marca).
 
+**Menú de la app.** `QamDeskMenu.tsx`, en línea sobre la rejilla (sin `position: fixed`). Se abre con pulsación larga (650 ms; el clic posterior se ignora) o con `onSecondaryButton` (X). Opciones: Mostrar (= `desktop_run`, re-etiqueta la ventana), Minimizar (`desktop_minimize`: `xprop -remove STEAM_GAME` a las ventanas de las clases conocidas de esa app; gamescope deja de mostrarlas), Cerrar (`systemctl --user stop`), Forzar cierre (`kill --signal=SIGKILL` + `stop`). Y está reservada para la ayuda.
+
 **Cajón.** `desktop_pins` (claves en `desktop-pins.json` + icono como data URL) y `desktop_pin_set`. `QamSections` añade los iconos a `AppGrid` y `AppRow` (`DeskIcon`), con el panel cerrado antes de lanzar (400 ms, igual que las demás apps).
 
 **Frontend.** `src/qamDesktop.ts`: lógica pura probada (`filterApps`, `groupApps`, `isPinned`, `noteFor`) y caché de pins (`loadPins`, 60 s). Navegación: dos filas por tarjeta, sin barras en una fila de chips.

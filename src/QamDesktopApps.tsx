@@ -7,6 +7,7 @@ import {
   closeDesktopApp, desktopRunning, desktopScan, filterApps, isRunning, groupApps, isPinned, loadPins, noteFor, openDesktopApp, setPinned, sourceLabel,
   type DesktopApp, type Pin,
 } from "./qamDesktop";
+import { DeskMenu } from "./QamDeskMenu";
 import { Card, Label, small } from "./QamSections";
 import { tickEvery } from "./ticker";
 import { COLORS, Chip, ICONS2, Keep, Row, Segments, colorFor } from "./ui";
@@ -17,6 +18,7 @@ export const QamDesktopApps: FC<{ notify: (t: string) => void; after?: () => voi
   const [apps, setApps] = useState<DesktopApp[] | null>(null);
   const [pins, setPins] = useState<Pin[]>([]);
   const [running, setRunning] = useState<string[]>([]);
+  const [menuKey, setMenuKey] = useState<string | null>(null);
   const refreshRunning = () => void desktopRunning().then((r) => setRunning(Array.isArray(r?.keys) ? r.keys : []), () => null);
   const [src, setSrc] = useState<Src>("all");
   const [busy, setBusy] = useState<string | null>(null);
@@ -70,7 +72,7 @@ export const QamDesktopApps: FC<{ notify: (t: string) => void; after?: () => voi
             {g.apps.map((a) => {
               const pinned = isPinned(a.key, pins);
               return (
-                <Focusable key={a.key} style={{ display: "flex", flexDirection: "column", gap: 6, padding: "6px 0 2px", borderTop: `1px solid ${COLORS.track}` }}>
+                <Focusable key={a.key} onSecondaryButton={() => setMenuKey(a.key)} onSecondaryActionDescription="Opciones" style={{ display: "flex", flexDirection: "column", gap: 6, padding: "6px 0 2px", borderTop: `1px solid ${COLORS.track}` }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                     <div style={{ width: 32, height: 32, borderRadius: 10, background: colorFor(a.name), display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, fontWeight: 800, color: "#fff", flexShrink: 0 }}>{a.name.slice(0, 1).toUpperCase()}</div>
                     <div style={{ flex: 1, minWidth: 0 }}>
@@ -80,10 +82,12 @@ export const QamDesktopApps: FC<{ notify: (t: string) => void; after?: () => voi
                   </div>
                   <Row gap={6}>
                     {isRunning(a.key, running)
-                      ? <Chip compact active icon={ICONS2.trash} onClick={() => void close(a)}>{busy === a.key ? "…" : "Cerrar"}</Chip>
+                      ? <Chip compact active icon={ICONS2.play} onClick={() => void open(a)}>Mostrar</Chip>
                       : <Chip compact active icon={ICONS2.play} onClick={() => void open(a)}>Abrir</Chip>}
+                    {isRunning(a.key, running) && <Chip compact icon={ICONS2.trash} onClick={() => void close(a)}>{busy === a.key ? "…" : "Cerrar"}</Chip>}
                     <Chip compact active={pinned} icon={pinned ? ICONS2.trash : ICONS2.plus} onClick={() => void toggle(a)}>{busy === a.key ? "…" : pinned ? "Quitar de QAM" : "Agregar a QAM"}</Chip>
                   </Row>
+                  {menuKey === a.key && <DeskMenu app={a} notify={notify} after={after} onClose={() => { setMenuKey(null); refreshRunning(); }} />}
                 </Focusable>
               );
             })}

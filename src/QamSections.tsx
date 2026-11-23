@@ -25,7 +25,9 @@ import { dockSurface } from "./appearance";
 import { AudioControls } from "./QamAudio";
 import { perfStore, readExtras, readPerf, setExtra, step, type PerfView } from "./steamPerf";
 import { useTap } from "./tap";
-import { loadPins, openDesktopApp, pinsCached, type Pin } from "./qamDesktop";
+import { DeskMenu } from "./QamDeskMenu";
+import { loadPins, loadRunning, openDesktopApp, pinsCached, runningCached, type Pin } from "./qamDesktop";
+import { tickEvery } from "./ticker";
 import { COLORS, Chip, ICONS, ICONS2, Icon, Keep, Row, Segments, ToggleRow, XSlider, cardStyle, colorFor, focusRing } from "./ui";
 
 export const small = { fontSize: 12, get color() { return COLORS.muted; }, lineHeight: "16px" };
@@ -710,18 +712,24 @@ export function useApps(pinned: number[]) {
   return apps;
 }
 
-const AppIcon: FC<{ name: string; capsule?: string | null; icon?: ReactNode; bg?: string; onTap: () => void; size?: number }> = ({ name, capsule, icon, bg, onTap, size = 54 }) => {
-  const tap = useTap(onTap);
+const LONG_PRESS_MS = 650;
+const AppIcon: FC<{ name: string; capsule?: string | null; icon?: ReactNode; bg?: string; onTap: () => void; onMenu?: () => void; size?: number; running?: boolean }> = ({ name, capsule, icon, bg, onTap, onMenu, size = 54, running }) => {
+  const long = useRef(false);
+  const timer = useRef<number | null>(null);
+  const tap = useTap(() => { if (long.current) { long.current = false; return; } onTap(); });
   const [f, setF] = useState(false);
+  const stop = () => { if (timer.current !== null) { window.clearTimeout(timer.current); timer.current = null; } };
+  const start = () => { if (!onMenu) return; long.current = false; stop(); timer.current = window.setTimeout(() => { long.current = true; timer.current = null; onMenu(); }, LONG_PRESS_MS); };
+  const menuProps = onMenu ? { onSecondaryButton: onMenu, onSecondaryActionDescription: "Opciones", onPointerDown: start, onPointerUp: stop, onPointerLeave: stop, onPointerCancel: stop } : {};
   return (
-    <Focusable data-qr="item" noFocusRing onActivate={tap} onClick={tap} onGamepadFocus={() => setF(true)} onGamepadBlur={() => setF(false)}
+    <Focusable data-qr="item" noFocusRing onActivate={tap} onClick={tap} onGamepadFocus={() => setF(true)} onGamepadBlur={() => setF(false)} {...(menuProps as object)}
       style={{ width: 84, display: "flex", flexDirection: "column", alignItems: "center", gap: 5, padding: 4, borderRadius: 18, boxSizing: "border-box", background: f ? COLORS.track : "transparent", ...focusRing(f) }}>
       <div style={{ width: size, height: size, borderRadius: 18, overflow: "hidden", background: bg ?? (capsule ? "rgba(255,255,255,0.1)" : colorFor(name)), display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 22, fontWeight: 700,
         boxShadow: "0 2px 6px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.18)", backgroundImage: capsule ? undefined : "linear-gradient(160deg, rgba(255,255,255,0.18), rgba(0,0,0,0.12))" }}>
         {capsule ? <img src={capsule} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
           : icon ?? name.slice(0, 1).toUpperCase()}
       </div>
-      <div style={{ fontSize: 12, color: COLORS.text, textAlign: "center", lineHeight: 1.15, maxHeight: 28, overflow: "hidden", width: "100%" }}>{name}</div>
+      <div style={{ fontSize: 12, color: COLORS.text, textAlign: "center", lineHeight: 1.15, maxHeight: 28, overflow: "hidden", width: "100%" }}>{running ? "● " : ""}{name}</div>
     </Focusable>
   );
 };
@@ -768,9 +776,22 @@ function openDesktop(p: Pin, notify: (t: string) => void, after: () => void): vo
   after();
   window.setTimeout(() => { void openDesktopApp(p.key, p.name).then((r) => { if (!r.ok) notify(`No se pudo abrir ${p.name}: ${r.error ?? "?"}`); }); }, 400);
 }
-const DeskIcon: FC<{ p: Pin; notify: (t: string) => void; after: () => void }> = ({ p, notify, after }) => (
-  <AppIcon name={p.name} capsule={p.icon} onTap={() => openDesktop(p, notify, after)} />
+const DeskIcon: FC<{ p: Pin; notify: (t: string) => void; after: () => void; onMenu: (p: Pin) => void; running: boolean }> = ({ p, notify, after, onMenu, running }) => (
+  <AppIcon name={p.name} capsule={p.icon} running={running} onTap={() => openDesktop(p, notify, after)} onMenu={() => onMenu(p)} />
 );
+/** Apps de escritorio abiertas (se relee al montar y cada 6 s con el panel abierto) + menú de opciones de la que se mantiene pulsada. */
+function useDeskMenu() {
+  const [running, setRunning] = useState<string[]>(() => runningCached());
+  const [menu, setMenu] = useState<Pin | null>(null);
+  useEffect(() => {
+    let on = true;
+    const read = () => void loadRunning(true).then((k) => { if (on) setRunning(k); });
+    read();
+    const stop = tickEvery(read, 6000, { name: "desktop-running-drawer" });
+    return () => { on = false; stop(); };
+  }, []);
+  return { running, menu, setMenu };
+}
 /** Las de Steam que ya son apps de QAM (mismo nombre) no se repiten. */
 const notQam = (apps: AppEntry[], qam: QamApp[]) => apps.filter((x) => !qam.some((q) => q.name.trim().toLowerCase() === x.name.trim().toLowerCase()));
 
@@ -778,28 +799,36 @@ const notQam = (apps: AppEntry[], qam: QamApp[]) => apps.filter((x) => !qam.some
 export const AppRow: FC<{ apps: AppEntry[]; notify: (t: string) => void; onAll: () => void; after: () => void; limit?: number }> = ({ apps, notify, onAll, after, limit = 3 }) => {
   const q = useDrawerApps();
   const dp = useDesktopPins();
+  const dm = useDeskMenu();
   const steam = notQam(apps, q.apps);
   const own = q.apps.slice(0, limit);
   return (
+    <>
+    {dm.menu && <DeskMenu app={dm.menu} notify={notify} after={after} onClose={() => dm.setMenu(null)} />}
     <GridNav row>
       {own.map((a) => <QamAppIcon key={`q:${a.id}`} a={a} icon={q.icons[a.id]} notify={notify} after={after} />)}
-      {dp.slice(0, Math.max(0, limit - own.length)).map((p) => <DeskIcon key={`d:${p.key}`} p={p} notify={notify} after={after} />)}
+      {dp.slice(0, Math.max(0, limit - own.length)).map((p) => <DeskIcon key={`d:${p.key}`} p={p} notify={notify} after={after} onMenu={dm.setMenu} running={dm.running.includes(p.key)} />)}
       {steam.slice(0, Math.max(0, limit - own.length - dp.length)).map((a) => <AppIcon key={a.appid} name={a.name} capsule={a.capsule} onTap={() => launchApp(a, notify, after)} />)}
       <AppIcon name={apps.length || own.length ? "Más apps" : "Apps"} icon={<Icon d={ICONS.grid} size={26} color="#fff" />} bg={COLORS.track} onTap={onAll} />
     </GridNav>
+    </>
   );
 };
 
 export const AppGrid: FC<{ apps: AppEntry[]; notify: (t: string) => void; after: () => void }> = ({ apps, notify, after }) => {
   const q = useDrawerApps();
   const dp = useDesktopPins();
+  const dm = useDeskMenu();
   const steam = notQam(apps, q.apps);
   return steam.length || q.apps.length || dp.length ? (
+    <>
+    {dm.menu && <DeskMenu app={dm.menu} notify={notify} after={after} onClose={() => dm.setMenu(null)} />}
     <GridNav>
       {q.apps.map((a) => <QamAppIcon key={`q:${a.id}`} a={a} icon={q.icons[a.id]} notify={notify} after={after} />)}
-      {dp.map((p) => <DeskIcon key={`d:${p.key}`} p={p} notify={notify} after={after} />)}
+      {dp.map((p) => <DeskIcon key={`d:${p.key}`} p={p} notify={notify} after={after} onMenu={dm.setMenu} running={dm.running.includes(p.key)} />)}
       {steam.map((a) => <AppIcon key={a.appid} name={a.name} capsule={a.capsule} onTap={() => launchApp(a, notify, after)} />)}
     </GridNav>
+    </>
   ) : <div style={{ ...small, padding: 4 }}>Aún no hay apps. Instala una abajo («Apps de QAM») o añade un atajo no‑Steam.</div>;
 };
 
