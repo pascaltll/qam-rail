@@ -9,6 +9,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - name: Las versiones estables salen de main (las pre-release, como v0.54.0-beta.1, pueden salir de dev)
+        run: |
+          case "$GITHUB_REF_NAME" in
+            *-*) echo "pre-release: canal beta" ;;
+            *) git merge-base --is-ancestor "$GITHUB_SHA" origin/main || { echo "::error::La etiqueta estable $GITHUB_REF_NAME no está en main. Une dev a main primero."; exit 1; } ;;
+          esac
       - uses: pnpm/action-setup@v4
         with: { version: 10 }
       - uses: actions/setup-node@v4
@@ -19,6 +26,7 @@ jobs:
       - run: bash scripts/package.sh
       - uses: softprops/action-gh-release@v2
         with:
+          prerelease: ${{ contains(github.ref_name, '-') }}
           files: |
             qam-rail-*.zip
             SHA256SUMS

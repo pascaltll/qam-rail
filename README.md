@@ -53,3 +53,6 @@ Licencia: GPL-3.0.
 ## Estado de verificación
 Ver `claude/qam-rail-ficha.md` en el proyecto. Resumen: lógica y compilación probadas aquí con un QAM simulado;
 **nada probado todavía en Steam real**.
+
+## Desarrollo
+Ramas `main` (estable) y `dev` (trabajo diario), canales estable/dev en el equipo y cómo publicar: ver [CONTRIBUTING.md](CONTRIBUTING.md).
