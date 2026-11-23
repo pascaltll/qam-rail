@@ -11,7 +11,7 @@ def desk(**kw):
 def test_parse_and_exec():
     p = d.parse_desktop("# c\n[Desktop Entry]\nName=Foo\nName[es]=Fú\nExec=foo --x %U\n[Desktop Action a]\nName=Z\n")
     assert p == {"Name": "Foo", "Exec": "foo --x %U"}          # sin traducciones ni acciones
-    assert d.clean_exec('flatpak run --branch=stable org.mozilla.firefox @@u %U @@') == ["flatpak", "run", "--branch=stable", "org.mozilla.firefox", "@@u", "@@"]
+    assert d.clean_exec('flatpak run --branch=stable org.mozilla.firefox @@u %U @@') == ["flatpak", "run", "--branch=stable", "org.mozilla.firefox"]
     assert d.clean_exec("foo %f %% bar") == ["foo", "%", "bar"]
     for bad in ("foo; rm -rf /", "foo && bar", "foo > x", "sh -c '$(x)'", "", "foo `id`"):
         assert d.clean_exec(bad) is None, bad
