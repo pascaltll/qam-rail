@@ -140,3 +140,22 @@ def switch(sdir: str, plugins_dir: str, target: str) -> dict:
         return {"ok": False, "error": "esa versión no está instalada en este equipo"}
     write_flag(sdir, target)
     return {"ok": True, "active": target}
+
+
+def seed_settings(stable_dir: str, dev_dir: str) -> list:
+    """Primera vez que arranca dev: copia los ajustes de la estable (settings.json y el interruptor OWNQAM) para que el panel propio
+    quede igual de encendido. No pisa nada que dev ya tenga; DISABLE (apagado de emergencia) no se copia. Devuelve lo copiado."""
+    import shutil
+    done = []
+    os.makedirs(dev_dir, exist_ok=True)
+    if os.path.exists(os.path.join(dev_dir, "settings.json")):
+        return done
+    for name in ("settings.json", "OWNQAM"):
+        src, dst = os.path.join(stable_dir, name), os.path.join(dev_dir, name)
+        if os.path.isfile(src) and not os.path.exists(dst):
+            try:
+                shutil.copyfile(src, dst)
+                done.append(name)
+            except OSError:
+                pass
+    return done

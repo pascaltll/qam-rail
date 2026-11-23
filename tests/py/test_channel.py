@@ -41,4 +41,10 @@ with tempfile.TemporaryDirectory() as t:
     assert C.boot_guard(D, SD, P, "0.53.0-dev.2") is False and C.active(SD, P) == "dev" and C._read_count(D) == 1
     C.boot_guard(D, SD, P, "0.53.0-dev.2"); assert C.boot_guard(D, SD, P, "0.53.0-dev.2") is True  # misma versión: sí cuenta
     C.write_flag(SD, "dev"); assert C.boot_guard(D, SD, P, "0.53.0-dev.3") is False and C._read_count(D) == 1  # otra versión: reinicia
+    # dev arranca con los ajustes de la estable, sin pisar los suyos ni copiar DISABLE
+    SS = os.path.join(t, "settings", "qam-rail"); os.makedirs(SS, exist_ok=True); import shutil; shutil.rmtree(D, ignore_errors=True)
+    open(os.path.join(SS, "settings.json"), "w").write('{"own_qam": true}'); open(os.path.join(SS, "OWNQAM"), "w").write(""); open(os.path.join(SS, "DISABLE"), "w").write("")
+    assert sorted(C.seed_settings(SS, D)) == ["OWNQAM", "settings.json"] and not os.path.exists(os.path.join(D, "DISABLE"))
+    open(os.path.join(D, "settings.json"), "w").write('{"own_qam": false}')
+    assert C.seed_settings(SS, D) == [] and open(os.path.join(D, "settings.json")).read() == '{"own_qam": false}'
 print("TODO OK")

@@ -99,6 +99,14 @@ class Plugin:
                 qam_pipeline.clean_staging(_apps_dir())
         except Exception:  # noqa: BLE001
             pass
+        try:  # canales (0.53): dev arranca con los ajustes de la estable (si no, el panel propio queda apagado y se ve el QAM de Steam)
+            if qam_channel is not None and _me() == "dev":
+                seeded = qam_channel.seed_settings(os.path.join(os.path.dirname(decky.DECKY_PLUGIN_SETTINGS_DIR.rstrip(os.sep)), "qam-rail"),
+                                                   decky.DECKY_PLUGIN_SETTINGS_DIR)
+                if seeded:
+                    decky.logger.info(f"QAM Rail Dev: ajustes copiados de la estable ({', '.join(seeded)})")
+        except Exception as exc:  # noqa: BLE001
+            decky.logger.error(f"canal (ajustes): {exc}")
         try:  # canales (0.53): si este es dev y está activo, cuenta el arranque (la red de seguridad vuelve a estable tras 2 fallidos)
             if qam_channel is not None and _me() == "dev" and _active() == "dev":
                 if qam_channel.boot_guard(decky.DECKY_PLUGIN_SETTINGS_DIR, _chan_dir(), _plugins_dir(), str(getattr(decky, "DECKY_PLUGIN_VERSION", "") or "")):
