@@ -248,6 +248,15 @@ class XOut:
         self.x11.XSetInputFocus(self.dpy, int(wid), 1, 0)  # RevertToPointerRoot, CurrentTime
         self.x11.XFlush(self.dpy)
 
+    def focus_window(self) -> int:
+        """Ventana de X que tiene ahora el foco de teclado (0 si no se pudo leer). Solo para el registro."""
+        try:
+            w, r = ctypes.c_ulong(), ctypes.c_int()
+            self.x11.XGetInputFocus(self.dpy, ctypes.byref(w), ctypes.byref(r))
+            return int(w.value)
+        except Exception:  # noqa: BLE001
+            return 0
+
     def type_char(self, ch: str) -> bool:
         """Escribe un carácter con la distribución activa: busca su tecla y el nivel (Mayús, AltGr) y pulsa lo necesario. False si no existe."""
         if not ch or ch == "\n":

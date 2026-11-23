@@ -1,5 +1,9 @@
 # Cambios
 
+## dev.54
+
+- Diagnóstico del teclado grande en Firefox: cada línea «tecla … → ventana … ok=True» de `desktop-tag.log` lleva ahora `foco=0x…` (la ventana de X que tiene el foco de teclado justo después de devolvérselo a la app). Si no es la de la app ni una hija suya, las letras no llegan a la caja de texto aunque salga `ok=True`.
+
 ## dev.53
 
 - **Música rota tras recargar la interfaz:** confirmado en el equipo que, tras una recarga de Steam/Decky (p. ej. instalar un zip) con la música sonando, la música deja de sonar y solo avanza el contador; en PipeWire no hay stream de Steam. Un reinicio de la sesión lo arregla; relanzar solo la interfaz no. Ahora, al detectar el ritmo raro (2 ventanas seguidas), el plugin **primero intenta reabrir el audio con pausa + play** y, si vuelve a fallar, pausa y avisa de que hay que reiniciar Steam. [H] la reapertura no está confirmada; si no funciona, el reinicio de sesión sigue siendo la única salida. Regla práctica mientras tanto: pausa la música antes de instalar o recargar.

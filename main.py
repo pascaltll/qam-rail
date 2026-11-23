@@ -1143,6 +1143,7 @@ class Plugin:
             if not wid:  # sin app de escritorio delante no se escribe a ciegas (iría a la interfaz de Steam)
                 return {"ok": False, "wid": None, "error": "no hay app de escritorio delante"}
             x.focus(wid)
+            fw = getattr(x, "focus_window", lambda: 0)()   # solo para el registro: ¿el foco quedó en la ventana de la app (o en una hija suya)?
             ok = True
             mm = [m for m in (mods or []) if m in ("ctrl", "alt", "shift")]
             if mm:
@@ -1165,7 +1166,7 @@ class Plugin:
             if n < 40 or not ok:
                 self._kx_n = n + 1
                 what = (f"{'+'.join(mm)}+" if mm else "") + (str(key) if key else f"{len(str(text or ''))} carácter(es)")
-                self._tag_log(f"  tecla {what} → ventana {hex(wid)} ok={ok}")  # el contenido escrito no se guarda: podría ser una contraseña
+                self._tag_log(f"  tecla {what} → ventana {hex(wid)} ok={ok} foco={hex(fw)}")  # el contenido escrito no se guarda: podría ser una contraseña
             return {"ok": ok, "wid": hex(wid), "error": None}
         except Exception as e:  # noqa: BLE001
             self._kx_close()
