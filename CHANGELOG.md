@@ -1,5 +1,9 @@
 # Cambios
 
+## dev.51
+
+- `pad.log` anota siempre los combos (Steam+Y, Y→Steam, Select+Y, Steam+A); el tope de botones sueltos sube de 60 a 150 (con 60 el log se llenaba en minutos y no quedaba rastro de las pruebas).
+
 ## dev.50
 
 - **Select + Y abre/cierra el teclado grande** sin pasar por el botón Steam (así no aparece un instante el menú de Steam). Select ya no manda Esc al pulsarlo sino al soltarlo, y solo si no se usó con Y. Steam + Y sigue valiendo.

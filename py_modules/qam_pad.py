@@ -449,13 +449,16 @@ class PadRunner:
                         if val == 1 and 0 < now - self._y_at < 1.0:
                             # Steam + Y con el aviso de Steam llegando después de la Y (así lo vimos en el equipo): también abre el teclado
                             self._y_at = 0.0
+                            self.log("mando: combo Y→Steam → teclado grande")
                             self.event("kb.combo")
                         self._mode_down = val == 1
                         self._mode_until = now + 0.5 if val == 0 else 0.0
                     elif val == 1 and (self._mode_down or now < self._mode_until):
                         if code == 304 and self._mode_down:
+                            self.log("mando: combo Steam+A → QAM")
                             self.event("qam.combo")  # Steam + A: el usuario pidió el QAM
                         elif code == 308 and self._mode_down:
+                            self.log("mando: combo Steam+Y → teclado grande")
                             self.event("kb.combo")   # Steam + Y: el usuario pidió el teclado grande
                         continue  # Steam + botón (abrir el QAM, capturas…): no es un clic para la app
                     if code == 314:
@@ -466,7 +469,7 @@ class PadRunner:
                             self._sel_down = False
                             if not self._sel_used:
                                 acts = self.mapper.feed_button(314, True, now)
-                        if self._logged < 60:
+                        if self._logged < 150:
                             self._logged += 1
                             self.log(f"mando: botón 314 {'pulsado' if val else 'soltado'} ({ev})")
                         for a in acts:
@@ -474,11 +477,12 @@ class PadRunner:
                         continue
                     if code == 308 and val == 1 and self._sel_down:
                         self._sel_used = True
+                        self.log("mando: combo Select+Y → teclado grande")
                         self.event("kb.combo")   # Select + Y: el teclado grande, sin pasar por el botón Steam
                         continue
                     if code == 308 and val == 1:
                         self._y_at = now
-                    if self._logged < 60:
+                    if self._logged < 150:
                         self._logged += 1
                         self.log(f"mando: botón {code} {'pulsado' if val else 'soltado'} ({ev})")
                     acts = self.mapper.feed_button(code, val != 0, now)
