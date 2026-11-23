@@ -1255,6 +1255,16 @@ class Plugin:
             self._cursor_skin = None
         return {"ok": ok, "on": self._cursor_on() if ok else False}
 
+    @staticmethod
+    def _cursor_theme_ok(dest: str) -> bool:
+        """El tema guardado existe y es de la versión del dibujo actual (si no, se regenera)."""
+        root = os.path.join(dest, qam_cursor_theme.NAME)
+        try:
+            with open(os.path.join(root, "version"), encoding="utf-8") as fh:
+                return fh.read().strip() == str(qam_cursor_theme.VERSION) and os.path.isdir(os.path.join(root, "cursors"))
+        except OSError:
+            return False
+
     async def _cursor_loop(self) -> None:
         """Con el puntero Xbox activado y una app de escritorio abierta, cambia cada cursor nuevo de la app (ver qam_cursor). Sin ambas cosas, duerme."""
         while True:
@@ -1266,7 +1276,7 @@ class Plugin:
                 skin = getattr(self, "_cursor_skin", None)
                 if skin is None or skin.dpy != x.dpy:
                     dest = _path("cursors")
-                    if not os.path.isdir(os.path.join(dest, qam_cursor_theme.NAME, "cursors")):
+                    if not self._cursor_theme_ok(dest):
                         qam_cursor_theme.install(dest)
                     skin = self._cursor_skin = qam_cursor.CursorSkin(x.x11, x.dpy, os.path.join(dest, qam_cursor_theme.NAME, "cursors"))
                 n = skin.tick()

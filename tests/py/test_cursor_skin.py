@@ -5,6 +5,13 @@ sys.path.insert(0, os.path.join(ROOT, "py_modules"))
 import qam_cursor, qam_cursor_theme
 
 assert filecmp.cmp(os.path.join(ROOT, "scripts", "cursor_xbox.py"), os.path.join(ROOT, "py_modules", "qam_cursor_theme.py"), shallow=False), "las dos copias del generador difieren"
+# forma de gota: el hotspot cae en la punta (arriba a la izquierda) y esa esquina está pintada; la opuesta, vacía
+for _k in ("arrow", "hand"):
+    _w, _h, _xh, _yh, _d = qam_cursor_theme.render(_k, 32)
+    _a = lambda x, y: _d[(y * _w + x) * 4 + 3]
+    assert _xh == _yh and _xh < _w // 4, (_k, _xh, _yh)
+    assert _a(_xh, _yh) > 200 and _a(_w - 1, _h - 1) == 0, _k
+assert open(os.path.join(ROOT, "py_modules", "qam_cursor_theme.py")).read().count("VERSION = ") == 1
 if not shutil.which("Xvfb") or not qam_cursor.available():
     print("TODO OK (sin Xvfb o sin Xfixes/Xcursor: omitido)"); sys.exit(0)
 

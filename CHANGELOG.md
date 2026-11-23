@@ -1,5 +1,10 @@
 # Cambios
 
+## dev.48
+
+- **Puntero Xbox en forma de gota invertida** (círculo con la punta arriba a la izquierda; la zona activa del clic está en la punta), como el del Xbox; la mano lleva un anillo y el cursor de texto sigue siendo la barra. El tema guardado lleva ahora un número de versión (`version`): al cambiar el dibujo se regenera solo, sin borrar nada a mano.
+- **Teclado grande rediseñado:** filas escalonadas como un teclado real (Tab, Bloq, Mayús, Intro y ⌫ en su sitio), teclas más grandes, flechas siempre visibles junto a la barra espaciadora (se repiten al mantener), «Más» con atajos (Todo, Copiar, Pegar…) y Esc/Inicio/Fin/Re Pág/Av Pág/Supr; chivato de los botones del mando en la línea de vista previa. Mismo mando: X borra, Menú espacio, Start Intro, B cierra.
+
 ## dev.47
 
 - **Puntero Xbox desde el propio plugin** (chip «Puntero Xbox» en la franja de apps abiertas; apagado por defecto): en vez de pedirle a cada app que lea un tema (Firefox/Edge Flatpak no lo hacían), el backend cambia en el servidor X la imagen de los cursores de la app por nombre (`XFixesChangeCursorByName`: «default», «pointer», «text»…); gamescope dibuja lo que X le da. Se repite cada 0,3 s con una app delante (cada cursor nuevo se cambia una vez). Al apagarlo, las apps ya abiertas lo conservan hasta reabrirlas. El tema se genera solo en `settings/…/cursors`. Prueba con Xvfb: `tests/py/test_cursor_skin.py`. [H] que gamescope refresque el dibujo al cambiar la imagen.

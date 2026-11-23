@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Genera el tema de cursor "qam-xbox" (círculo blanco con borde oscuro, como el puntero de la Xbox) en formato Xcursor.
+"""Genera el tema de cursor "qam-xbox" (gota invertida blanca con borde oscuro y la punta arriba a la izquierda, como el puntero de la Xbox) en formato Xcursor.
 Uso: cursor_xbox.py DESTINO [--tam 32]   → crea DESTINO/qam-xbox/{index.theme,cursors/*}. Solo biblioteca estándar."""
 import math
 import os
@@ -7,6 +7,7 @@ import struct
 import sys
 
 NAME = "qam-xbox"
+VERSION = 2  # súbelo cuando cambie el dibujo: el plugin regenera el tema si el guardado es de otra versión
 SIZES = (24, 32, 48, 64)
 # nombres que usan los toolkits para cada forma; todo lo que no sea mano o texto es la flecha (círculo)
 HAND = ("pointer", "hand1", "hand2", "pointing_hand", "grab", "grabbing", "openhand", "closedhand")
@@ -31,24 +32,37 @@ def _over(dst, src):
     return tuple((src[i] * sa + dst[i] * da * (1 - sa)) / oa for i in range(3)) + (oa,)
 
 
+def _drop(px: float, py: float, tip: float, cx: float, r: float) -> float:
+    """Distancia con signo (negativa dentro) a la gota: cono redondeado desde la punta (tip, tip) hasta el círculo de centro (cx, cx) y radio r."""
+    vx = vy = cx - tip
+    t = max(0.0, min(1.0, ((px - tip) * vx + (py - tip) * vy) / (vx * vx + vy * vy)))
+    return math.hypot(px - (tip + t * vx), py - (tip + t * vy)) - r * t
+
+
 def render(kind: str, size: int):
-    """Devuelve (ancho, alto, xhot, yhot, píxeles ARGB premultiplicados en bytes little-endian)."""
+    """Devuelve (ancho, alto, xhot, yhot, píxeles ARGB premultiplicados en bytes little-endian). Flecha y mano: gota con la punta (zona activa) arriba a la izquierda."""
     w = h = size
-    c = (size - 1) / 2.0
-    r = size * 0.30  # radio del círculo
     ring = max(1.5, size / 14.0)
+    shadow = size * 0.04
+    halo = size * 0.09  # hueco para el anillo de la mano
+    tip = ring + halo + 1.0
+    # gota compacta: la punta queda a ~1,9 radios del centro; el radio sale de lo que cabe en el lienzo
+    r = (size - 1.5 - tip - ring - halo - shadow) / (1.35 + 1.0)
+    cx = tip + 1.35 * r
+    c = (size - 1) / 2.0
     buf = bytearray()
     for y in range(h):
         for x in range(w):
             px = (0.0, 0.0, 0.0, 0.0)
-            d = math.hypot(x - c, y - c)
             if kind in ("arrow", "hand"):
+                d = _drop(x, y, tip, cx, r)
+                ds = _drop(x - shadow, y - shadow * 1.4, tip, cx, r)
                 # sombra suave, borde oscuro, relleno blanco; la mano lleva además un anillo exterior
-                px = _over(px, (0, 0, 0, 0.28 * _cov(math.hypot(x - c - size * 0.03, y - c - size * 0.05), r + ring + size * 0.05)))
-                px = _over(px, (0.08, 0.08, 0.08, _cov(d, r + ring)))
-                px = _over(px, (1, 1, 1, _cov(d, r)))
+                px = _over(px, (0, 0, 0, 0.28 * _cov(ds, ring + size * 0.03)))
+                px = _over(px, (0.08, 0.08, 0.08, _cov(d, ring)))
+                px = _over(px, (1, 1, 1, _cov(d, 0.0)))
                 if kind == "hand":
-                    ro = r + ring + size * 0.12
+                    ro = ring + halo
                     px = _over(px, (1, 1, 1, _cov(d, ro) * (1 - _cov(d, ro - ring * 1.1))))
             elif kind == "text":
                 # I-beam: barra vertical con remates, blanca con borde oscuro
@@ -63,8 +77,9 @@ def render(kind: str, size: int):
                     px = _over(px, (1, 1, 1, 1.0))
             a = px[3]
             buf += struct.pack("<I", (int(a * 255 + 0.5) << 24) | (int(px[0] * a * 255 + 0.5) << 16) | (int(px[1] * a * 255 + 0.5) << 8) | int(px[2] * a * 255 + 0.5))
-    hot = int(round(c))
-    return w, h, hot, hot, bytes(buf)
+    if kind == "text":
+        return w, h, int(round(c)), int(round(c)), bytes(buf)
+    return w, h, int(round(tip)), int(round(tip)), bytes(buf)
 
 
 def xcursor(kind: str) -> bytes:
@@ -86,7 +101,9 @@ def install(dest: str) -> list:
     cur = os.path.join(root, "cursors")
     os.makedirs(cur, exist_ok=True)
     with open(os.path.join(root, "index.theme"), "w") as f:
-        f.write(f"[Icon Theme]\nName={NAME}\nComment=Puntero redondo estilo Xbox (QAM Rail)\n")
+        f.write(f"[Icon Theme]\nName={NAME}\nComment=Puntero en gota estilo Xbox (QAM Rail)\n")
+    with open(os.path.join(root, "version"), "w") as f:
+        f.write(str(VERSION))
     made = []
     for names, kind in ((ARROW, "arrow"), (HAND, "hand"), (TEXT, "text")):
         data = xcursor(kind)

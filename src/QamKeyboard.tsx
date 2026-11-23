@@ -1,11 +1,12 @@
 // Teclado en español para las apps de escritorio, a pantalla grande (ver BigKeyboardPage). Cada tecla se manda a la app de delante
 // (backend `desktop_key`); como la app queda debajo, una línea muestra lo escrito. Nunca se registra lo que escribes.
-// Compacto (teclas de 32 px, atajos y navegación plegados en "Más") y manejable con el mando: X = borrar, Start = Intro, B = cerrar.
+// Distribución como un teclado real (filas escalonadas, 15 unidades de ancho, flechas siempre a mano, atajos plegados en "Más")
+// y manejable con el mando: X = borrar, Start = Intro, Menú = espacio, B = cerrar.
 import { Focusable } from "@decky/ui";
 import { useRef, useState, type FC, type ReactNode } from "react";
 
 import { kbNote } from "./keyboard";
-import { ROWS, keyChar, mirror } from "./keyboardLayout";
+import { ROWS, keyChar, mirror, type Key } from "./keyboardLayout";
 import { createRepeater } from "./keyRepeat";
 import { desktopKey, qamEvent } from "./qamDesktop";
 import { COLORS, Chip, Row } from "./ui";
@@ -30,6 +31,9 @@ const Hold: FC<{ w?: number; fire: () => void; children: ReactNode }> = ({ w = 1
 };
 
 const SHORTCUTS: Array<[label: string, key: string]> = [["Todo", "a"], ["Copiar", "c"], ["Pegar", "v"], ["Cortar", "x"], ["Deshacer", "z"], ["Dirección", "l"], ["Pestaña +", "t"], ["Cerrar pestaña", "w"]];
+const GAP = 4;
+/** Hueco sin tecla (da el escalón de las filas); no recibe foco. */
+const Gap: FC<{ w: number }> = ({ w }) => <div style={{ flex: w, minWidth: 0 }} />;
 
 export const PanelKeyboard: FC<{ notify?: (t: string) => void; onClose?: () => void }> = ({ notify, onClose }) => {
   const [shift, setShift] = useState(false);
@@ -54,46 +58,48 @@ export const PanelKeyboard: FC<{ notify?: (t: string) => void; onClose?: () => v
       notify?.(`No se pudo escribir: ${why}`);
     }).catch(() => { setErr("No se pudo escribir"); kbNote("teclado: fallo al enviar (sin respuesta del backend)"); });
   };
-  const nav = (label: string, key: string) => <Hold key={key} fire={() => send({ key })}><Chip compact onClick={() => send({ key })}>{label}</Chip></Hold>;
   const padBtn = (name: string, ev: { text?: string; key?: string }) => (): void => { kbNote(`mando: ${name}`); send(ev); };
+  /** Tecla con peso `w` (unidades de la fila). */
+  const key = (w: number, node: ReactNode, k?: string): ReactNode => <W key={k}  w={w}>{node}</W>;
+  /** Tecla de carácter de la distribución. */
+  const ch = (k: Key, autoFocus = false): ReactNode => {
+    const c = keyChar(k, layer, alt);
+    return key(1, <Chip compact={false} autoFocus={autoFocus} onClick={() => send({ text: c })}>{big(c)}</Chip>, k[0]);
+  };
+  const act = (w: number, label: ReactNode, key_: string): ReactNode => key(w, <Chip onClick={() => send({ key: key_ })}>{label}</Chip>, key_);
+  /** Tecla de acción que se repite al mantenerla. */
+  const rep = (w: number, label: ReactNode, key_: string): ReactNode => <Hold key={key_} w={w} fire={() => send({ key: key_ })}><Chip onClick={() => send({ key: key_ })}>{label}</Chip></Hold>;
+  const row = (items: ReactNode[], k: string) => <Row key={k} gap={GAP}>{items}</Row>;
 
   return (
     <Focusable
-      // Mando como en los teclados de Steam/Xbox: X borra, Start = Intro, B cierra (si hay `onClose`).
+      // Mando como en los teclados de Steam/Xbox: X borra, Start = Intro, Menú = espacio, B cierra (si hay `onClose`).
       onSecondaryButton={padBtn("X/secundario → borrar", { key: "BackSpace" })} onSecondaryActionDescription="Borrar"
       onOptionsButton={padBtn("Start → Intro", { key: "Return" })} onOptionsActionDescription="Intro"
       onMenuButton={padBtn("Menú → espacio", { text: " " })}
       onCancel={onClose ? (e: CustomEvent) => { e.stopPropagation(); onClose(); } : undefined} onCancelActionDescription={onClose ? "Cerrar teclado" : undefined}
-      style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-      <div style={{ minHeight: 24, padding: "2px 12px", borderRadius: 10, background: COLORS.track, fontSize: 13, fontFamily: "monospace", overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis", color: err ? "#e5484d" : COLORS.text, display: "flex", alignItems: "center" }}>
-        {err || buf || <span style={{ color: COLORS.muted }}>Lo que escribas aparece aquí y se manda a la app</span>}
-        {!err && <span style={{ color: COLORS.muted }}>▏</span>}
+      style={{ display: "flex", flexDirection: "column", gap: GAP }}>
+      <div style={{ minHeight: 30, padding: "3px 14px", borderRadius: 12, background: COLORS.track, fontSize: 14, fontFamily: "monospace", display: "flex", alignItems: "center", gap: 12 }}>
+        <div style={{ flex: 1, minWidth: 0, overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis", color: err ? "#e5484d" : COLORS.text }}>
+          {err || buf || <span style={{ color: COLORS.muted }}>Lo que escribas aparece aquí y se manda a la app</span>}
+          {!err && <span style={{ color: COLORS.muted }}>▏</span>}
+        </div>
+        <span style={{ fontSize: 11, color: COLORS.muted, whiteSpace: "nowrap", fontFamily: "inherit" }}>X borrar · Menú espacio · Start Intro · B cerrar</span>
       </div>
-      {ROWS.map((row, i) => (
-        <Row key={i} gap={3}>
-          {row.map((k) => {
-            const c = keyChar(k, layer, alt);
-            return <Chip key={k[0]} compact autoFocus={i === 2 && k[0] === "g"} onClick={() => send({ text: c })}>{big(c)}</Chip>;
-          })}
-        </Row>
-      ))}
-      <Row gap={3}>
-        <Chip compact active={shift} onClick={() => setShift(!shift)}>Mayús</Chip>
-        <Chip compact active={caps} onClick={() => setCaps(!caps)}>Bloq</Chip>
-        <Chip compact active={alt} onClick={() => setAlt(!alt)}>AltGr</Chip>
-        <Chip compact active={ctrl} onClick={() => setCtrl(!ctrl)}>Ctrl</Chip>
-        <W w={4}><Chip compact onClick={() => send({ text: " " })}>Espacio</Chip></W>
-        <Hold fire={() => send({ key: "BackSpace" })}><Chip compact onClick={() => send({ key: "BackSpace" })}>{big("⌫")}</Chip></Hold>
-        <Chip compact onClick={() => send({ key: "Return" })}>Intro</Chip>
-        <Chip compact active={more} onClick={() => setMore(!more)}>Más</Chip>
-      </Row>
+      {row([...ROWS[0].map((k) => ch(k)), rep(2, big("⌫"), "BackSpace")], "r1")}
+      {row([act(1.5, "Tab", "Tab"), ...ROWS[1].map((k) => ch(k)), <Gap key="g" w={2.5} />], "r2")}
+      {row([key(1.75, <Chip active={caps} onClick={() => setCaps(!caps)}>Bloq</Chip>, "caps"), ...ROWS[2].map((k) => ch(k, k[0] === "g")), act(3.25, "Intro", "Return")], "r3")}
+      {row([key(2.25, <Chip active={shift} onClick={() => setShift(!shift)}>Mayús</Chip>, "shift"), ...ROWS[3].map((k) => ch(k)), key(2.75, <Chip active={more} onClick={() => setMore(!more)}>{more ? "Menos" : "Más"}</Chip>, "more")], "r4")}
+      {row([
+        key(1.5, <Chip active={ctrl} onClick={() => setCtrl(!ctrl)}>Ctrl</Chip>, "ctrl"),
+        key(1.5, <Chip active={alt} onClick={() => setAlt(!alt)}>AltGr</Chip>, "alt"),
+        key(8, <Chip onClick={() => send({ text: " " })}>Espacio</Chip>, "space"),
+        rep(1, big("←"), "Left"), rep(1, big("↑"), "Up"), rep(1, big("↓"), "Down"), rep(1, big("→"), "Right"),
+      ], "r5")}
       {more && (
         <>
-          <Row gap={3}>{SHORTCUTS.map(([label, k]) => <Chip key={k} compact onClick={() => send({ text: k, ctrl: true })}>{label}</Chip>)}</Row>
-          <Row gap={3}>
-            {nav("Tab", "Tab")}{nav("Esc", "Escape")}{nav("←", "Left")}{nav("↑", "Up")}{nav("↓", "Down")}{nav("→", "Right")}
-            {nav("Inicio", "Home")}{nav("Fin", "End")}{nav("Re Pág", "Prior")}{nav("Av Pág", "Next")}
-          </Row>
+          {row(SHORTCUTS.map(([label, k]) => key(1, <Chip compact onClick={() => send({ text: k, ctrl: true })}>{label}</Chip>, k)), "sc")}
+          {row([["Esc", "Escape"], ["Inicio", "Home"], ["Fin", "End"], ["Re Pág", "Prior"], ["Av Pág", "Next"], ["Supr", "Delete"]].map(([label, k]) => key(1, <Chip compact onClick={() => send({ key: k })}>{label}</Chip>, k)), "nv")}
         </>
       )}
     </Focusable>
