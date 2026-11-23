@@ -199,6 +199,7 @@ class XOut:
         x11.XDisplayWidth.restype, x11.XDisplayWidth.argtypes = ci, [vp, ci]
         x11.XDisplayHeight.restype, x11.XDisplayHeight.argtypes = ci, [vp, ci]
         xt.XTestFakeRelativeMotionEvent.argtypes = [vp, ci, ci, cl]
+        xt.XTestFakeMotionEvent.argtypes = [vp, ci, ci, ci, cl]
         xt.XTestFakeButtonEvent.argtypes = [vp, cu, ci, cl]
         xt.XTestFakeKeyEvent.argtypes = [vp, cu, ci, cl]
         self.x11, self.xt = x11, xt
@@ -316,6 +317,9 @@ class XOut:
     def move(self, dx: int, dy: int) -> None:
         self.xt.XTestFakeRelativeMotionEvent(self.dpy, int(dx), int(dy), 0)
 
+    def move_abs(self, x: int, y: int) -> None:
+        self.xt.XTestFakeMotionEvent(self.dpy, -1, int(x), int(y), 0)
+
     def button(self, n: int, down: bool) -> None:
         self.xt.XTestFakeButtonEvent(self.dpy, int(n), 1 if down else 0, 0)
 
@@ -432,7 +436,14 @@ class TouchScroll:
     FRICTION = 3.2
 
     def __init__(self, rx: tuple, ry: tuple, screen: tuple, forced: dict | None = None):
+        self.lo = (rx[0], ry[0])
         self.span = (max(1, rx[1] - rx[0]), max(1, ry[1] - ry[0]))
+        self.full = False            # modo completo: el toque lo traducimos nosotros (clic, clic derecho, arrastrar para seleccionar)
+        self.actions: list = []      # ("move", x, y) · ("down"/"up", botón) · ("log", texto)
+        self.hold = False
+        self.drag = False
+        self.t_down = 0.0
+        self.suppress = False
         self.screen = (max(1, screen[0]), max(1, screen[1]))
         self.forced = forced
         self.cov = [[0.0, 0.0], [0.0, 0.0]]   # cov[eje del táctil][eje de pantalla]
@@ -453,13 +464,14 @@ class TouchScroll:
         self.start = self.last = None
         self.ptr0 = self.ptr = None
         self.moved = False
+        self.hold = self.drag = False
         self.acc = [0.0, 0.0]
         self.vel = [0.0, 0.0]
         self.t = None
 
     def mapping(self) -> tuple:
         """(eje del táctil que mueve Y de pantalla, signo, eje que mueve X, signo)."""
-        if self.forced:
+        if self.forced and "ay" in self.forced:
             return (int(self.forced.get("ay", 1)), int(self.forced.get("sy", 1)), int(self.forced.get("ax", 0)), int(self.forced.get("sx", 1)))
         if self.learned:
             return self.learned
@@ -537,11 +549,21 @@ class TouchScroll:
     def _touch(self, on: bool, now: float) -> None:
         if on and not self.down:
             self.down = True
+            self.suppress = max(abs(self.fling[0]), abs(self.fling[1])) > 80   # un toque que solo frena la inercia no hace clic
             self.fling = (0.0, 0.0)   # un dedo nuevo detiene la inercia
             self._reset()
+            self.t_down = now
         elif not on and self.down:
             self.down = False
-            if self.moved:
+            if self.full and self.start is not None:
+                self.poll(now)
+                if self.drag:
+                    self.actions.append(("up", 1))
+                elif not self.moved and not self.suppress:
+                    x, y = self.to_abs(*self.start)
+                    self.actions += [("move", x, y), ("down", 3 if self.hold else 1), ("up", 3 if self.hold else 1),
+                                     ("log", f"{'mantener → clic derecho' if self.hold else 'toque → clic'} en {x},{y}")]
+            if self.moved and not self.drag:
                 self._learn()
                 if max(abs(self.vel[0]), abs(self.vel[1])) >= self.FLING_MIN:
                     self.fling = (self.vel[0], self.vel[1])
@@ -566,14 +588,56 @@ class TouchScroll:
         self.last = cur
         dt = max(1e-3, now - (self.t or now))
         self.t = now
+        if self.full:
+            self.poll(now)
         if not self.moved:
             if (tx * tx + ty * ty) ** 0.5 < self.DEAD_PX:
                 return (0, 0)
             self.moved = True
+            if self.full and self.hold:   # mantener y arrastrar = seleccionar / arrastrar de verdad
+                self.drag = True
+                x, y = self.to_abs(*self.start)
+                self.actions += [("move", x, y), ("down", 1), ("log", f"mantener + arrastrar → selección desde {x},{y}")]
             sx, sy = tx, ty   # lo recorrido hasta pasar la zona muerta cuenta
+        if self.drag:
+            x, y = self.to_abs(*cur)
+            self.actions.append(("move", x, y))
+            return (0, 0)
         self.vel[0] = 0.6 * self.vel[0] + 0.4 * (sx / dt)
         self.vel[1] = 0.6 * self.vel[1] + 0.4 * (sy / dt)
         return self._clicks(sx, sy)
+
+    HOLD_S = 0.45     # mantener quieto el dedo: clic derecho (o, si luego se arrastra, seleccionar)
+
+    def to_abs(self, cx: int, cy: int) -> tuple:
+        """Posición cruda del táctil → píxel de la pantalla (para colocar el puntero)."""
+        ay, sy, ax, sx = self.mapping()
+        raw = (cx, cy)
+        nx = min(1.0, max(0.0, (raw[ax] - self.lo[ax]) / self.span[ax]))
+        ny = min(1.0, max(0.0, (raw[ay] - self.lo[ay]) / self.span[ay]))
+        if sx < 0:
+            nx = 1 - nx
+        if sy < 0:
+            ny = 1 - ny
+        return (round(nx * (self.screen[0] - 1)), round(ny * (self.screen[1] - 1)))
+
+    def abort(self) -> None:
+        """Se corta el toque (panel o teclado delante): si había una selección en curso, se suelta el botón."""
+        if self.drag:
+            self.actions.append(("up", 1))
+        self.down = self.multi = False
+        self.fling = (0.0, 0.0)
+        self.pos.clear()
+        self._reset()
+
+    def take_actions(self) -> list:
+        a, self.actions = self.actions, []
+        return a
+
+    def poll(self, now: float) -> None:
+        """Llamado cada fotograma: un dedo quieto el tiempo suficiente pasa a «mantenido»."""
+        if self.full and self.down and not self.moved and not self.hold and self.start is not None and now - self.t_down >= self.HOLD_S:
+            self.hold = True
 
     PINCH_PX = 46.0   # variación de la distancia entre los dedos por cada paso de zoom
     LOCK_PX = 22.0    # lo que hay que moverse para decidir si el gesto de dos dedos es zoom o desplazamiento
@@ -640,6 +704,8 @@ class PadRunner:
         self._tfds: dict = {}       # event → fd de una pantalla táctil
         self._ts: dict = {}         # event → TouchScroll
         self._tnoted: set = set()
+        self._tlogged = 0
+        self._grabbed: dict = {}
         self.event = event or (lambda ev, **d: None)   # caja negra: pad.activo, pad.inactivo, qam.combo
         self.mapper = PadMapper()
         self.is_active = False
@@ -751,7 +817,12 @@ class PadRunner:
         except (BlockingIOError, OSError):
             return
         if not self.is_active or self._x is None or self.touch_fn() is None:
-            ts.down, ts.fling = False, (0.0, 0.0)   # el panel o el teclado están delante: este toque no es para la app
+            ts.abort()   # el panel o el teclado están delante: este toque no es para la app
+            if ts.actions and self._x is not None:
+                try:
+                    self._touch_apply(ts)
+                except Exception:  # noqa: BLE001
+                    pass
             return
         now = time.monotonic()
         for i in range(0, len(data) - EVENT_SIZE + 1, EVENT_SIZE):
@@ -762,6 +833,12 @@ class PadRunner:
             if ts.learned != was:
                 self.log(f"táctil: ejes aprendidos (eje Y de pantalla ← eje {ts.learned[0]} signo {ts.learned[1]}; eje X ← {ts.learned[2]} signo {ts.learned[3]})")
             z = ts.take_zoom()
+            if ts.actions:
+                try:
+                    self._touch_apply(ts)
+                except Exception as e:  # noqa: BLE001
+                    self.log(f"táctil: error en el modo completo: {e}")
+                    return
             if v or h or z:
                 try:
                     if v or h:
@@ -773,6 +850,34 @@ class PadRunner:
                     self.log(f"táctil: error al mandar la rueda: {e}")
                     return
 
+    def _touch_apply(self, ts: "TouchScroll") -> None:
+        """Lo que el modo completo pide: colocar el puntero, pulsar/soltar botones y anotar (con tope) lo que hizo."""
+        for a in ts.take_actions():
+            if a[0] == "move":
+                self._x.move_abs(a[1], a[2])
+            elif a[0] == "down":
+                self._x.button(a[1], True)
+            elif a[0] == "up":
+                self._x.button(a[1], False)
+            elif a[0] == "log" and self._tlogged < 40:
+                self._tlogged += 1
+                self.log("táctil: " + a[1])
+        self._x.flush()
+
+    def _grab(self, want: bool) -> None:
+        """Modo completo: agarrar (o soltar) la pantalla táctil para que gamescope no mande además su propio clic/arrastre."""
+        import fcntl
+        for ev, fd in self._tfds.items():
+            if self._grabbed.get(ev, False) == want:
+                continue
+            try:
+                fcntl.ioctl(fd, 0x40044590, 1 if want else 0)   # EVIOCGRAB
+                self._grabbed[ev] = want
+                self.log(f"táctil: {'agarrada' if want else 'soltada'} {ev}")
+            except OSError as e:
+                self._grabbed[ev] = want   # no insistir cada fotograma
+                self.log(f"táctil: no se pudo {'agarrar' if want else 'soltar'} {ev}: {e}")
+
     def _close_touch(self) -> None:
         loop = asyncio.get_event_loop()
         for ev, fd in list(self._tfds.items()):
@@ -783,6 +888,7 @@ class PadRunner:
                 pass
         self._tfds.clear()
         self._ts.clear()
+        self._grabbed.clear()   # al cerrar el descriptor el núcleo suelta la pantalla
 
     def _close(self) -> None:
         self._close_touch()
@@ -955,11 +1061,18 @@ class PadRunner:
                             self._x.move(dx, dy)
                         if wv or wh:
                             self._x.wheel(wv, wh)
+                        cfg = self.touch_fn()
+                        full = bool(cfg) and bool(cfg.get("full"))
+                        for ts in self._ts.values():
+                            ts.full = full
+                        if self._tfds:
+                            self._grab(full)   # si el panel o el teclado se abren (cfg None) se suelta al instante
                         for ts in self._ts.values():   # inercia tras soltar el dedo
                             tv, th = ts.tick(now - last)
                             if tv or th:
                                 self._x.wheel(tv, th)
                                 wv = wv or tv
+                            ts.poll(now)
                             tz = ts.take_zoom()
                             if tz:
                                 self._x.zoom(tz)

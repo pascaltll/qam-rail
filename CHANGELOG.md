@@ -1,5 +1,9 @@
 # Cambios
 
+## dev.59
+
+- **Táctil completo (opcional):** el chip de Inicio pasa a **Táctil: no → scroll → completo**. En «completo» agarramos la pantalla táctil mientras haya una app de escritorio delante (se suelta al instante si se abre el panel o el teclado grande, y el núcleo la suelta sola si el plugin se cierra) y la traducimos nosotros, así gamescope ya no manda además su propio clic/arrastre —que era lo que seleccionaba texto a la vez que se desplazaba—: **toque = clic**, **mantener quieto 0,45 s = clic derecho**, **mantener y arrastrar = seleccionar/arrastrar de verdad**, **arrastrar = desplazar con inercia** (un toque que solo frena la inercia no hace clic), dos dedos = zoom/desplazar. Mientras está agarrada, Steam no recibe el toque (por ejemplo el deslizamiento desde el borde); el botón Steam sigue funcionando. `pad.log`: «táctil: agarrada/soltada», «toque → clic», «mantener → clic derecho», «mantener + arrastrar → selección» (máx. 40 líneas).
+
 ## dev.58
 
 - **Táctil con dos dedos:** separar/juntar los dedos = zoom del navegador (Ctrl + rueda, un paso cada ~46 px); mover los dos dedos juntos = desplazar. El gesto se decide una vez (tras ~22 px) para que un desplazamiento no acabe en zoom, y tras un gesto de dos dedos el dedo que queda no arrastra hasta que sueltes todo. Un dedo sigue desplazando con inercia como en dev.56.

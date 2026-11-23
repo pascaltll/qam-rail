@@ -155,4 +155,55 @@ for i in range(20):
     tp.feed(EV_ABS, q.ABS_MT_POSITION_X, 500, i / 60); tp.feed(EV_ABS, q.ABS_MT_POSITION_Y, 800 - 20 * i, i / 60)
     V += tp.feed(EV_SYN, 0, 0, i / 60)[0]
 assert V == 0, V
+
+# --- modo completo: el toque lo traducimos nosotros
+def fingerF(ts, pts, t0=0.0, dt=1 / 60, hold_extra=0.0):
+    t = t0
+    ts.feed(EV_ABS, q.ABS_MT_SLOT, 0, t); ts.feed(EV_ABS, q.ABS_MT_TRACKING_ID, 1, t)
+    for x, y in pts:
+        ts.feed(EV_ABS, q.ABS_MT_POSITION_X, x, t); ts.feed(EV_ABS, q.ABS_MT_POSITION_Y, y, t)
+        ts.feed(EV_SYN, 0, 0, t); ts.poll(t)
+        t += dt
+    t += hold_extra
+    ts.poll(t)
+    ts.feed(EV_ABS, q.ABS_MT_TRACKING_ID, -1, t); ts.feed(EV_SYN, 0, 0, t)
+    return ts.take_actions()
+
+def full():
+    f = q.TouchScroll((0, 1920), (0, 1080), (1920, 1080)); f.full = True
+    return f
+
+acts = fingerF(full(), [(960, 540)] * 6)   # toque corto
+assert [a[0] for a in acts if a[0] != "log"] == ["move", "down", "up"] and acts[0][1:] == (960, 540) and acts[1][1] == 1, acts
+acts = fingerF(full(), [(960, 540)] * 40)   # ~0,66 s quieto: clic derecho
+assert [a[:2] for a in acts if a[0] in ("down", "up")] == [("down", 3), ("up", 3)], acts
+f = full()   # mantener y luego arrastrar: pulsa, mueve y suelta el botón izquierdo (seleccionar)
+acts = fingerF(f, [(500, 500)] * 30 + [(500 + 30 * i, 500) for i in range(1, 12)])
+kinds = [a[0] for a in acts if a[0] != "log"]
+assert kinds[0:2] == ["move", "down"] and kinds[-1] == "up" and kinds.count("move") >= 5 and ("down", 1) in acts and ("up", 1) in acts, acts
+f = full()   # arrastrar sin mantener: desplaza, NO pulsa botones ni mueve el puntero
+acts = fingerF(f, [(500, 800 - 17 * i) for i in range(21)])
+assert acts == [], acts
+# un toque que solo frena la inercia no hace clic
+f = full()
+fingerF(f, [(500, 900 - 40 * i) for i in range(12)])
+assert f.fling != (0.0, 0.0)
+acts = fingerF(f, [(960, 540)] * 6, t0=5.0)
+assert [a for a in acts if a[0] in ("down", "up")] == [], acts
+# si se abre el panel en mitad de una selección, se suelta el botón
+f = full()
+f.feed(EV_ABS, q.ABS_MT_SLOT, 0, 0); f.feed(EV_ABS, q.ABS_MT_TRACKING_ID, 1, 0)
+for i in range(30):
+    f.feed(EV_ABS, q.ABS_MT_POSITION_X, 500, i / 60); f.feed(EV_ABS, q.ABS_MT_POSITION_Y, 500, i / 60); f.feed(EV_SYN, 0, 0, i / 60); f.poll(i / 60)
+for i in range(1, 8):
+    f.feed(EV_ABS, q.ABS_MT_POSITION_X, 500 + 30 * i, 1.0); f.feed(EV_SYN, 0, 0, 1.0 + i / 60)
+assert f.drag
+f.take_actions(); f.abort()
+assert f.take_actions() == [("up", 1)] and not f.down
+# sin modo completo no hay clics propios
+n = q.TouchScroll((0, 1920), (0, 1080), (1920, 1080))
+assert fingerF(n, [(960, 540)] * 6) == []
+# to_abs con el eje girado (táctil vertical 1080x1920, pantalla 1920x1080, X del táctil ← Y de pantalla)
+al = q.TouchScroll((0, 1080), (0, 1920), (1920, 1080), {"ay": 0, "sy": 1, "ax": 1, "sx": -1})
+assert al.to_abs(0, 0) == (1919, 0) and al.to_abs(1080, 1920) == (0, 1079)
 print("test_touch OK")

@@ -182,45 +182,55 @@ class Plugin:
         except (OSError, ValueError, AttributeError):
             return True
 
-    def _touch_cfg(self):
-        """Scroll táctil: None si está apagado o si el panel/teclado de QAM están delante (el toque es para ellos); si no, la correspondencia de ejes forzada ({} = aprenderla).
-        Cada cambio de motivo se anota en pad.log («táctil: …»)."""
-        why, res = "", {}
+    def _touch_file(self) -> dict:
+        """touch-scroll.json, leído como mucho una vez por segundo (el lector lo consulta en cada fotograma)."""
+        now = time.monotonic()
+        c = getattr(self, "_touch_cache", None)
+        if c and now - c[0] < 1.0:
+            return c[1]
         try:
             with open(_path("touch-scroll.json"), encoding="utf-8") as fh:
                 cfg = json.load(fh)
+            cfg = cfg if isinstance(cfg, dict) else {}
         except (OSError, ValueError):
             cfg = {}
-        if not isinstance(cfg, dict) or not cfg.get("on", True):
+        self._touch_cache = (now, cfg)
+        return cfg
+
+    def _touch_cfg(self):
+        """Táctil: None si está apagado o si el panel/teclado de QAM están delante (el toque es para ellos); si no, un dict: «full» (modo completo) y,
+        si se fuerza, la correspondencia de ejes. Cada cambio de motivo/modo se anota en pad.log («táctil: …»)."""
+        cfg = self._touch_file()
+        if not cfg.get("on", True):
             why, res = "apagado en el ajuste", None
+        elif self._ui().get("panel") or self._ui().get("kb"):
+            why, res = "el panel o el teclado grande figuran abiertos", None
         else:
-            ui = self._ui()
-            if ui.get("panel") or ui.get("kb"):
-                why, res = "el panel o el teclado grande figuran abiertos", None
-            elif isinstance(cfg.get("map"), dict):
-                res = cfg["map"]
-        if why != getattr(self, "_touch_why", None):
-            self._touch_why = why
-            self._pad_log("táctil: " + (f"en pausa — {why}" if why else "activo"))
+            why = ""
+            res = dict(cfg["map"]) if isinstance(cfg.get("map"), dict) else {}
+            res["full"] = bool(cfg.get("full", False))
+        tag = why or ("activo, modo completo" if res and res.get("full") else "activo, modo scroll")
+        if tag != getattr(self, "_touch_why", None):
+            self._touch_why = tag
+            self._pad_log("táctil: " + (f"en pausa — {why}" if why else tag))
         return res
 
-    async def pad_touch(self, on=None) -> dict:
-        """Interruptor «scroll táctil» (activado por defecto): arrastrar con el dedo en una app de escritorio hace de rueda."""
-        try:
-            with open(_path("touch-scroll.json"), encoding="utf-8") as fh:
-                cfg = json.load(fh)
-            if not isinstance(cfg, dict):
-                cfg = {}
-        except (OSError, ValueError):
-            cfg = {}
+    async def pad_touch(self, on=None, full=None) -> dict:
+        """Táctil en las apps de escritorio: «on» (scroll con el dedo y gestos de dos dedos) y «full» (toque, mantener y arrastrar los hacemos nosotros)."""
+        cfg = dict(self._touch_file())
+        changed = False
         if on is not None:
-            cfg["on"] = bool(on)
+            cfg["on"], changed = bool(on), True
+        if full is not None:
+            cfg["full"], changed = bool(full), True
+        if changed:
             try:
                 with open(_path("touch-scroll.json"), "w", encoding="utf-8") as fh:
                     json.dump(cfg, fh)
+                self._touch_cache = None
             except OSError:
                 pass
-        return {"ok": qam_pad is not None, "on": bool(cfg.get("on", True))}
+        return {"ok": qam_pad is not None, "on": bool(cfg.get("on", True)), "full": bool(cfg.get("full", False))}
 
     async def _pad_env(self) -> tuple:
         _prefix, seen = await self._user_session()
