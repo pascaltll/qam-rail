@@ -863,7 +863,7 @@ Compartido: `~/homebrew/qam-apps` (mismo esquema de manifiestos) y la carpeta `s
 
 **Qué es.** Tercera pestaña de Apps (`src/QamDesktopApps.tsx`) con las apps de escritorio que escanea `qam_desktop.scan`: Flatpak, AppImage y del sistema. «Abrir» las lanza; «Agregar a QAM» las pone en el cajón de apps del panel. **Nada se crea en Steam** (decisión de Carlos tras la primera prueba: el atajo de Steam se descartó).
 
-**Lanzamiento.** Decky corre como root. `desktop_run` envuelve el comando con `runuser -u <usuario> -- env HOME USER XDG_RUNTIME_DIR DBUS_SESSION_BUS_ADDRESS DISPLAY=:0 [WAYLAND_DISPLAY] …` y sin shell. Espera 1,5 s: si el proceso muere con error devuelve la última línea de su salida (`desktop-run.log`). Chromium lleva `--start-fullscreen` (Firefox no).
+**Lanzamiento.** Decky corre como root y su servicio tiene límites heredados: lanzar con `runuser` hacía que Firefox (Flatpak) fallara con `Sandbox: CanCreateUserNamespace() clone() failure: EPERM` [V, `desktop-run.log` de Carlos]. `desktop_run` lanza ahora con `runuser -u <usuario> -- env XDG_RUNTIME_DIR DBUS_SESSION_BUS_ADDRESS systemd-run --user --wait --collect -p StandardOutput=file:<log> …`, es decir, dentro del gestor `systemd --user` (entorno limpio). `DISPLAY=:0` solo si el gestor no lo tiene. Espera 1,5 s: si el cliente termina con error devuelve la última línea del log; si sigue, la app está en marcha. Chromium lleva `--start-fullscreen`; del `Exec` de Flatpak se quitan `@@u`, `@@` y `--file-forwarding`.
 
 **Cajón.** `desktop_pins` (claves en `desktop-pins.json` + icono como data URL) y `desktop_pin_set`. `QamSections` añade los iconos a `AppGrid` y `AppRow` (`DeskIcon`), con el panel cerrado antes de lanzar (400 ms, igual que las demás apps).
 

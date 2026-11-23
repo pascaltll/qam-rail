@@ -573,59 +573,74 @@ class Plugin:
             return {"ok": False, "error": str(e)}
         return {"ok": True, "name": app["name"], "source": app["source"], "icon_path": qam_desktop.icon_path(app.get("icon"), _home()), **plan}
 
-    def _user_launch(self, argv: list) -> list:
-        """Decky corre como root: la app debe abrirse como el usuario de la sesión y con su pantalla (X :0 / Wayland) y D-Bus."""
-        if os.getuid() != 0:
-            return list(argv)
-        user = getattr(decky, "DECKY_USER", "") or ""
-        if not user or user == "root":
-            return list(argv)
+    async def _user_session(self) -> tuple[list, dict]:
+        """(prefijo para ejecutar como el usuario de la sesión, variables de su gestor systemd --user)."""
+        prefix: list = []
+        env_pairs: list = []
+        if os.getuid() == 0:
+            user = getattr(decky, "DECKY_USER", "") or ""
+            if user and user != "root":
+                try:
+                    import pwd
+                    uid = pwd.getpwnam(user).pw_uid
+                    run = f"/run/user/{uid}"
+                    env_pairs = [f"XDG_RUNTIME_DIR={run}", f"DBUS_SESSION_BUS_ADDRESS=unix:path={run}/bus", f"HOME={_home()}"]
+                    prefix = ["runuser", "-u", user, "--", "env", *env_pairs]
+                except (KeyError, ImportError):
+                    pass
+        seen: dict = {}
         try:
-            import pwd
-            uid = pwd.getpwnam(user).pw_uid
-        except (KeyError, ImportError):
-            return list(argv)
-        run = f"/run/user/{uid}"
-        env = [f"HOME={_home()}", f"USER={user}", f"XDG_RUNTIME_DIR={run}", f"DBUS_SESSION_BUS_ADDRESS=unix:path={run}/bus", "DISPLAY=:0"]
-        try:
-            wl = sorted(n for n in os.listdir(run) if n.startswith("wayland-") and not n.endswith(".lock"))
-            if wl:
-                env.append(f"WAYLAND_DISPLAY={wl[0]}")
-        except OSError:
+            proc = await asyncio.create_subprocess_exec(*prefix, "systemctl", "--user", "show-environment", env=self._user_env(),
+                                                        stdin=asyncio.subprocess.DEVNULL, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL)
+            out, _ = await asyncio.wait_for(proc.communicate(), 3)
+            for line in out.decode("utf-8", "replace").splitlines():
+                k, _, v = line.partition("=")
+                seen[k] = v
+        except (OSError, asyncio.TimeoutError):
             pass
-        return ["runuser", "-u", user, "--", "env", *env, *argv]
+        return prefix, seen
 
     async def desktop_run(self, key: str) -> dict:
-        """Abre la app de escritorio como el usuario, sin shell. Espera 1,5 s: si se cierra con error, devuelve el final de su salida."""
+        """Abre la app de escritorio dentro de la sesión del usuario (`systemd-run --user`: entorno limpio, sin los límites del servicio de Decky,
+        que hacían fallar el sandbox de Firefox con «CanCreateUserNamespace EPERM»). Espera 1,5 s: si se cierra con error devuelve el final de su salida."""
         pl = await self.desktop_plan(key)
         if not pl.get("ok"):
             return pl
         log = _path("desktop-run.log")
         try:
-            fh = open(log, "wb")
+            open(log, "wb").close()
+            os.chmod(log, 0o666)  # lo escribe el gestor del usuario
         except OSError:
-            fh = None
+            pass
+        prefix, seen = await self._user_session()
+        sets = []
+        if "DISPLAY" not in seen:
+            sets.append("--setenv=DISPLAY=:0")
+        cwd = pl["dir"] if os.path.isdir(pl["dir"]) else _home()
+        cmd = [*prefix, "systemd-run", "--user", "--wait", "--collect", "--quiet", f"--working-directory={cwd}",
+               "-p", f"StandardOutput=file:{log}", "-p", f"StandardError=file:{log}", *sets, "--", *pl["argv"]]
         try:
-            env = self._user_env()
-            env.setdefault("DISPLAY", ":0")
-            proc = await asyncio.create_subprocess_exec(*self._user_launch(pl["argv"]), cwd=pl["dir"] if os.path.isdir(pl["dir"]) else _home(), env=env,
-                                                        stdin=asyncio.subprocess.DEVNULL, stdout=fh or asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.STDOUT,
-                                                        start_new_session=True)
+            proc = await asyncio.create_subprocess_exec(*cmd, env=self._user_env(), stdin=asyncio.subprocess.DEVNULL,
+                                                        stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.PIPE, start_new_session=True)
         except OSError as e:
             return {"ok": False, "error": str(e)[:120]}
-        finally:
-            if fh:
-                fh.close()
         try:
             await asyncio.wait_for(proc.wait(), 1.5)
         except asyncio.TimeoutError:
-            return {"ok": True}  # sigue en marcha: se abrió
+            try:
+                proc.kill()  # el cliente de systemd-run; la app sigue en su unidad
+            except ProcessLookupError:
+                pass
+            return {"ok": True}
         if proc.returncode == 0:
             return {"ok": True}
         tail = ""
         try:
             with open(log, "rb") as r:
-                tail = r.read()[-300:].decode("utf-8", "replace").strip().splitlines()[-1][:140]
+                lines = r.read()[-400:].decode("utf-8", "replace").strip().splitlines()
+            tail = lines[-1][:140] if lines else ""
+            if not tail and proc.stderr:
+                tail = (await proc.stderr.read(300)).decode("utf-8", "replace").strip().splitlines()[-1][:140]
         except (OSError, IndexError):
             pass
         return {"ok": False, "error": f"salió con código {proc.returncode}" + (f": {tail}" if tail else "")}
