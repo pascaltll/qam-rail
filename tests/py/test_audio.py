@@ -136,7 +136,54 @@ def test_clamp_vol():
     assert a.clamp_vol(float("nan")) == 1.0
 
 
+_SI = """Sink Input #77
+\tMute: no
+\tVolume: front-left: 65536 / 100% / 0.00 dB,   front-right: 65536 / 100% / 0.00 dB
+\tCorked: no
+\tProperties:
+\t\tmedia.name = "Video"
+\t\tapplication.name = "Firefox"
+\t\tapplication.process.binary = "firefox"
+\t\tmedia.role = "Video"
+Sink Input #78
+\tMute: no
+\tVolume: front-left: 65536 / 100% / 0.00 dB
+\tCorked: yes
+\tProperties:
+\t\tapplication.name = "Steam"
+\t\tmedia.role = "event"
+Sink Input #79
+\tMute: no
+\tVolume: front-left: 52000 / 79% / -6.00 dB
+\tCorked: no
+\tProperties:
+\t\tapplication.name = "MiJuego.exe"
+\t\tmedia.role = "Game"
+"""
+
+
+def test_refuerzo_por_fuente():
+    import qam_audio as a
+    ss = a.parse_sink_inputs(_SI)
+    assert [s["id"] for s in ss] == [77, 78, 79]
+    assert ss[0]["app"] == "Firefox" and ss[0]["rol"] == "video" and ss[0]["vol"] == 100 and not ss[0]["pausado"]
+    assert ss[1]["pausado"] and ss[2]["vol"] == 79
+    assert [a.is_system_stream(s) for s in ss] == [False, True, False]
+    applied = {}
+    # 150 %: suben el vídeo y el juego, no el aviso de Steam
+    assert a.plan_boost(ss, 150, {}, applied) == [(77, 150), (79, 150)]
+    assert a.plan_boost(ss, 150, {}, applied) == []  # ya puesto: no se pelea con la app
+    # el usuario quita el juego: vuelve a 100; y marca Steam como sí
+    assert sorted(a.plan_boost(ss, 150, {"MiJuego.exe": False, "Steam": True}, applied)) == [(78, 150), (79, 100)]
+    # se vuelve a 100 %: solo se devuelve lo que se reforzó
+    assert sorted(a.plan_boost(ss, 100, {"MiJuego.exe": False, "Steam": True}, applied)) == [(77, 100), (78, 100)]
+    assert a.plan_boost(ss, 100, {}, {}) == []  # sin refuerzo y flujos nuevos: nada
+    assert a.plan_boost(ss[:1], 120, {}, applied) == [(77, 120)] and 78 not in applied  # los flujos que mueren se olvidan
+    assert a.clamp_pct(95) == 100 and a.clamp_pct(154) == 150 and a.clamp_pct(999) == 200 and a.clamp_pct("x") == 100
+
+
 if __name__ == "__main__" and True:
+    test_refuerzo_por_fuente()
     test_clamp_vol()
     test_destino_eq_hdmi_con_ids_de_wpctl()
     print("ok hdmi")

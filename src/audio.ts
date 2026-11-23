@@ -9,6 +9,11 @@ export const audioState = callable<[raw?: boolean], AudioState>("audio_state");
 export const audioReset = callable<[], { ok: boolean; detail: string }>("audio_reset");
 export const audioSetDefault = callable<[node: number], { ok: boolean; detail: string }>("audio_set_default");
 export const audioMute = callable<[node: number, on: boolean], { ok: boolean; detail: string }>("audio_mute");
+/** Refuerzo por fuente: `pct` (100–200) y las apps conocidas; `sistema` = sonido de aviso (por defecto no sube). */
+export interface BoostApp { app: string; suena: boolean; sistema: boolean; refuerza: boolean }
+export interface BoostState { ok: boolean; pct: number; apps: BoostApp[] }
+export const audioBoost = callable<[], BoostState>("audio_boost");
+export const audioBoostSet = callable<[pct?: number | null, app?: string | null, on?: boolean | null], { ok: boolean; pct: number; tocados: number }>("audio_boost_set");
 export const audioVolume = callable<[node: number, vol: number], { ok: boolean; detail: string }>("audio_volume");
 
 /** Puro (probado): nombre corto para una ficha («Family 17h HD Audio Controller Speaker» → «Altavoces»). */
@@ -33,10 +38,4 @@ export function boostNote(pct: number): string {
   if (pct <= 130) return "Más fuerte";
   if (pct <= 160) return "Fuerte: ojo con los graves";
   return "Puede distorsionar y forzar los altavoces";
-}
-
-/** Puro (probado): barra de refuerzo, entre 100 y 200 en saltos de 10 (el sistema puede guardar 0,4 o 1,23). */
-export function boostPct(vol: number | null | undefined): number {
-  const p = Math.round(((vol ?? 1) * 100) / 10) * 10;
-  return Math.max(100, Math.min(200, p));
 }

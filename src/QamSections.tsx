@@ -402,20 +402,23 @@ export const SoundCard: FC<{ notify: (t: string) => void; onPanel: () => void }>
   const presets = (d.presets ?? []).map((p) => p.id).filter((id) => id !== "custom");
   return (
     <Card title="Sonido" right={<span style={small}>{route}{d.appid ? " · este juego" : ""}</span>} help="sonido">
-      {/* Primero por dónde suena y el micrófono (lo que se busca al conectar la TV o unos auriculares); luego el ecualizador. */}
-      <AudioControls notify={notify} />
-      <div style={{ height: 1, background: COLORS.track, margin: "2px 0" }} />
-      <ToggleRow icon={ICONS2.sliders} label="Ecualizador" on={!!d.enabled} note={d.enabled ? `Perfil: ${d.preset === "custom" ? "personalizado" : audioLabel(d.preset ?? "", d.device_name)}` : "Sonido sin retocar"}
-        onToggle={() => { const v = !d.enabled; a.set({ ...d, enabled: v }); panel.setAudioEnabled(v).then(a.set, () => a.refresh()); }} />
-      {d.enabled && presets.length > 0 && (
-        <Options perRow={3} opts={presets.slice(0, 6).map((id) => ({ value: id, label: audioLabel(id, d.device_name) }))} value={d.preset ?? null}
-          onPick={(id: string) => write(() => panel.applyAudio(id, t.scope, t.appid, d.route ?? null), `Sonido: ${audioLabel(id, d.device_name)}`)} />
-      )}
-      {d.enabled && d.preset === "custom" && <div style={small}>Curva personalizada (se edita en Panel de Control).</div>}
-      {d.enabled && (
-        <ToggleRow icon={ICONS.volume} label="Nivelar volumen" on={!!d.loudness} note="Iguala lo que suena muy bajo y muy alto"
-          onToggle={() => write(() => panel.setAudioLoudness(!d.loudness, t.scope, t.appid, d.route ?? null), d.loudness ? "Nivelar volumen: no" : "Nivelar volumen: sí")} />
-      )}
+      {/* Orden: por dónde suena, volumen de apps, ecualizador y, al final, el micrófono (AudioControls lo pone en su sitio). */}
+      <AudioControls notify={notify} middle={(
+        <>
+          <div style={{ height: 1, background: COLORS.track, margin: "2px 0" }} />
+          <ToggleRow icon={ICONS2.sliders} label="Ecualizador" on={!!d.enabled} note={d.enabled ? `Perfil: ${d.preset === "custom" ? "personalizado" : audioLabel(d.preset ?? "", d.device_name)}` : "Sonido sin retocar"}
+            onToggle={() => { const v = !d.enabled; a.set({ ...d, enabled: v }); panel.setAudioEnabled(v).then(a.set, () => a.refresh()); }} />
+          {d.enabled && presets.length > 0 && (
+            <Options perRow={3} opts={presets.slice(0, 6).map((id) => ({ value: id, label: audioLabel(id, d.device_name) }))} value={d.preset ?? null}
+              onPick={(id: string) => write(() => panel.applyAudio(id, t.scope, t.appid, d.route ?? null), `Sonido: ${audioLabel(id, d.device_name)}`)} />
+          )}
+          {d.enabled && d.preset === "custom" && <div style={small}>Curva personalizada (se edita en Panel de Control).</div>}
+          {d.enabled && (
+            <ToggleRow icon={ICONS.volume} label="Nivelar volumen" on={!!d.loudness} note="Iguala lo que suena muy bajo y muy alto"
+              onToggle={() => write(() => panel.setAudioLoudness(!d.loudness, t.scope, t.appid, d.route ?? null), d.loudness ? "Nivelar volumen: no" : "Nivelar volumen: sí")} />
+          )}
+        </>
+      )} />
     </Card>
   );
 };

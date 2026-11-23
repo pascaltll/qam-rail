@@ -233,3 +233,72 @@ def trace_diff(prev: dict | None, now: dict) -> list:
     if prev.get("flujos") != now.get("flujos"):
         ch.append(f"flujos: {prev.get('flujos')} → {now.get('flujos')}")
     return ch
+
+
+# ---- Refuerzo por fuente (0.61): sube solo lo que suena de apps (vídeo, música, juegos), no los sonidos del sistema ----
+BOOST_MAX = 200
+# Quién suena «a nivel de sistema»: avisos de Steam y del escritorio. Por nombre de app / binario o por rol del flujo.
+_SYSTEM_APPS = re.compile(r"^(steam|steamwebhelper|gamescope|libcanberra|canberra|speech-dispatcher|spd-say|notify-send|plasmashell|"
+                          r"kwin.*|kded.*|gnome-shell|xdg-desktop-portal.*|decky.*|qam.*|pipewire.*|wireplumber)$", re.I)
+_SYSTEM_ROLES = {"event", "notification", "a11y", "alert", "dialog", "test"}
+
+
+def parse_sink_inputs(pactl_list: str) -> list:
+    """Flujos de «pactl list sink-inputs»: [{id, app, binario, nombre, rol, vol (%), mudo, pausado}]."""
+    out = []
+    for block in re.split(r"(?m)^(?=\S.*#\d+\s*$)", pactl_list or ""):
+        head = re.match(r"\S.*#(\d+)\s*$", block, re.M)
+        if not head:
+            continue
+
+        def prop(key):
+            m = re.search(r'(?m)^\s*' + re.escape(key) + r'\s*=\s*"(.*)"\s*$', block)
+            return m.group(1) if m else ""
+        vo = re.search(r"(?m)^\s*(?:Volume|Volumen):.*?(\d+)%", block)
+        mu = re.search(r"(?m)^\s*(?:Mute|Silencio|Silenciado):\s*(\S+)", block)
+        co = re.search(r"(?m)^\s*(?:Corked|Pausado|En pausa):\s*(\S+)", block)
+        yes = re.compile(r"yes|s[ií]", re.I)
+        out.append({"id": int(head.group(1)), "app": prop("application.name") or prop("application.process.binary") or "?",
+                    "binario": prop("application.process.binary"), "nombre": prop("media.name"), "rol": prop("media.role").lower(),
+                    "vol": int(vo.group(1)) if vo else None, "mudo": bool(mu and yes.match(mu.group(1))),
+                    "pausado": bool(co and yes.match(co.group(1)))})
+    return out
+
+
+def is_system_stream(s: dict) -> bool:
+    return bool(_SYSTEM_APPS.match((s.get("app") or "").strip()) or _SYSTEM_APPS.match((s.get("binario") or "").strip())
+                or (s.get("rol") or "") in _SYSTEM_ROLES)
+
+
+def boost_on(s: dict, ov: dict) -> bool:
+    """¿Se refuerza este flujo? Lo decide el usuario por app (ov[app]); si no, por defecto todo menos los sonidos del sistema."""
+    v = (ov or {}).get(s.get("app"))
+    return bool(v) if isinstance(v, bool) else not is_system_stream(s)
+
+
+def clamp_pct(v, default: int = 100) -> int:
+    try:
+        f = float(v)
+    except (TypeError, ValueError):
+        return default
+    if f != f:
+        return default
+    return int(max(100, min(BOOST_MAX, round(f / 10) * 10)))
+
+
+def plan_boost(streams: list, pct: int, ov: dict, applied: dict) -> list:
+    """[(id, %)] que hay que fijar ahora. «applied» {id: %} lo que ya se puso (se actualiza): cada flujo se toca una vez por nivel,
+    para no pelear con una app que cambie su propio volumen. A 100 % solo se devuelve a lo que antes se reforzó."""
+    todo, live = [], {s["id"] for s in streams}
+    for k in [k for k in applied if k not in live]:
+        del applied[k]
+    for s in streams:
+        want = pct if boost_on(s, ov) else 100
+        prev = applied.get(s["id"])
+        if prev is None and want == 100:
+            continue  # flujo nuevo y sin refuerzo: no se toca
+        if prev == want:
+            continue
+        applied[s["id"]] = want
+        todo.append((s["id"], want))
+    return todo

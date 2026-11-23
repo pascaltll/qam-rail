@@ -135,6 +135,7 @@ class Plugin:
                 self._spawn(self._wd_loop())
             if qam_cursor is not None and qam_pad is not None:
                 self._spawn(self._cursor_loop())
+            self._spawn(self._boost_loop())
         except Exception as exc:  # noqa: BLE001
             decky.logger.error(f"mando: {exc}")
         decky.logger.info(f"QAM Rail listo ({_me()}, activo: {_active()})")
@@ -2707,6 +2708,103 @@ class Plugin:
             return f"[volumen del dispositivo {round(float(m.group(1)) * 100)} % → 100 %]"
         except Exception as e:  # nunca debe romper el cambio de salida
             return f"[volumen: {e}]"
+
+    # ---- Refuerzo por fuente (0.61): vídeo, música, juegos suben; los sonidos del sistema no ----
+    def _boost_cfg(self) -> dict:
+        try:
+            with open(_path("audio-boost.json"), encoding="utf-8") as fh:
+                c = json.load(fh)
+        except (OSError, ValueError):
+            c = {}
+        c = c if isinstance(c, dict) else {}
+        import qam_audio
+        return {"pct": qam_audio.clamp_pct(c.get("pct", 100)),
+                "ov": {str(k): v for k, v in (c.get("ov") or {}).items() if isinstance(v, bool)} if isinstance(c.get("ov"), dict) else {},
+                "seen": [str(x) for x in (c.get("seen") or []) if isinstance(x, str)][:16], "migrado": bool(c.get("migrado", False))}
+
+    def _boost_save(self, cfg: dict) -> None:
+        try:
+            with open(_path("audio-boost.json"), "w", encoding="utf-8") as fh:
+                json.dump(cfg, fh)
+        except OSError as exc:
+            decky.logger.error(f"refuerzo: {exc}")
+
+    async def _boost_streams(self) -> list:
+        import qam_audio
+        code, out, _ = await self._acmd("pactl", "list", "sink-inputs")
+        return qam_audio.parse_sink_inputs(out) if code == 0 else []
+
+    async def _boost_apply(self, streams: list, cfg: dict) -> int:
+        import qam_audio
+        applied = getattr(self, "_boost_applied", None)
+        if applied is None:
+            applied = self._boost_applied = {}
+        todo = qam_audio.plan_boost(streams, cfg["pct"], cfg["ov"], applied)
+        for sid, pct in todo:
+            await self._acmd("pactl", "set-sink-input-volume", str(sid), f"{pct}%")
+        return len(todo)
+
+    async def _boost_migrate(self, cfg: dict) -> None:
+        """dev.61 subía el volumen del DISPOSITIVO (sonaban más fuerte hasta los avisos del sistema). Una vez, se devuelve a 100 %."""
+        import qam_audio
+        code, out, _ = await self._acmd("pactl", "list", "sinks")
+        if code == 0:
+            for name, v in qam_audio.parse_sinks(out).items():
+                if name.startswith("alsa_output") and (v.get("vol") or 0) > 100:
+                    await self._acmd("pactl", "set-sink-volume", name, "100%")
+                    decky.logger.info(f"refuerzo: {name} volvía a {v.get('vol')} % → 100 %")
+        cfg["migrado"] = True
+        self._boost_save(cfg)
+
+    async def _boost_loop(self) -> None:
+        """Mientras haya refuerzo (o algo reforzado que devolver), cada 2 s mira los flujos y fija el volumen de los nuevos. Sin refuerzo, duerme sin lanzar nada."""
+        while True:
+            try:
+                cfg = self._boost_cfg()
+                if not cfg["migrado"]:
+                    await self._boost_migrate(cfg)
+                active = cfg["pct"] > 100 or any(v != 100 for v in (getattr(self, "_boost_applied", None) or {}).values())
+                if active:
+                    streams = await self._boost_streams()
+                    await self._boost_apply(streams, cfg)
+                await asyncio.sleep(2.0 if active else 5.0)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:  # noqa: BLE001
+                decky.logger.error(f"refuerzo: {exc}")
+                await asyncio.sleep(10)
+
+    async def audio_boost(self) -> dict:
+        """Nivel de refuerzo y las fuentes: las que suenan ahora y las vistas hace poco, cada una con «refuerza» (sí/no)."""
+        import qam_audio
+        cfg = self._boost_cfg()
+        streams = await self._boost_streams()
+        seen = list(cfg["seen"])
+        for s in streams:
+            if s["app"] not in seen and s["app"] != "?":
+                seen.insert(0, s["app"])
+        seen = seen[:16]
+        if seen != cfg["seen"]:
+            cfg["seen"] = seen
+            self._boost_save(cfg)
+        playing = {s["app"]: s for s in streams if not s["pausado"]}
+        apps = []
+        for name in seen:
+            s = playing.get(name) or next((x for x in streams if x["app"] == name), None) or {"app": name, "rol": "", "binario": ""}
+            apps.append({"app": name, "suena": name in playing, "sistema": qam_audio.is_system_stream(s), "refuerza": qam_audio.boost_on(s, cfg["ov"])})
+        apps.sort(key=lambda a: (not a["suena"], a["sistema"], a["app"].lower()))
+        return {"ok": True, "pct": cfg["pct"], "apps": apps}
+
+    async def audio_boost_set(self, pct: int | None = None, app: str | None = None, on: bool | None = None) -> dict:
+        import qam_audio
+        cfg = self._boost_cfg()
+        if pct is not None:
+            cfg["pct"] = qam_audio.clamp_pct(pct)
+        if app is not None and on is not None:
+            cfg["ov"][str(app)] = bool(on)
+        self._boost_save(cfg)
+        n = await self._boost_apply(await self._boost_streams(), cfg)
+        return {"ok": True, "pct": cfg["pct"], "tocados": n}
 
     async def audio_mute(self, node: int, on: bool) -> dict:
         self._audio_cache = None

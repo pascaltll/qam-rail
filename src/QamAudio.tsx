@@ -2,10 +2,10 @@
 // enlace a lo avanzado de Panel de Control. Los altavoces se ofrecen por su FILTRO del sistema (ecualizador y
 // limitador de Bazzite), nunca la tarjeta en crudo: 0.34 la ofrecía y sonaba más fuerte y raro.
 import { tickEvery } from "./ticker";
-import { useEffect, useRef, useState, type FC } from "react";
+import { useEffect, useRef, useState, type FC, type ReactNode } from "react";
 import { sc } from "./steam";
 
-import { audioMute, audioReset, audioSetDefault, audioState, audioVolume, boostNote, boostPct, shortName, sortOutputs, type AudioNode, type AudioState } from "./audio";
+import { audioMute, audioReset, audioSetDefault, audioState, audioVolume, audioBoost, audioBoostSet, boostNote, shortName, sortOutputs, type AudioNode, type AudioState, type BoostState } from "./audio";
 import { crumb } from "./crumbs";
 import { small } from "./QamSections";
 import { Chip, ICONS2, Icon, Segments, ToggleRow, XSlider, COLORS } from "./ui";
@@ -14,13 +14,20 @@ import { useVisible } from "./visible";
 
 const ICON: Record<AudioNode["tipo"], string> = { altavoz: ICONS2.speaker, auriculares: ICONS2.headphones, hdmi: ICONS2.hdmi, micro: ICONS2.mic };
 
-/** Controles del sistema (sin tarjeta propia): van DENTRO de la tarjeta «Sonido», debajo del ecualizador de Panel. */
-export const AudioControls: FC<{ notify: (t: string) => void }> = ({ notify }) => {
+/** Controles del sistema (sin tarjeta propia), DENTRO de la tarjeta «Sonido». Orden: por dónde suena → volumen de apps →
+ *  `middle` (el ecualizador de Panel, que pone la tarjeta) → micrófono (lo que menos se toca, al final). */
+export const AudioControls: FC<{ notify: (t: string) => void; middle?: ReactNode }> = ({ notify, middle }) => {
   const [st, setSt] = useState<AudioState | null>(null);
   const visible = useVisible();
   const [tvAuto, setTvAuto] = useState(autoTvOn);
   const hold = useRef(0);
-  const load = () => { if (Date.now() < hold.current) return; void audioState(false).then(setSt, () => setSt({ ok: false, error: "sin respuesta" })); };
+  const [boost, setBoost] = useState<BoostState | null>(null);
+  const loadBoost = () => { void audioBoost().then((b) => setBoost(b?.ok ? b : null), () => setBoost(null)); };
+  const load = () => {
+    loadBoost();
+    if (Date.now() < hold.current) return;
+    void audioState(false).then(setSt, () => setSt({ ok: false, error: "sin respuesta" }));
+  };
   useEffect(() => {
     if (!visible) return undefined;
     load();
@@ -56,8 +63,8 @@ export const AudioControls: FC<{ notify: (t: string) => void }> = ({ notify }) =
   };
   const outs = sortOutputs(st?.salidas ?? []);
   const mic = (st?.entradas ?? []).find((x) => x.activa) ?? st?.entradas?.[0] ?? null;
-  // Refuerzo: en la salida activa que no sean auriculares (el Bluetooth lleva su volumen propio y se oye de cerca).
-  const boostTarget = outs.find((n) => n.activa && n.tipo !== "auriculares" && n.tipo !== "micro") ?? null;
+  // Refuerzo de apps: no con auriculares (se oyen de cerca y el Bluetooth lleva su volumen propio).
+  const showBoost = !!boost && !outs.some((n) => n.activa && n.tipo === "auriculares");
   const pick = (n: AudioNode) => {
     if (n.activa) return;
     crumb(`audio: salida ${shortName(n)}${n.filtro ? " (filtro)" : ""}`);
@@ -92,14 +99,8 @@ export const AudioControls: FC<{ notify: (t: string) => void }> = ({ notify }) =
           )}
         </>
       )}
-      {boostTarget && (
-        <BoostRow node={boostTarget} viaEq={!!st?.eq} notify={notify}
-          onChange={(pct) => {
-            crumb(`audio: refuerzo ${pct} % en ${shortName(boostTarget)}`);
-            if (boostTarget.silenciado) void audioMute(boostTarget.id, false);
-            void audioVolume(boostTarget.id, pct / 100).then((r) => { if (!r.ok) notify("No se pudo cambiar el volumen"); });
-          }} />
-      )}
+      {showBoost && <BoostSection b={boost} onReload={loadBoost} notify={notify} />}
+      {middle}
       {mic && (
         <MicRow mic={mic}
           onMute={() => {
@@ -139,20 +140,40 @@ const MicRow: FC<{ mic: AudioNode; onMute: () => void; onVolume: (v: number) => 
   );
 };
 
-/** Refuerzo de volumen (100–200 %): sube el nivel del dispositivo por encima de lo normal, útil cuando el ecualizador de
- *  Panel de Control deja el sonido bajo. Con el EQ delante, la barra de Steam mueve el EQ y esta el dispositivo real:
- *  son independientes. Sin EQ, mover el volumen de Steam puede volver a dejarlo en 100 %. */
-const BoostRow: FC<{ node: AudioNode; viaEq: boolean; notify: (t: string) => void; onChange: (pct: number) => void }> = ({ node, viaEq, onChange }) => {
-  const [pct, setPct] = useState(boostPct(node.volumen));
+/** Refuerzo de apps (100–200 %): sube lo que suena de vídeo, música y juegos, no los avisos del sistema (los de Steam y el
+ *  escritorio quedan como están). Es por fuente, no por dispositivo, y el volumen de Steam sigue mandando encima.
+ *  La lista deja elegir qué sube; se recuerda por app. */
+const BoostSection: FC<{ b: BoostState; onReload: () => void; notify: (t: string) => void }> = ({ b, onReload, notify }) => {
+  const [pct, setPct] = useState(b.pct);
+  const [open, setOpen] = useState(false);
   const dragging = useRef(0);
-  useEffect(() => { if (Date.now() > dragging.current) setPct(boostPct(node.volumen)); }, [node.volumen, node.id]);
-  const change = (v: number) => { dragging.current = Date.now() + 1500; setPct(v); onChange(v); };
+  const timer = useRef(0);
+  useEffect(() => { if (Date.now() > dragging.current) setPct(b.pct); }, [b.pct]);
+  const change = (v: number) => {
+    dragging.current = Date.now() + 1500;
+    setPct(v);
+    window.clearTimeout(timer.current); // 250 ms sin moverla: un solo cambio al sistema
+    timer.current = window.setTimeout(() => {
+      crumb(`audio: refuerzo de apps ${v} %`);
+      void audioBoostSet(v).then((r) => { if (!r?.ok) notify("No se pudo cambiar el refuerzo"); });
+    }, 250);
+  };
+  const apps = b.apps ?? [];
+  const on = apps.filter((a) => a.refuerza).length;
   return (
     <>
-      <XSlider label="Refuerzo de volumen" icon={ICONS2.speaker} value={pct} min={100} max={200} step={10} suffix=" %" onChange={change} />
-      <div style={{ ...small, fontSize: 11, color: pct > 160 ? COLORS.warn : undefined }}>
-        {boostNote(pct)}{pct > 100 && !viaEq ? " · si cambias el volumen de Steam puede volver a 100 %" : ""}
-      </div>
+      <div style={{ ...small, fontSize: 11, fontWeight: 700 }}>Volumen de apps</div>
+      <XSlider label="Refuerzo (vídeo, música, juegos)" icon={ICONS2.speaker} value={pct} min={100} max={200} step={10} suffix=" %" onChange={change} />
+      <div style={{ ...small, fontSize: 11, color: pct > 160 ? COLORS.warn : undefined }}>{boostNote(pct)} · los avisos del sistema no suben</div>
+      {apps.length > 0 && (
+        <>
+          <Chip grow={false} compact onClick={() => setOpen(!open)}>{open ? "Ocultar apps ‹" : `Qué sube: ${on} de ${apps.length} ›`}</Chip>
+          {open && apps.slice(0, 8).map((a) => (
+            <ToggleRow key={a.app} label={a.app} note={a.suena ? "suena ahora" : a.sistema ? "sonido del sistema" : "visto hace poco"} on={a.refuerza}
+              onToggle={() => { crumb(`audio: refuerzo ${a.app} ${a.refuerza ? "no" : "sí"}`); void audioBoostSet(null, a.app, !a.refuerza).then(onReload); }} />
+          ))}
+        </>
+      )}
     </>
   );
 };
