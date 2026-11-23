@@ -1,5 +1,9 @@
 # Cambios
 
+## dev.47
+
+- **Puntero Xbox desde el propio plugin** (chip «Puntero Xbox» en la franja de apps abiertas; apagado por defecto): en vez de pedirle a cada app que lea un tema (Firefox/Edge Flatpak no lo hacían), el backend cambia en el servidor X la imagen de los cursores de la app por nombre (`XFixesChangeCursorByName`: «default», «pointer», «text»…); gamescope dibuja lo que X le da. Se repite cada 0,3 s con una app delante (cada cursor nuevo se cambia una vez). Al apagarlo, las apps ya abiertas lo conservan hasta reabrirlas. El tema se genera solo en `settings/…/cursors`. Prueba con Xvfb: `tests/py/test_cursor_skin.py`. [H] que gamescope refresque el dibujo al cambiar la imagen.
+
 ## dev.46
 
 - **Causa probable de que el QAM se colgara tras cerrar una app por fuera (`flatpak kill`) y de las pantallas negras:** cuando una ventana que seguimos desaparecía, la primera petición de X sobre ella (`XGetGeometry`, `XResizeWindow`, `XSetInputFocus`) hacía que Xlib llamara a `exit()` y matara **todo el backend** del plugin (reproducido en el banco: el proceso sale con código 1). Ahora hay un manejador de errores de X que no hace nada y la petición simplemente falla. Prueba: `tests/py/test_xerr.py`.

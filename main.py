@@ -35,6 +35,11 @@ try:
 except ImportError:
     qam_pad = None
 try:
+    import qam_cursor
+    import qam_cursor_theme
+except ImportError:
+    qam_cursor = qam_cursor_theme = None
+try:
     import qam_blackbox
 except ImportError:
     qam_blackbox = None
@@ -128,6 +133,8 @@ class Plugin:
                 self._spawn(self._pad.run())
             if qam_blackbox is not None and qam_pad is not None:
                 self._spawn(self._wd_loop())
+            if qam_cursor is not None and qam_pad is not None:
+                self._spawn(self._cursor_loop())
         except Exception as exc:  # noqa: BLE001
             decky.logger.error(f"mando: {exc}")
         decky.logger.info(f"QAM Rail listo ({_me()}, activo: {_active()})")
@@ -1228,6 +1235,51 @@ class Plugin:
                 wins.append(g)
         return x, {"focused": focused, "base": base, "overlay": overlay, "screen": x.screen_size(), "wins": wins, "front": front,
                    "anim": bool(getattr(self, "_anim_busy", False)), "running": bool(self._claims)}
+
+    def _cursor_on(self) -> bool:
+        try:
+            with open(_path("desktop-cursor.json"), encoding="utf-8") as fh:
+                return bool(json.load(fh).get("on", False))
+        except (OSError, ValueError, AttributeError):
+            return False
+
+    async def desktop_cursor(self, on=None) -> dict:
+        """Interruptor del puntero estilo Xbox (círculo) para las apps de escritorio. Al apagarlo, las apps ya abiertas conservan el círculo hasta reabrirlas."""
+        ok = qam_cursor is not None and qam_cursor.available()
+        if on is not None and ok:
+            try:
+                with open(_path("desktop-cursor.json"), "w", encoding="utf-8") as fh:
+                    json.dump({"on": bool(on)}, fh)
+            except OSError:
+                pass
+            self._cursor_skin = None
+        return {"ok": ok, "on": self._cursor_on() if ok else False}
+
+    async def _cursor_loop(self) -> None:
+        """Con el puntero Xbox activado y una app de escritorio abierta, cambia cada cursor nuevo de la app (ver qam_cursor). Sin ambas cosas, duerme."""
+        while True:
+            try:
+                if not (self._cursor_on() and self._claims and qam_cursor.available()):
+                    await asyncio.sleep(2)
+                    continue
+                x = await self._kx()
+                skin = getattr(self, "_cursor_skin", None)
+                if skin is None or skin.dpy != x.dpy:
+                    dest = _path("cursors")
+                    if not os.path.isdir(os.path.join(dest, qam_cursor_theme.NAME, "cursors")):
+                        qam_cursor_theme.install(dest)
+                    skin = self._cursor_skin = qam_cursor.CursorSkin(x.x11, x.dpy, os.path.join(dest, qam_cursor_theme.NAME, "cursors"))
+                n = skin.tick()
+                if n and len(skin.changed) <= 12:
+                    self._tag_log(f"puntero Xbox: cursor «{n}» cambiado")
+                await asyncio.sleep(0.3)
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:  # noqa: BLE001
+                self._cursor_skin = None
+                self._kx_close()
+                self._tl("puntero.error", error=str(e)[:80])
+                await asyncio.sleep(5)
 
     async def _prune_dead(self, x) -> list:
         """Una app cerrada por fuera del QAM (flatpak kill, se cierra sola) deja su ventana marcada y su número en la capa base de gamescope.

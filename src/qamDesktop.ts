@@ -26,6 +26,7 @@ export const desktopMinimize = callable<[key: string], { ok: boolean; error?: st
 export const desktopHome = callable<[], { ok: boolean; n?: number }>("desktop_home");
 export interface PadState { ok: boolean; on: boolean; active: boolean; devices: string[]; events: number; x: boolean }
 export const desktopKey = callable<[text: string | null, key: string | null, mods?: string[] | null], { ok: boolean; wid?: string | null; error?: string | null }>("desktop_key");
+export const desktopCursor = callable<[on?: boolean | null], { ok: boolean; on: boolean }>("desktop_cursor");
 export const desktopAnim = callable<[on?: boolean | null], { ok: boolean; on: boolean }>("desktop_anim");
 export const padMouse = callable<[on?: boolean | null], PadState>("pad_mouse");
 export const desktopKill = callable<[key: string], { ok: boolean; error?: string | null }>("desktop_kill");
