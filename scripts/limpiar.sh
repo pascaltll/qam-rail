@@ -14,7 +14,8 @@ cd "$DIR"
 if [[ "${1:-}" == "--borrar" ]]; then
   [[ -d "$ARCH" ]] || { echo "No hay _archivo/."; exit 0; }
   du -sh "$ARCH"; read -r -p "¿Borrar _archivo/ para siempre? [s/N] " r
-  [[ "$r" =~ ^[sS]$ ]] && rm -rf "$ARCH" && echo "Borrado." || echo "Cancelado."; exit 0
+  if [[ "$r" =~ ^[sS]$ ]]; then rm -rf "$ARCH" 2>/dev/null || sudo rm -rf "$ARCH"; echo "Borrado."; else echo "Cancelado."; fi
+  exit 0
 fi
 
 vsort() { sort -V; }
@@ -36,5 +37,13 @@ echo "Se archivarían ${#PLAN[@]} elementos (~$((tot / 1024)) MiB) en $ARCH:"
 printf '  %s\n' "${PLAN[@]}"
 if [[ "${1:-}" != "--aplicar" ]]; then echo; echo "(Solo muestra. Para hacerlo: ./limpiar.sh --aplicar)"; exit 0; fi
 mkdir -p "$ARCH"
-for f in "${PLAN[@]}"; do mv -n -- "$f" "$ARCH/"; done
-echo "Hecho. Revisa y, si todo está bien, ./limpiar.sh --borrar"
+# Lo creado con sudo (p. ej. copias de seguridad del instalador) es de root: se mueve con sudo solo en ese caso.
+FALLOS=0
+for f in "${PLAN[@]}"; do
+  [[ -e "$f" ]] || continue
+  if mv -n -- "$f" "$ARCH/" 2>/dev/null; then continue; fi
+  echo "  «$f» es de root; se mueve con sudo…"
+  if sudo mv -n -- "$f" "$ARCH/"; then sudo chown -R "$(id -u):$(id -g)" "$ARCH/$(basename "$f")" || true
+  else echo "  ✗ no se pudo mover $f"; FALLOS=$((FALLOS + 1)); fi
+done
+if [[ $FALLOS -gt 0 ]]; then echo "Hecho con $FALLOS fallo(s)."; else echo "Hecho. Revisa y, si todo está bien, ./limpiar.sh --borrar"; fi
