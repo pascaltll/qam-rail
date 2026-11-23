@@ -6,6 +6,7 @@ Apps › pestaña «Steam»: apps de escritorio del equipo (Flatpak, AppImage, s
 
 - «Abrir» lanza la app **como el usuario de la sesión** (Decky corre como root: `runuser` + `DISPLAY`/`XDG_RUNTIME_DIR`/D-Bus) y espera 1,5 s; si se cierra con error, el aviso dice por qué (última línea de su salida, `desktop-run.log`).
 - «Agregar a QAM» pone la app en Apps (y en la fila de Inicio) de este panel, con su icono, y se abre desde ahí. **No se crea nada en Steam.** `desktop-pins.json`.
+- Flatpak: se quitan las marcas `@@u`/`@@`/`--file-forwarding` del `Exec` (sin archivos no hacen falta).
 - Navegadores Chromium con `--start-fullscreen`; Firefox no (no hay opción fiable).
 - Filtro por origen, grupos por categoría, dos filas por app para el mando.
 - Backend: `desktop_plan`, `desktop_run`, `desktop_pins`, `desktop_pin_set`.

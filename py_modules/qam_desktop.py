@@ -53,8 +53,8 @@ def clean_exec(exec_line: str):
         return None
     argv = []
     for p in parts:
-        if re.fullmatch(r"%[fFuUdDnNickvm]", p):
-            continue
+        if re.fullmatch(r"%[fFuUdDnNickvm]", p) or p in ("@@", "@@u", "@@f", "--file-forwarding"):
+            continue  # códigos de campo y marcas de reenvío de archivos de Flatpak (sin archivos no hacen falta)
         p = re.sub(r"%[fFuUdDnNickvm]", "", p).replace("\0", "%")
         if p:
             argv.append(p)

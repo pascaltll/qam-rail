@@ -72,6 +72,10 @@ if __name__ == "__main__":
 
 
 # ---- 0.54: lanzamiento y registro ----
+def _t054_exec():
+    assert d.clean_exec("/usr/bin/flatpak run --branch=stable --file-forwarding org.mozilla.firefox @@u %u @@") == ["/usr/bin/flatpak", "run", "--branch=stable", "org.mozilla.firefox"]
+
+
 def _t054():
     import qam_desktop as D
     w = lambda c: "/usr/bin/" + c
@@ -103,3 +107,4 @@ def _t054():
     assert list(r) == ["a"] and r["a"]["appid"] == 123 and D.clean_registry(None) == {}
     print("0.54 OK")
 _t054()
+_t054_exec()
