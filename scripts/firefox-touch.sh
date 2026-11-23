@@ -4,7 +4,12 @@
 set -u
 MARK="// QAM Rail táctil"
 PROFILES=()
-for d in "$HOME"/.var/app/org.mozilla.firefox/.mozilla/firefox/*.default* "$HOME"/.mozilla/firefox/*.default*; do [ -d "$d" ] && PROFILES+=("$d"); done
+for base in "$HOME/.var/app/org.mozilla.firefox/.mozilla/firefox" "$HOME/.mozilla/firefox"; do
+  [ -f "$base/profiles.ini" ] || continue
+  while IFS= read -r p; do   # los perfiles que declara Firefox (se llamen como se llamen: «xxx.default», «xxx.Profile 1»…)
+    [ -d "$base/$p" ] && PROFILES+=("$base/$p")
+  done < <(sed -n 's/^Path=//p' "$base/profiles.ini")
+done
 [ ${#PROFILES[@]} -gt 0 ] || { echo "No encuentro ningún perfil de Firefox."; exit 1; }
 for d in "${PROFILES[@]}"; do
   f="$d/user.js"
