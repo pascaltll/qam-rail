@@ -319,6 +319,37 @@ export async function testMusic(suiteStart?: number): Promise<{ status: SuiteSte
   return { status: fails.length ? "warn" : "ok", detail: fails.length ? fails.join(", ") : `controles bien · contador x${ctl.velocidad}` };
 }
 
+/** Recorre con la cruceta (arriba/abajo/derecha, el mismo modelo de filas de QAM Rail) lo que haya visible en el panel abierto y anota qué se alcanza. */
+export async function testNavWalk(): Promise<{ status: SuiteStep["status"]; detail: string }> {
+  const root = (at(window, "__qamRailModalEl") as HTMLElement | null | undefined) ?? null;
+  const all = root?.isConnected ? [...root.querySelectorAll<HTMLElement>('[data-qr="item"]')].filter((e) => e.getClientRects().length > 0) : [];
+  if (!all.length) return { status: "skipped", detail: "abre el panel en la pestaña a probar (p. ej. Apps › Steam) y repite" };
+  const rects = all.map((e) => e.getBoundingClientRect());
+  const label = (e: HTMLElement) => (e.innerText || e.getAttribute("aria-label") || e.className || "").replace(/\s+/g, " ").trim().slice(0, 40);
+  const seen = new Set<number>([0]);
+  const path: number[] = [0];
+  let cur = 0, guard = 0;
+  while (guard++ < all.length * 4) {
+    // Recorre como una persona: abajo; si no hay nada nuevo, derecha; si no, izquierda; si no, vuelve a la fila anterior que tenga algo sin visitar.
+    let to = -1;
+    for (const d of [BTN.DOWN, BTN.RIGHT, BTN.LEFT]) { const c = listTarget(rects, cur, d); if (c >= 0 && !seen.has(c)) { to = c; break; } }
+    if (to < 0) { const back = [...path].reverse().find((i) => [BTN.RIGHT, BTN.LEFT, BTN.DOWN].some((d) => { const c = listTarget(rects, i, d); return c >= 0 && !seen.has(c); })); if (back === undefined) break; cur = back; continue; }
+    seen.add(to); path.push(to); cur = to;
+  }
+  const rows = visualRows(rects);
+  const lost = all.map((_e, i) => i).filter((i) => !seen.has(i));
+  const tiny = all.map((_e, i) => i).filter((i) => rects[i].bottom - rects[i].top < 20 || rects[i].right - rects[i].left < 20);
+  const out = {
+    fecha: new Date().toISOString(), elementos: all.length, filas: rows.length, alcanzadosConLaCruceta: seen.size,
+    sinAlcanzar: lost.map((i) => ({ i, texto: label(all[i]), fila: rows.findIndex((r) => r.includes(i)), caja: rects[i].toJSON?.() ?? null })),
+    muyPequenos: tiny.map((i) => ({ i, texto: label(all[i]) })),
+    recorrido: path.map((i) => `${i}: ${label(all[i])}`),
+    filasDetalle: rows.map((r, k) => `${k}: ${r.map((i) => label(all[i])).join(" | ")}`),
+  };
+  await saveSection("navegacion-mando", out);
+  return { status: lost.length ? "warn" : "ok", detail: `${seen.size}/${all.length} alcanzados · ${rows.length} filas${lost.length ? ` · sin alcanzar: ${lost.slice(0, 3).map((i) => label(all[i])).join(", ")}` : ""}` };
+}
+
 const procSample = callable<[seconds: number], { cpu: string; procesos: Array<{ cpu: string; mem: string; proceso: string; orden?: string }> }>("post_game_sample");
 
 export async function testEnvironment(): Promise<string> {
@@ -547,6 +578,7 @@ const STEPS: Array<{ id: string; label: string; run: () => Promise<{ status: Sui
       return { status: s.phase === "done" ? "ok" : s.phase === "cancelled" ? "skipped" : "error", detail: s.phase === "done" ? `${s.rows.length} niveles` : s.step };
     },
   },
+  { id: "navegacion-mando", label: "Navegación con el mando (pestaña abierta)", run: () => testNavWalk() },
   // Al final: así incluye si la música se pausó sola o se descontroló durante todo lo anterior (estrés).
   { id: "musica-prueba", label: "Música · controles, cruceta y estrés", run: () => testMusic(suiteT0) },
 ];

@@ -5,7 +5,7 @@ import { Focusable } from "@decky/ui";
 import { useEffect, useState, type FC } from "react";
 
 import {
-  addToSteam, appsAddFolder, appsFindZips, appsList, appsCheckUpdates, appsRollback, appsRun, appsUninstall, installAndWait, installMessage, updateAndWait, updateLabel, type GhUpdate, loadDrawerApps, removeFromSteam, shortcutOf,
+  addToSteam, appsAddFolder, appsFindZips, appsList, appsCheckUpdates, checkMessage, appsRollback, appsRun, appsUninstall, installAndWait, installMessage, updateAndWait, updateLabel, type GhUpdate, loadDrawerApps, removeFromSteam, shortcutOf,
   type FoundZip, type QamApp,
 } from "./qamApps";
 import { Card, Label, small } from "./QamSections";
@@ -31,7 +31,8 @@ function useAppMgr(notify: (t: string) => void, onChanged?: () => void) {
     void appsFindZips().then((z) => setZips(Array.isArray(z) ? z : []), () => setZips([]));
   };
   const [gh, setGh] = useState<Record<string, GhUpdate>>({});
-  const checkGh = (force = false) => void appsCheckUpdates(force).then((r) => setGh(r?.results ?? {}), () => null);
+  const checkGh = (force = false): Promise<Record<string, GhUpdate> | null> =>
+    appsCheckUpdates(force).then((r) => { const res = r?.results ?? {}; setGh(res); return res; }, () => null);
   useEffect(reload, []);
   useEffect(() => { checkGh(false); }, []); // solo con el panel abierto; el backend limita a 1 consulta cada 6 h
 
@@ -95,11 +96,12 @@ export const QamAppOptions: FC<{ id: string; notify: (t: string) => void; onClos
     <Card title={`${a.name} · opciones`} right={<span style={small}>{a.version ? `v${a.version}` : "sin versión"}</span>}>
       <Status m={m} />
       <div style={{ ...small, fontSize: 11 }}>{a.external ? "Usa su carpeta propia. " : ""}{a.deducido ? "Datos deducidos (sin qam-app.json). " : ""}{a.check?.errors?.length ? "Revisar su manifiesto. " : ""}</div>
+      {m.gh[a.id]?.state === "error" && <div style={{ ...small, fontSize: 11, color: "#e5484d" }}>No se pudo comprobar las actualizaciones: {m.gh[a.id]?.error ?? "?"}</div>}
       <Focusable style={{ display: "flex", flexDirection: "column", gap: 6 }}>
         <Row gap={6}>
           {update && <Chip compact active icon={ICONS2.refresh} onClick={() => m.install(update.zip)}>Actualizar a {update.version}</Chip>}
           {!update && updateLabel(m.gh[a.id]) && <Chip compact active icon={ICONS2.download} onClick={() => m.updateGh(a.id)}>{updateLabel(m.gh[a.id])}</Chip>}
-          {!update && !updateLabel(m.gh[a.id]) && <Chip compact icon={ICONS2.refresh} onClick={() => { m.checkGh(true); notify("Buscando actualizaciones…"); }}>Buscar actualización</Chip>}
+          {!update && !updateLabel(m.gh[a.id]) && <Chip compact icon={ICONS2.refresh} onClick={() => { notify("Buscando actualizaciones…"); void m.checkGh(true).then((res) => notify(checkMessage(res?.[a.id], a.name))); }}>Buscar actualización</Chip>}
           {a.has_previous && <Chip compact icon={ICONS2.refresh} onClick={() => m.run("Volviendo…", async () => { const r = await appsRollback(a.id); await loadDrawerApps(true); return r.ok ? `${a.name}: ahora la ${r.app?.version ?? "anterior"}` : `No se pudo volver: ${r.error ?? "?"}`; })}>Volver a {a.previous_version ?? "la anterior"}</Chip>}
         </Row>
         <Row gap={6}>
@@ -110,7 +112,7 @@ export const QamAppOptions: FC<{ id: string; notify: (t: string) => void; onClos
           <Chip compact icon={ICONS2.trash} onClick={() => {
             if (m.ask !== a.id) { m.setAsk(a.id); window.setTimeout(() => m.setAsk(null), 4000); return; }
             m.setAsk(null);
-            void m.run("Quitando…", async () => { const r = await appsUninstall(a.id); removeFromSteam(sc ?? r.appid); onClose(); return r.removed ? `${a.name} desinstalada` : `${a.name} ya no se gestiona aquí (la carpeta sigue)`; });
+            void m.run("Quitando…", async () => { const r = await appsUninstall(a.id); if (r.ok === false) return `No se pudo desinstalar ${a.name}: ${r.error ?? "?"} (queda en updates.log)`; removeFromSteam(sc ?? r.appid ?? null); onClose(); return r.removed ? `${a.name} desinstalada` : `${a.name} ya no se gestiona aquí (la carpeta sigue)`; });
           }}>{m.ask === a.id ? "¿Seguro?" : a.external ? "Olvidar" : "Desinstalar"}</Chip>
           <Chip compact onClick={onClose}>Cerrar</Chip>
         </Row>

@@ -133,14 +133,15 @@ export const XSlider: FC<{
 };
 
 /** Ficha redonda: perfil de potencia, Bluetooth, etc. */
-export const Chip: FC<{ children: ReactNode; active?: boolean; onClick: () => void; icon?: string; grow?: boolean; compact?: boolean; stack?: boolean; badge?: number }> = ({
-  children, active, onClick, icon, grow = true, compact, stack, badge,
+export const Chip: FC<{ children: ReactNode; active?: boolean; onClick: () => void; icon?: string; grow?: boolean; compact?: boolean; stack?: boolean; badge?: number; autoFocus?: boolean }> = ({
+  children, active, onClick, icon, grow = true, compact, stack, badge, autoFocus,
 }) => {
   const [focused, setFocused] = useState(false);
   return (
     <DialogButton
       data-qr="item"
       className="qr-chip"
+      {...(autoFocus ? ({ autoFocus: true } as object) : {})}
       ref={(el: HTMLElement | null) => { if (el?.ownerDocument) ensureCss(el.ownerDocument); }}
       onClick={(e: unknown) => { pressFx(e); onClick(); }}
       onGamepadFocus={() => setFocused(true)}

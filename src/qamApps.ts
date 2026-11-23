@@ -75,6 +75,15 @@ export function updateLabel(u: GhUpdate | undefined): string | null {
   return `Actualizar a ${u.latest}${u.prerelease ? " (beta)" : ""}`;
 }
 
+/** Puro (probado): aviso tras «Buscar actualización». Antes no se decía nada: un error, «al día» y «hay una nueva» se veían igual. */
+export function checkMessage(u: GhUpdate | null | undefined, name: string): string {
+  if (!u) return "No se pudo consultar GitHub";
+  if (u.state === "update") return `${name}: hay una versión nueva (${u.latest ?? "?"})`;
+  if (u.state === "current") return `${name} está al día${u.current ? ` (v${u.current})` : ""}`;
+  if (u.state === "error") return `No se pudo comprobar: ${u.error ?? "?"}`;
+  return `${name} no publica actualizaciones en GitHub`;
+}
+
 /** Puro (probado): frase para el aviso final de una instalacion. */
 export function installMessage(j: AppsJob): string {
   if (j.state === "cancelled") return "Instalación cancelada";
@@ -97,7 +106,7 @@ export async function loadDrawerApps(force = false): Promise<{ apps: QamApp[]; i
 }
 export const drawerCached = () => cache;
 export const appsAddFolder = callable<[path: string], { ok: boolean; app?: QamApp; error?: string }>("apps_add_folder");
-export const appsUninstall = callable<[id: string, purgeData?: boolean], { ok: boolean; removed: boolean; appid: number | null; purged?: string[] }>("apps_uninstall");
+export const appsUninstall = callable<[id: string, purgeData?: boolean], { ok: boolean; removed: boolean; appid?: number | null; purged?: string[]; error?: string }>("apps_uninstall");
 export const appsRunning = callable<[], { ids: string[] }>("apps_running");
 export const appsControl = callable<[id: string, action: string], { ok: boolean; error?: string }>("apps_control");
 export const appsRun = callable<[id: string, args: string], { ok: boolean }>("apps_run");

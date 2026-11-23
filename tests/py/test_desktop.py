@@ -100,12 +100,29 @@ def _t054_base():
 
 
 def _t054_opts():
-    assert d.clean_opts({"scale": 1.4, "touch": 1}) == {"scale": 1.5, "touch": True}
-    assert d.clean_opts("x") == {"scale": 1.0, "touch": False} and d.clean_opts({"scale": 9})["scale"] == 2.0
-    assert d.apply_opts(["flatpak", "run", "com.microsoft.Edge"], "chromium", {"scale": 1.5, "touch": True}) == ["flatpak", "run", "com.microsoft.Edge", "--force-device-scale-factor=1.5", "--touch-events=enabled"]
-    assert d.apply_opts(["flatpak", "run", "org.mozilla.firefox"], "firefox", {"scale": 1.25}) == ["flatpak", "run", "--env=GDK_DPI_SCALE=1.25", "org.mozilla.firefox"]
-    assert d.apply_opts(["/usr/bin/firefox"], "firefox", {"scale": 2}) == ["env", "GDK_DPI_SCALE=2", "/usr/bin/firefox"]
-    assert d.apply_opts(["/usr/bin/x"], "other", {"scale": 2}) == ["/usr/bin/x"] and d.apply_opts(["a"], "chromium", {}) == ["a"]
+    assert d.clean_opts({"scale": 1.4, "touch": 1}) == {"scale": 1.5, "touch": True, "fullscreen": True}
+    assert d.clean_opts("x") == {"scale": 1.0, "touch": False, "fullscreen": True} and d.clean_opts({"scale": 9})["scale"] == 2.0
+    assert d.apply_opts(["flatpak", "run", "com.microsoft.Edge", "--start-fullscreen"], "chromium", {"scale": 1.5, "touch": True}) == \
+        ["flatpak", "run", "com.microsoft.Edge", "--start-fullscreen", "--force-device-scale-factor=1.5", "--touch-events=enabled"]
+    assert d.apply_opts(["edge", "--start-fullscreen"], "chromium", {"fullscreen": False}) == ["edge", "--start-maximized"]
+    assert d.apply_opts(["flatpak", "run", "org.mozilla.firefox"], "firefox", {"scale": 2}) == ["flatpak", "run", "org.mozilla.firefox"]
+    blk = d.userjs_block({"scale": 1.5, "touch": True})
+    assert 'devPixelsPerPx", "1.5"' in blk and "touch_events.enabled\", 1" in blk and 'devPixelsPerPx", "-1.0"' in d.userjs_block({})
+    base = 'user_pref("a", 1);\n'
+    once = d.merge_userjs(base, blk)
+    twice = d.merge_userjs(once, d.userjs_block({"scale": 2}))
+    assert once.startswith(base) and twice.count(d.UJ_BEGIN) == 1 and '"2"' in twice and base in twice and "1.5" not in twice
+    assert d.merge_userjs("", blk) == blk
+
+
+def _t055_steam():
+    mk = lambda ex, cat="Game;": "[Desktop Entry]\nType=Application\nName=Juego\nExec=%s\nCategories=%s\n" % (ex, cat)
+    assert d.entry_from_desktop("/x/steam_app_220.desktop", mk("steam steam://rungameid/220"))[1] == "juego de Steam"
+    assert d.entry_from_desktop("/x/foo.desktop", mk("steam steam://rungameid/9"))[1] == "juego de Steam"
+    assert d.entry_from_desktop("/x/foo.desktop", mk("/usr/bin/steam -applaunch 9"))[1] == "juego de Steam"
+    assert d.entry_from_desktop("/x/steam_app_7.desktop", mk("env FOO=1 /opt/run-game"))[1] == "juego de Steam"
+    ok = d.entry_from_desktop("/x/retroarch.desktop", mk("retroarch"))[0]
+    assert ok and ok["name"] == "Juego"
 
 
 def _t054():
@@ -139,6 +156,59 @@ def _t054():
     assert list(r) == ["a"] and r["a"]["appid"] == 123 and D.clean_registry(None) == {}
     print("0.54 OK")
 _t054()
+_t055_steam()
+
+
+
+def _t056_pad():
+    import qam_pad as pad
+    devs = pad.parse_devices('''I: Bus=0003 Vendor=045e Product=028e Version=0114
+N: Name="Microsoft X-Box 360 pad"
+H: Handlers=event5 js0
+B: EV=20000b
+
+I: Bus=0003 Vendor=0b05 Product=1abe Version=0110
+N: Name="ASUS Keyboard"
+H: Handlers=sysrq kbd event3 leds
+
+I: Bus=0006 Vendor=28de Product=11ff Version=0001
+N: Name="Steam Virtual Gamepad"
+H: Handlers=event9 js1
+''')
+    assert [x["event"] for x in devs] == ["event5", "event9"], devs
+    assert pad.norm_axis(0, -32768, 32767) == pad.norm_axis(0, -32768, 32767) and abs(pad.norm_axis(0, -32768, 32767)) < 0.01
+    assert pad.norm_axis(255, 0, 255, trigger=True) == 1.0 and pad.norm_axis(-5, 0, 255, trigger=True) == 0.0
+    assert pad.stick_vector(0.1, 0.1) == (0.0, 0.0)
+    vx, vy = pad.stick_vector(1.0, 0.0)
+    assert abs(vx - 1.0) < 1e-9 and vy == 0.0
+    m = pad.PadMapper()
+    assert m.feed_button(304, True) == [("button", 1, True)] and m.feed_button(304, False) == [("button", 1, False)]
+    assert m.feed_button(305, True) == [("key", "alt+Left")] and m.feed_button(305, False) == []
+    assert m.feed_button(310, True) == [("key", "ctrl+shift+Tab")] and m.feed_button(311, True) == [("key", "ctrl+Tab")]
+    assert m.feed_button(999, True) == []
+    # cruceta como botones y como hat, con repetición
+    assert m.feed_button(545, True, 0.0) == [("key", "Down")]
+    assert m.tick(0.016, 0.1)[0] == [] and m.tick(0.016, 0.5)[0] == [("key", "Down")]
+    m.feed_button(545, False, 0.6)
+    assert m.tick(0.016, 5.0)[0] == []
+    assert m.feed_axis(pad.ABS_HAT0Y, -1.0, 1.0) == [("key", "Up")]
+    assert m.feed_axis(pad.ABS_HAT0Y, 0.0, 1.1) == [] and not m.dpad
+    # gatillos: un solo evento al cruzar el umbral
+    assert m.feed_axis(pad.ABS_RZ, 0.2) == [] and m.feed_axis(pad.ABS_RZ, 0.9) == [("key", "Next")] and m.feed_axis(pad.ABS_RZ, 0.95) == []
+    # cursor: a fondo, ~1100 px por segundo; en reposo no se mueve
+    m2 = pad.PadMapper()
+    assert m2.tick(1 / 60, 0.0)[1:] == (0, 0, 0, 0)
+    m2.feed_axis(pad.ABS_X, 1.0)
+    tot = sum(m2.tick(1 / 60, i / 60)[1] for i in range(60))
+    assert 1090 <= tot <= 1100, tot
+    m2.feed_axis(pad.ABS_RY, 1.0)
+    wv = sum(m2.tick(1 / 60, i / 60)[3] for i in range(60))
+    assert 13 <= wv <= 14, wv
+    rs = m2.reset()
+    assert ("button", 1, False) in rs and m2.tick(1 / 60, 0.0)[1:] == (0, 0, 0, 0)
+
+
+_t056_pad()
 _t054_exec()
 _t054_x()
 _t054_base()

@@ -18,11 +18,19 @@ export const desktopPlan = callable<[key: string], DesktopPlan>("desktop_plan");
 export const desktopRun = callable<[key: string], { ok: boolean; error?: string }>("desktop_run");
 export const desktopRunning = callable<[], { keys: string[]; apps?: Pin[] }>("desktop_running");
 export const desktopStop = callable<[key: string], { ok: boolean; error?: string | null }>("desktop_stop");
-export const desktopOverlay = callable<[on: boolean], { ok: boolean; skipped?: boolean; error?: string }>("desktop_overlay");
+export const desktopOverlay = callable<[on: boolean, reason?: string], { ok: boolean; skipped?: boolean; error?: string }>("desktop_overlay");
+/** Caja negra: avisa de un evento de la interfaz (panel.abre, kb.cierra…). Nunca lleva lo que se escribe. */
+export const qamEvent = callable<[ev: string, data?: Record<string, string | number | boolean | null>], void>("qam_event");
+export const desktopRepair = callable<[], { ok: boolean; fixed?: string[]; error?: string }>("desktop_repair");
 export const desktopMinimize = callable<[key: string], { ok: boolean; error?: string | null }>("desktop_minimize");
+export const desktopHome = callable<[], { ok: boolean; n?: number }>("desktop_home");
+export interface PadState { ok: boolean; on: boolean; active: boolean; devices: string[]; events: number; x: boolean }
+export const desktopKey = callable<[text: string | null, key: string | null, mods?: string[] | null], { ok: boolean; wid?: string | null; error?: string | null }>("desktop_key");
+export const desktopAnim = callable<[on?: boolean | null], { ok: boolean; on: boolean }>("desktop_anim");
+export const padMouse = callable<[on?: boolean | null], PadState>("pad_mouse");
 export const desktopKill = callable<[key: string], { ok: boolean; error?: string | null }>("desktop_kill");
-export interface DeskOpts { ok: boolean; browser?: "chromium" | "firefox" | "other" | null; scale: number; touch: boolean }
-export const desktopOpts = callable<[key: string, scale?: number | null, touch?: boolean | null], DeskOpts>("desktop_opts");
+export interface DeskOpts { ok: boolean; browser?: "chromium" | "firefox" | "other" | null; scale: number; touch: boolean; fullscreen: boolean }
+export const desktopOpts = callable<[key: string, scale?: number | null, touch?: boolean | null, fullscreen?: boolean | null], DeskOpts>("desktop_opts");
 export const SCALES = [1, 1.25, 1.5, 1.75, 2] as const;
 export const scaleLabel = (s: number) => `${Math.round(s * 100)} %`;
 export const desktopPins = callable<[], { pins: Pin[] }>("desktop_pins");
@@ -40,11 +48,20 @@ export function filterApps(apps: DesktopApp[], q: string): DesktopApp[] {
   return out.sort((a, b) => norm(a.name).localeCompare(norm(b.name)));
 }
 
-/** Puro: agrupa por categoría del escritorio, grupos por nombre y «Otras» al final. */
+/** Orden de los grupos: lo más usado en Game Mode primero (Navegadores…); los desconocidos por nombre; «Otras» al final. */
+const GROUP_ORDER = ["Navegadores", "Multimedia", "Juegos y emuladores", "Herramientas", "Oficina", "Desarrollo"];
+const groupRank = (g: string): number => (g === "Otras" ? 999 : GROUP_ORDER.includes(g) ? GROUP_ORDER.indexOf(g) : 100);
+
+/** Puro: agrupa por categoría del escritorio (orden fijo, «Otras» al final). */
 export function groupApps(apps: DesktopApp[]): Array<{ group: string; apps: DesktopApp[] }> {
   const m = new Map<string, DesktopApp[]>();
   for (const a of apps) { const g = a.group || "Otras"; m.set(g, [...(m.get(g) ?? []), a]); }
-  return [...m.entries()].map(([group, list]) => ({ group, apps: list })).sort((a, b) => (a.group === "Otras" ? 1 : b.group === "Otras" ? -1 : a.group.localeCompare(b.group)));
+  return [...m.entries()].map(([group, list]) => ({ group, apps: list })).sort((a, b) => groupRank(a.group) - groupRank(b.group) || a.group.localeCompare(b.group));
+}
+
+/** Puro: separa las abiertas (van arriba, en su propia sección) del resto. */
+export function splitRunning(apps: DesktopApp[], running: string[]): { open: DesktopApp[]; rest: DesktopApp[] } {
+  return { open: apps.filter((a) => running.includes(a.key)), rest: apps.filter((a) => !running.includes(a.key)) };
 }
 
 /** Puro: ¿está agregada al cajón de QAM? */
@@ -104,11 +121,17 @@ let runCache: { at: number; keys: string[]; apps: Pin[] } | null = null;
 export const runningCached = (): string[] => runCache?.keys ?? [];
 /** Apps de escritorio abiertas (con nombre e icono), estén o no agregadas a QAM. */
 export const runningAppsCached = (): Pin[] => runCache?.apps ?? [];
+let runFlight: Promise<string[]> | null = null;
+/** Apps abiertas. `force` salta la caché de 4 s, pero las peticiones simultáneas (franja, fila de apps, pestaña) comparten una sola. */
 export async function loadRunning(force = false): Promise<string[]> {
   if (!force && runCache && Date.now() - runCache.at < 4000) return runCache.keys;
-  const r = await desktopRunning().catch(() => null);
-  runCache = { at: Date.now(), keys: Array.isArray(r?.keys) ? r!.keys : [], apps: Array.isArray(r?.apps) ? r!.apps : [] };
-  return runCache.keys;
+  if (runFlight) return runFlight;
+  runFlight = (async () => {
+    const r = await desktopRunning().catch(() => null);
+    runCache = { at: Date.now(), keys: Array.isArray(r?.keys) ? r!.keys : [], apps: Array.isArray(r?.apps) ? r!.apps : [] };
+    return runCache.keys;
+  })().finally(() => { runFlight = null; });
+  return runFlight;
 }
 
 /** Puro: opciones del menú de una app de escritorio (abierta o no), en el orden en que se muestran. */
@@ -117,3 +140,11 @@ export function menuOptions(running: boolean): Array<{ id: "open" | "show" | "mi
     ? [{ id: "show", label: "Mostrar" }, { id: "minimize", label: "Minimizar" }, { id: "close", label: "Cerrar" }, { id: "kill", label: "Forzar cierre" }]
     : [{ id: "open", label: "Abrir" }];
 }
+
+/** Volver a Steam: todas las apps de escritorio quedan abiertas pero fuera de pantalla. */
+export async function backToSteam(): Promise<{ ok: boolean }> {
+  crumb("volver a Steam (apps abiertas fuera de pantalla)");
+  try { return await desktopHome(); } catch { return { ok: false }; }
+}
+/** Puro: ¿hay que mostrar la franja de apps abiertas? Solo con apps de escritorio abiertas. */
+export const showOpenStrip = (running: Array<{ key: string }>): boolean => running.length > 0;

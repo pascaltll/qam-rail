@@ -17,6 +17,8 @@ OTHER = "Otras"
 # Cosas que no tienen sentido (o son peligrosas) lanzadas desde la pantalla de juego.
 EXCLUDE_ID = re.compile(r"^(steam|valve\.steam|com\.valvesoftware\.steam|qam-?rail|decky|.*decky.*loader|return-?to-?gaming-?mode|steamos-.*|org\.kde\.discover.*)$", re.I)
 EXCLUDE_NAME = re.compile(r"(volver al modo|return to gaming|instalar steamos|install steamos|decky|qam rail|^steam$)", re.I)
+# Accesos que Steam crea para sus juegos (Exec «steam steam://rungameid/N», steam_app_N.desktop…): ya están en la biblioteca, aquí sobran.
+STEAM_GAME_ID = re.compile(r"^(steam_app_\d+|steam_icon_\d+|.*-steam-\d+)$", re.I)
 FLATPAK_DIRS = ("/var/lib/flatpak/exports/share/applications", "~/.local/share/flatpak/exports/share/applications")
 SYSTEM_DIRS = ("/usr/share/applications", "~/.local/share/applications")
 APPIMAGE_DIRS = ("~/AppImages", "~/Applications")   # [H] la de Gear Lever por defecto es ~/AppImages
@@ -88,6 +90,17 @@ def _flatpak_id(argv):
     return None
 
 
+def is_steam_game(base: str, argv, d: dict) -> bool:
+    """¿Es un acceso a un juego de Steam? (steam_app_N, Exec «steam steam://…» o «steam -applaunch N», o Steam en sus claves)."""
+    if STEAM_GAME_ID.match(base or ""):
+        return True
+    if any(str(a).lower().startswith("steam://") for a in argv):
+        return True
+    if argv and os.path.basename(argv[0]) in ("steam", "steam.sh") and any(a in ("-applaunch", "-silent") or a.startswith("steam:") for a in argv[1:]):
+        return True
+    return bool(re.search(r"(^|;)Steam(;|$)", d.get("Keywords", "") + ";" + d.get("X-KDE-Keywords", ""))) and "Game" in d.get("Categories", "") and bool(argv) and os.path.basename(argv[0]).startswith("steam")
+
+
 def entry_from_desktop(path: str, text: str, home: str | None = None):
     """Un .desktop → ficha o (None, motivo). No hace E/S salvo comprobar si el destino es un AppImage."""
     d = parse_desktop(text)
@@ -108,6 +121,8 @@ def entry_from_desktop(path: str, text: str, home: str | None = None):
     if not name or argv is None:
         return None, "sin nombre o con Exec no permitido"
     fid = _flatpak_id(argv)
+    if is_steam_game(base, argv, d):
+        return None, "juego de Steam"
     if EXCLUDE_ID.match(fid or base) or EXCLUDE_NAME.search(name):
         return None, "excluida"
     target = argv[0].replace("~", home, 1) if (home and argv[0].startswith("~")) else argv[0]
@@ -187,6 +202,17 @@ def _read(path: str):
 CHROMIUM_RE = re.compile(r"(chrome|chromium|msedge|microsoft-edge|edge|brave|vivaldi|opera|thorium|ungoogled)", re.I)
 FIREFOX_RE = re.compile(r"(firefox|librewolf|zen|waterfox|floorp)", re.I)
 FULLSCREEN_FLAG = "--start-fullscreen"
+# Apps sin opción de línea de órdenes para arrancar a pantalla completa (Stremio la rechaza): se les pulsa la tecla de pantalla completa una vez al abrir.
+AUTO_FS = ((re.compile(r"stremio", re.I), "F11"),)
+
+
+def auto_fullscreen_key(key: str, name: str = ""):
+    """Tecla que se manda UNA vez a una app recién abierta para ponerla a pantalla completa, o None si no hay."""
+    hay = f"{key} {name}"
+    for rx, k in AUTO_FS:
+        if rx.search(hay):
+            return k
+    return None
 
 
 def browser_kind(app: dict):
@@ -199,6 +225,11 @@ def browser_kind(app: dict):
     if FIREFOX_RE.search(hay):
         return "firefox"
     return "other"
+
+
+def is_browser_key(key: str) -> bool:
+    """¿La clave de la app es la de un navegador (Chromium/Firefox y derivados)?"""
+    return bool(key and (CHROMIUM_RE.search(key) or FIREFOX_RE.search(key)))
 
 
 def launch_plan(app: dict, which=None, home: str = "", fullscreen: bool = True) -> dict:
@@ -223,37 +254,81 @@ SCALES = (1.0, 1.25, 1.5, 1.75, 2.0)
 
 
 def clean_opts(raw) -> dict:
-    """Ajustes de lanzamiento de un navegador: `scale` (zoom de la interfaz, 1,0–2,0 en pasos de 0,25) y `touch` (eventos táctiles)."""
+    """Ajustes de lanzamiento de un navegador: `scale` (zoom de la interfaz, 1,0–2,0 en pasos de 0,25), `touch` (eventos táctiles)
+    y `fullscreen` (Chromium: pantalla completa, que oculta las pestañas, o ventana maximizada)."""
     raw = raw if isinstance(raw, dict) else {}
     try:
         sc = float(raw.get("scale", 1.0))
     except (TypeError, ValueError):
         sc = 1.0
     sc = min(SCALES, key=lambda x: abs(x - sc)) if sc == sc else 1.0
-    return {"scale": sc, "touch": bool(raw.get("touch", False))}
+    return {"scale": sc, "touch": bool(raw.get("touch", False)), "fullscreen": bool(raw.get("fullscreen", True))}
 
 
 def apply_opts(argv: list, kind, opts: dict) -> list:
-    """Añade los ajustes de lanzamiento (solo navegadores). Chromium/Edge: `--force-device-scale-factor` y `--touch-events=enabled`.
-    Firefox no tiene opción de línea de órdenes: se usan variables de entorno (`GDK_DPI_SCALE`, `MOZ_USE_XINPUT2`), con `--env=` si es Flatpak. Sin shell."""
+    """Ajustes de lanzamiento por línea de órdenes (solo Chromium/Edge): `--force-device-scale-factor`, `--touch-events=enabled`, y
+    `--start-maximized` en lugar de `--start-fullscreen` (se ven las pestañas). Firefox no admite opciones para esto: va en `user.js` del perfil."""
     o = clean_opts(opts)
-    if kind not in ("chromium", "firefox") or (o["scale"] == 1.0 and not o["touch"]):
-        return list(argv)
     out = list(argv)
-    if kind == "chromium":
-        if o["scale"] != 1.0:
-            out.append(f"--force-device-scale-factor={o['scale']:g}")
-        if o["touch"]:
-            out.append("--touch-events=enabled")
+    if kind != "chromium":
         return out
-    env = []
+    if not o["fullscreen"]:
+        out = [a for a in out if a != FULLSCREEN_FLAG] + ["--start-maximized"]
     if o["scale"] != 1.0:
-        env.append(f"GDK_DPI_SCALE={o['scale']:g}")
+        out.append(f"--force-device-scale-factor={o['scale']:g}")
     if o["touch"]:
-        env.append("MOZ_USE_XINPUT2=1")
-    if os.path.basename(out[0]) == "flatpak" and len(out) > 1 and out[1] == "run":
-        return out[:2] + [f"--env={e}" for e in env] + out[2:]
-    return ["env", *env, *out]
+        out.append("--touch-events=enabled")
+    return out
+
+
+UJ_BEGIN, UJ_END = "// >>> qam-rail (no editar este bloque)", "// <<< qam-rail"
+
+
+def userjs_block(opts: dict) -> str:
+    """Bloque para `user.js` de Firefox: zoom de toda la interfaz (`layout.css.devPixelsPerPx`) y eventos táctiles. Siempre explícito (1,0 = valor por defecto)."""
+    o = clean_opts(opts)
+    px = "-1.0" if o["scale"] == 1.0 else f"{o['scale']:g}"
+    return f'{UJ_BEGIN}\nuser_pref("layout.css.devPixelsPerPx", "{px}");\nuser_pref("dom.w3c_touch_events.enabled", {1 if o["touch"] else 2});\n{UJ_END}\n'
+
+
+def merge_userjs(text: str, block: str) -> str:
+    """Sustituye nuestro bloque en un `user.js` (o lo añade al final) sin tocar el resto."""
+    text = text or ""
+    i = text.find(UJ_BEGIN)
+    if i >= 0:
+        j = text.find(UJ_END, i)
+        if j >= 0:
+            text = text[:i] + text[j + len(UJ_END):].lstrip("\n")
+    return (text.rstrip("\n") + "\n" if text.strip() else "") + block
+
+
+def firefox_profiles(home: str) -> list:
+    """Carpetas de perfil de Firefox (Flatpak, nativo, snap) leyendo `profiles.ini`: el perfil por defecto de cada instalación."""
+    import configparser
+    out = []
+    for root in (os.path.join(home, ".var/app/org.mozilla.firefox/.mozilla/firefox"), os.path.join(home, ".mozilla/firefox"),
+                 os.path.join(home, "snap/firefox/common/.mozilla/firefox")):
+        ini = os.path.join(root, "profiles.ini")
+        if not os.path.isfile(ini):
+            continue
+        cp = configparser.RawConfigParser()
+        try:
+            cp.read(ini, encoding="utf-8")
+        except (configparser.Error, OSError):
+            continue
+        paths = []
+        for sec in cp.sections():
+            if sec.startswith("Install") and cp.has_option(sec, "Default"):
+                paths.append((cp.get(sec, "Default"), True))
+        if not paths:
+            for sec in cp.sections():
+                if sec.startswith("Profile") and cp.has_option(sec, "Path") and cp.get(sec, "Default", fallback="0") == "1":
+                    paths.append((cp.get(sec, "Path"), cp.get(sec, "IsRelative", fallback="1") == "1"))
+        for pth, rel in paths:
+            d = os.path.normpath(os.path.join(root, pth) if rel or not os.path.isabs(pth) else pth)
+            if d.startswith(root) and d not in out:
+                out.append(d)
+    return out
 
 
 def icon_path(icon: str | None, home: str, isfile=os.path.isfile):
@@ -336,3 +411,4 @@ def baselayer_with(cur: list, appid: int) -> list:
 
 def baselayer_without(cur: list, appid: int) -> list:
     return [x for x in cur if x != appid]
+

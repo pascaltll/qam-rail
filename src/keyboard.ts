@@ -78,14 +78,97 @@ export function urlMethods(): Array<[string, (u: string) => unknown]> {
   return out;
 }
 
-/** Abre (o cierra) el teclado: método interno de Steam, luego enlace en el cliente, y al final el respaldo del backend. */
+import { desktopOverlay, qamEvent } from "./qamDesktop";
+
+const klog = callable<[text: string], void>("keyboard_log");
+const note = (t: string): void => { void klog(t).catch(() => undefined); };
+/** Anota una línea en keyboard.log (nunca lo que se escribe). */
+export const kbNote = note;
+
+/** Gestores de teclado que cuelgan de la interfaz de Steam (no de m_refKeyboard): se listan y se prueban sus métodos de «mostrar». [H] */
+function steamKeyboardManagers(): Array<[string, Any]> {
+  const w = window as unknown as Any;
+  const out: Array<[string, Any]> = [];
+  const pick = (root: string, ...path: string[]): unknown => {
+    let o: unknown = w[root];
+    for (const k of path) { if (!o || typeof o !== "object") return undefined; o = (o as Any)[k]; }
+    return o;
+  };
+  const add = (name: string, o: unknown) => { if (o && typeof o === "object") out.push([name, o as Any]); };
+  const tries: Array<[string, () => unknown]> = [
+    ["SteamUIStore.ActiveWindowInstance.VirtualKeyboardManager", () => pick("SteamUIStore", "ActiveWindowInstance", "VirtualKeyboardManager")],
+    ["SteamUIStore.VirtualKeyboardManager", () => pick("SteamUIStore", "VirtualKeyboardManager")],
+    ["VirtualKeyboardManager", () => w.VirtualKeyboardManager],
+    ["SteamClient.Input", () => pick("SteamClient", "Input")],
+    ["SteamClient.System", () => pick("SteamClient", "System")],
+  ];
+  for (const [name, f] of tries) { try { add(name, f()); } catch { /* nada */ } }
+  return out;
+}
+
+function methodNames(o: object): string[] {
+  const names: string[] = [];
+  for (let p: object | null = o, n = 0; p && p !== Object.prototype && n < 4; p = Object.getPrototypeOf(p), n++) names.push(...Object.getOwnPropertyNames(p));
+  return [...new Set(names)];
+}
+
+/** Escribe en keyboard.log qué gestores existen y qué métodos de teclado tienen, para saber por dónde abrirlo. */
+export function probeKeyboard(): void {
+  for (const [name, o] of steamKeyboardManagers()) {
+    const m = methodNames(o).filter((x) => /keyboard|vkb|osk/i.test(x));
+    note(`sonda ${name}: ${m.length ? m.slice(0, 20).join(", ") : "(sin métodos de teclado)"}`);
+  }
+}
+
+/** El teclado es de la interfaz de Steam: sobre una app de escritorio solo se ve con STEAM_OVERLAY=1 (como el panel). Se sube al abrirlo y se baja
+ *  cuando Steam dice que ya no se muestra (o, como tope, a los 5 min). Si no se puede leer ese estado, se suelta a los ~2 s. */
+export function holdOverlayWhileShowing(vkm: Any, poll = 400, first = 800, max = 300000): void {
+  void Promise.resolve(desktopOverlay(true, "teclado")).catch(() => undefined);
+  void Promise.resolve(qamEvent("steamkb.abre")).catch(() => undefined);
+  note("teclado: overlay 1");
+  let still = 0, n = 0;
+  const t0 = Date.now();
+  const tick = (): void => {
+    let showing = false;
+    try { showing = !!vkm.m_bIsVirtualKeyboardShowing; } catch { /* nada */ }
+    if (n++ === 0) note(`teclado: m_bIsVirtualKeyboardShowing = ${showing}`);
+    still = showing ? 0 : still + 1;
+    if (still >= 3 || Date.now() - t0 > max) {
+      void Promise.resolve(desktopOverlay(false, "teclado")).catch(() => undefined);
+      void Promise.resolve(qamEvent("steamkb.cierra")).catch(() => undefined);
+      note("teclado: overlay 0");
+      return;
+    }
+    window.setTimeout(tick, poll);
+  };
+  window.setTimeout(tick, first);
+}
+
+const VKM_TRY: Array<[string, boolean]> = [
+  ["ShowVirtualKeyboard", false], ["OpenVirtualKeyboard", false], ["ShowKeyboard", false],
+  ["SetVirtualKeyboardShowing", true], ["SetKeyboardVisible", true], ["ShowOnScreenKeyboard", false],
+];
+
+/** Abre (o cierra) el teclado: método interno de Steam, gestores de la interfaz, enlace en el cliente y al final el backend. Cada intento queda en keyboard.log. */
 export async function toggleKeyboard(close = false): Promise<string | null> {
-  if (!close) { const m = showKeyboard(); if (m) return m; }
+  note(`--- ${close ? "cerrar" : "abrir"} teclado ---`);
+  if (!close) probeKeyboard();
+  if (!close) { const m = showKeyboard(); note(`m_refKeyboard: ${m ?? "sin método"}`); if (m) return m; }
   else if (dismissKeyboard(document) > 0) return "dismiss";
+  if (!close) {
+    for (const [name, o] of steamKeyboardManagers()) {
+      for (const [m, arg] of VKM_TRY) {
+        const f = o[m];
+        if (typeof f !== "function") continue;
+        try { await Promise.resolve(arg ? (f as (v: boolean) => unknown).call(o, true) : (f as () => unknown).call(o)); note(`${name}.${m}: llamado sin error`); if (/VirtualKeyboardManager$/.test(name)) holdOverlayWhileShowing(o); return `${name}.${m}`; }
+        catch (e) { note(`${name}.${m}: error ${String(e).slice(0, 80)}`); }
+      }
+    }
+  }
   const u = close ? KEYBOARD_URL.close : KEYBOARD_URL.open;
   for (const [name, fn] of urlMethods()) {
-    try { await Promise.resolve(fn(u)); return name; } catch { /* siguiente */ }
+    try { await Promise.resolve(fn(u)); note(`${name}(${u}): sin error (no prueba que se abra)`); return name; } catch (e) { note(`${name}: error ${String(e).slice(0, 80)}`); }
   }
-  try { const r = await urlBackend(close); if (r?.ok) return "backend:steam-url"; } catch { /* nada */ }
+  try { const r = await urlBackend(close); note(`backend steam-url: ${JSON.stringify(r)}`); if (r?.ok) return "backend:steam-url"; } catch (e) { note(`backend: error ${String(e).slice(0, 80)}`); }
   return null;
 }

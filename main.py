@@ -7,6 +7,7 @@ import asyncio
 import json
 import os
 import re
+import sys
 import time
 
 import decky
@@ -29,6 +30,14 @@ try:
     import qam_desktop
 except ImportError:
     qam_desktop = None
+try:
+    import qam_pad
+except ImportError:
+    qam_pad = None
+try:
+    import qam_blackbox
+except ImportError:
+    qam_blackbox = None
 try:
     import qam_self
 except ImportError:
@@ -113,10 +122,79 @@ class Plugin:
                     decky.logger.warning("QAM Rail Dev: 2 arranques sin confirmar, vuelvo a la versión estable")
         except Exception as exc:  # noqa: BLE001
             decky.logger.error(f"canal: {exc}")
+        try:  # mando como ratón para las apps de escritorio (0.54 dev.26): duerme sin lanzar nada mientras no haya una app delante
+            if qam_pad is not None:
+                self._pad = qam_pad.PadRunner(self._pad_ours, self._pad_env, self._pad_log, self._pad_enabled, event=self._tl_combo)
+                self._spawn(self._pad.run())
+            if qam_blackbox is not None and qam_pad is not None:
+                self._spawn(self._wd_loop())
+        except Exception as exc:  # noqa: BLE001
+            decky.logger.error(f"mando: {exc}")
         decky.logger.info(f"QAM Rail listo ({_me()}, activo: {_active()})")
 
+    async def _unload_clean(self) -> None:
+        """Al descargar el plugin (actualizar, reiniciar Decky): quita nuestras apps de la capa base de gamescope y baja el overlay que subimos.
+        Si no, Steam queda debajo de una app que ya nadie gestiona y la pantalla puede quedarse negra."""
+        if qam_desktop is None:
+            return
+        prefix, seen = await self._user_session()
+        display = seen.get("DISPLAY") or ":0"
+        for key in sorted({str(k) for k in self._claims.values()}):
+            await self._base_layer(prefix, display, key, False)
+        if getattr(self, "_ov_prev", None):
+            await self.desktop_overlay(False, reason="descarga")
+        self._tag_log("descarga del plugin: capa base y overlay limpiados")
+
     async def _unload(self):
+        try:
+            await asyncio.wait_for(self._unload_clean(), 4)
+        except Exception:  # noqa: BLE001 — nunca debe impedir la descarga
+            pass
+        self._kx_close()
+        try:
+            if getattr(self, "_pad", None):
+                self._pad.stop()
+        except Exception:  # noqa: BLE001
+            pass
         decky.logger.info("QAM Rail descargado")
+
+    # ---- Mando como ratón (dev.26) ----
+    def _pad_log(self, text: str) -> None:
+        try:
+            with open(_path("pad.log"), "a", encoding="utf-8") as fh:
+                fh.write(time.strftime("%H:%M:%S ") + text + "\n")
+            if os.path.getsize(_path("pad.log")) > 40_000:
+                os.replace(_path("pad.log"), _path("pad.log.old"))
+        except OSError:
+            pass
+
+    def _pad_enabled(self) -> bool:
+        try:
+            with open(_path("pad-mouse.json"), encoding="utf-8") as fh:
+                return bool(json.load(fh).get("on", True))
+        except (OSError, ValueError, AttributeError):
+            return True
+
+    async def _pad_env(self) -> tuple:
+        _prefix, seen = await self._user_session()
+        return seen.get("DISPLAY") or ":0", seen.get("XAUTHORITY") or None
+
+    def _pad_ours(self) -> set:
+        """Identificadores de las apps de escritorio abiertas por QAM Rail (las de QAM, tipo MiniTube, llevan su propio mando)."""
+        if qam_desktop is None:
+            return set()
+        return {qam_desktop.app_gameid(k) for k in set(self._claims.values()) if not str(k).startswith("qam:")}
+
+    async def pad_mouse(self, on=None) -> dict:
+        """Interruptor «mando como ratón» (activado por defecto) y estado del lector, para el panel y los diagnósticos."""
+        if on is not None:
+            try:
+                with open(_path("pad-mouse.json"), "w", encoding="utf-8") as fh:
+                    json.dump({"on": bool(on)}, fh)
+            except OSError:
+                pass
+        st = self._pad.status() if getattr(self, "_pad", None) else {"active": False, "devices": [], "events": 0, "x": False}
+        return {"ok": qam_pad is not None, "on": self._pad_enabled(), **st}
 
     async def get_settings(self) -> dict:
         try:
@@ -576,7 +654,17 @@ class Plugin:
         return {"ok": True, "name": app["name"], "source": app["source"], "icon_path": qam_desktop.icon_path(app.get("icon"), _home()), **plan}
 
     async def _user_session(self) -> tuple[list, dict]:
-        """(prefijo para ejecutar como el usuario de la sesión, variables de su gestor systemd --user)."""
+        """(prefijo para ejecutar como el usuario de la sesión, variables de su gestor systemd --user). Se guarda 60 s: antes cada orden lanzaba
+        además `runuser … systemctl show-environment` (media docena de procesos de más cada vez que se abría el panel con una app abierta)."""
+        c = getattr(self, "_sess_c", None)
+        if c and time.monotonic() - c[0] < 60:
+            return list(c[1]), dict(c[2])
+        prefix, seen = await self._user_session_fresh()
+        if seen:
+            self._sess_c = (time.monotonic(), list(prefix), dict(seen))
+        return prefix, seen
+
+    async def _user_session_fresh(self) -> tuple[list, dict]:
         prefix: list = []
         env_pairs: list = []
         if os.getuid() == 0:
@@ -678,16 +766,62 @@ class Plugin:
         return {k for w, k in claims.items() if w in alive}
 
     async def desktop_running(self) -> dict:
-        """Apps de escritorio que QAM Rail abrió y siguen abiertas (unidad activa o ventana viva), con nombre e icono para gestionarlas."""
+        """Apps de escritorio que QAM Rail abrió y siguen abiertas (unidad activa o ventana viva), con nombre e icono para gestionarlas.
+        Resultado válido 1,5 s y una sola ejecución a la vez: al abrir el panel lo pedían a la vez la franja, la fila de apps y el modo overlay
+        (unos seis procesos cada uno). Abrir, cerrar o minimizar una app lo invalida."""
+        c = getattr(self, "_run_c", None)
+        if c and time.monotonic() - c[0] < 1.5:
+            return dict(c[1])
+        t = getattr(self, "_run_t", None)
+        if t is None or t.done():
+            t = self._run_t = asyncio.ensure_future(self._desktop_running_now())
+        r = await asyncio.shield(t)
+        self._run_c = (time.monotonic(), r)
+        return dict(r)
+
+    async def _desktop_running_now(self) -> dict:
+        t0 = time.monotonic()
+        try:
+            return await self._desktop_running_scan()
+        finally:
+            dt = time.monotonic() - t0
+            if dt > 0.25:
+                self._tag_log(f"  lento: desktop_running {int(dt * 1000)} ms")
+
+    async def _desktop_running_scan(self) -> dict:
         code, out = await self._systemctl_user("list-units", "qam-desk-*", "--state=active,activating", "--plain", "--no-legend", "--no-pager")
         units = {ln.split()[0].removesuffix(".service") for ln in out.splitlines() if ln.strip() and ln.split()[0].startswith("qam-desk-")} if code == 0 else set()
-        live = await self._live_claim_keys()
+        live = await self._live_claim_keys() | await self._flatpak_running()
         if not units and not live:
             return {"keys": [], "apps": []}
         data = await self.desktop_scan(False)
         apps = [a for a in data.get("apps", []) if self._desk_unit(a.get("key", "")) in units or a.get("key") in live]
         return {"keys": [a["key"] for a in apps],
                 "apps": [{"key": a["key"], "name": a.get("name", a["key"]), "source": a.get("source", ""), "icon": self._icon_data(a)} for a in apps]}
+
+    async def _flatpak_running(self) -> set:
+        """Apps Flatpak en marcha según `flatpak ps` (cubre las abiertas fuera de QAM Rail o que reenviaron a una instancia previa, p. ej. Edge)."""
+        try:
+            prefix, _seen = await self._user_session()
+            proc = await asyncio.create_subprocess_exec(*prefix, "flatpak", "ps", "--columns=application", env=self._user_env(), stdin=asyncio.subprocess.DEVNULL,
+                                                        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL)
+            out, _ = await asyncio.wait_for(proc.communicate(), 5)
+            return {ln.strip() for ln in out.decode("utf-8", "replace").splitlines() if re.fullmatch(r"[A-Za-z0-9_.-]{3,120}", ln.strip())}
+        except Exception:
+            return set()
+
+    async def _flatpak_kill(self, key: str) -> bool:
+        """Apps Flatpak: `flatpak kill <id>` cierra TODAS sus instancias aunque no estén en nuestra unidad (el navegador reenvía a la que ya había)."""
+        app = await self._desk_find(str(key))
+        if not app or app.get("source") != "flatpak" or not re.fullmatch(r"[A-Za-z0-9_.-]{3,120}", str(key)):
+            return False
+        try:
+            prefix, _seen = await self._user_session()
+            proc = await asyncio.create_subprocess_exec(*prefix, "flatpak", "kill", str(key), env=self._user_env(), stdin=asyncio.subprocess.DEVNULL,
+                                                        stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL)
+            return (await asyncio.wait_for(proc.wait(), 5)) == 0
+        except Exception:
+            return False
 
     async def _kill_windows_of(self, key: str, sig: int) -> int:
         """Señal a los procesos dueños de las ventanas marcadas de la app (para las que escapan de su unidad). Nunca a PIDs < 100 (hilos del núcleo)."""
@@ -708,11 +842,15 @@ class Plugin:
 
     async def desktop_stop(self, key: str) -> dict:
         """Cierra la app que abrió QAM Rail: para su unidad (termina todos sus procesos) y, si su ventana vive en otro proceso, le envía SIGTERM."""
+        self._run_c = None
         import signal
         unit = self._desk_unit(key) + ".service"
         code, out = await self._systemctl_user("stop", unit)
         n = await self._kill_windows_of(key, signal.SIGTERM)
+        if await self._flatpak_kill(key):
+            n += 1
         await self._base_off(key)
+        self._tl("app.cerrar", app=str(key)[:30], ventanas=n, codigo=code)
         if n:
             await asyncio.sleep(0.8)
             await self._live_claim_keys()
@@ -846,59 +984,435 @@ class Plugin:
                 rc, _o, err = await self._x_run(prefix, display, "xprop", "-id", w["id"], "-f", "STEAM_GAME", "32c", "-set", "STEAM_GAME", str(qam_desktop.app_gameid(key)))
                 _rc2, chk, _e = await self._x_run(prefix, display, "xprop", "-id", w["id"], "STEAM_GAME")
                 self._tag_log(f"  {w['id']} {w['classes']} {w['w']}x{w['h']}: xprop código {rc} {err.strip()[:100]} → {chk.strip()[:60]}")
+                await self._fit_window(w["id"], str(key))
+                if qam_desktop.auto_fullscreen_key(str(key)):
+                    asyncio.ensure_future(self._auto_fs(w["id"], str(key)))
                 await self._base_layer(prefix, display, key, True)
             if done and i % 5 == 4:
                 await self._base_layer(prefix, display, key, True)  # Steam puede reescribir la lista: se vuelve a poner delante
 
+    async def _auto_fs(self, wid, key: str) -> None:
+        """Una vez por ventana nueva: espera a que la app cargue y le manda su tecla de pantalla completa (Stremio: F11). Sin verificar en el equipo."""
+        k = qam_desktop.auto_fullscreen_key(key)
+        try:
+            n = int(str(wid), 0)
+            done = self.__dict__.setdefault("_fs_done", set())
+            if n in done:
+                return
+            done.add(n)
+            await asyncio.sleep(3.5)
+            x = await self._kx()
+            if x.geometry(n) is None:
+                return
+            x.focus(n)
+            x.key(k)
+            x.flush()
+            self._tag_log(f"  {wid}: pantalla completa automática ({k})")
+        except Exception as e:  # noqa: BLE001
+            self._tag_log(f"  {wid}: pantalla completa automática falló ({e})")
+
+    async def _fit_window(self, wid, key: str = "") -> bool:
+        """Ventana de app de escritorio a pantalla completa (gamescope las centra con su tamaño propio, p. ej. Stremio a medias). Solo si es más pequeña."""
+        if qam_desktop.is_browser_key(key):  # los navegadores ya arrancan a pantalla completa/maximizados: no se tocan
+            return False
+        try:
+            n = int(str(wid), 0)
+            x = await self._kx()
+            w, h = x.screen_size()
+            g = x.geometry(n)
+            if g and (g[0] < w or g[1] < h):
+                x.resize(n, w, h)
+                self._tag_log(f"  {wid}: ajustada a pantalla completa {g[0]}x{g[1]} → {w}x{h}")
+                return True
+        except Exception as e:  # noqa: BLE001 — solo estética: nunca debe romper el abrir
+            self._tag_log(f"  {wid}: no se pudo ajustar ({e})")
+        return False
+
+    async def _desk_reshow(self, key: str, prefix: list, display: str) -> int:
+        """App ya abierta: vuelve a poner STEAM_GAME y la capa base en sus ventanas. Son las que ya marcamos antes (minimizadas) o, si la abrió otro,
+        las que casan por clase con el nombre de la app («firefox», «edge»…). Antes «Mostrar» no hacía nada tras Minimizar o con la app abierta fuera."""
+        app = await self._desk_find(str(key))
+        toks = {t for t in re.split(r"[^a-z0-9]+", (str(key).split(".")[-1] if "." in str(key) else str(key)).lower()) if len(t) >= 3}
+        toks |= {t for t in re.split(r"[^a-z0-9]+", ((app or {}).get("name") or "").lower()) if len(t) >= 4}
+        toks |= {c.lower() for c in self._desk_classes.get(str(key), set()) if c}
+        wins = await self._x_windows(prefix, display)
+        n = 0
+        for w in wins:
+            cls = " ".join(c or "" for c in w["classes"]).lower()
+            if re.search(r"steam|mangoapp|gamescope", cls) or min(w["w"], w["h"]) < 200:
+                continue
+            mine = self._claims.get(w["id"]) == str(key)
+            if not mine and (w["id"] in self._claims or not any(t in cls for t in toks)):
+                continue
+            await self._x_run(prefix, display, "xprop", "-id", w["id"], "-f", "STEAM_GAME", "32c", "-set", "STEAM_GAME", str(qam_desktop.app_gameid(key)))
+            self._claims[w["id"]] = str(key)
+            await self._fit_window(w["id"], str(key))
+            n += 1
+        if n:
+            await self._base_layer(prefix, display, key, True)
+        self._tag_log(f"== {key}: ya abierta, ventanas vueltas a mostrar {n} (tokens {sorted(toks)[:6]})")
+        return n
+
     async def desktop_minimize(self, key: str) -> dict:
         """Minimizar: quita STEAM_GAME a las ventanas de la app; gamescope deja de mostrarlas y vuelve Steam. La app sigue abierta («Abrir» la vuelve a mostrar)."""
+        self._run_c = None
         if qam_desktop is None:
             return {"ok": False}
         prefix, seen = await self._user_session()
         display = seen.get("DISPLAY") or ":0"
         self._xauth = seen.get("XAUTHORITY") or None
         await self._base_layer(prefix, display, key, False)
+        self._tl("app.minimizar", app=str(key)[:30])
         return {"ok": True}
 
-    async def desktop_overlay(self, on: bool) -> dict:
-        """Con el panel abierto y alguna app de escritorio en marcha, sube STEAM_OVERLAY=1 en la ventana de Steam (gamescope dibuja entonces
-        la interfaz de Steam —el panel, el teclado— por encima de la app, como con un juego). Al cerrar devuelve el valor anterior."""
+    async def desktop_home(self) -> dict:
+        """«Volver a Steam»: quita de la capa base a todas las apps de escritorio abiertas (siguen abiertas; «Mostrar» las trae de nuevo)."""
         if qam_desktop is None:
             return {"ok": False}
+        prefix, seen = await self._user_session()
+        display = seen.get("DISPLAY") or ":0"
+        self._xauth = seen.get("XAUTHORITY") or None
+        keys = set(self._claims.values()) | set((await self.desktop_running()).get("keys", []))
+        for k in keys:
+            await self._base_layer(prefix, display, k, False)
+        self._tag_log(f"== volver a Steam: {len(keys)} app(s) fuera de la capa base")
+        self._tl("app.volver_a_steam", n=len(keys))
+        return {"ok": True, "n": len(keys)}
+
+    async def _steam_wid(self, prefix: list, display: str, fresh: bool = False):
+        """Ventana «Steam Big Picture Mode». Se recuerda su id (`xwininfo -root -tree` recorre toda la pantalla); se vuelve a buscar si falla."""
+        if not fresh and getattr(self, "_steam_wid_c", None):
+            return self._steam_wid_c
+        rc, out, _e = await self._x_run(prefix, display, "xwininfo", "-root", "-tree")
+        self._steam_wid_c = next((l.split()[0] for l in out.splitlines() if '"Steam Big Picture Mode"' in l), None) if rc == 0 else None
+        return self._steam_wid_c
+
+    def _anim_enabled(self) -> bool:
+        try:
+            with open(_path("desktop-anim.json"), encoding="utf-8") as fh:
+                return bool(json.load(fh).get("on", True))
+        except (OSError, ValueError, AttributeError):
+            return True
+
+    async def _kx(self):
+        """Conexión a X reutilizada para el teclado del panel (se cierra al descargar o si falla)."""
+        if getattr(self, "_kx_x", None) is None:
+            display, xauth = await self._pad_env()
+            self._kx_x = qam_pad.XOut(display, xauth)
+        return self._kx_x
+
+    def _kx_close(self) -> None:
+        x = getattr(self, "_kx_x", None)
+        self._kx_x = None
+        if x is not None:
+            try:
+                x.close()
+            except Exception:  # noqa: BLE001
+                pass
+
+    def _front_wid(self, x):
+        """Ventana de la app de escritorio que gamescope muestra (la primera de la capa base que es nuestra), o None."""
+        by_gid = {}
+        for w, k in self._claims.items():
+            if str(k).startswith("qam:"):
+                continue
+            try:
+                by_gid.setdefault(qam_desktop.app_gameid(k), int(str(w), 0))
+            except ValueError:
+                continue
+        for gid in x.cardinals("GAMESCOPECTRL_BASELAYER_APPID"):
+            if gid in by_gid:
+                return by_gid[gid]
+        return None
+
+    async def desktop_key(self, text=None, key=None, mods=None) -> dict:
+        """Teclado del panel: escribe `text` (caracteres) o pulsa `key` (BackSpace, Return, Tab, flechas…) en la app de escritorio de delante.
+        `mods` (ctrl, alt, shift) solo con una tecla suelta: Ctrl+A, Ctrl+C, Ctrl+V… En el registro NUNCA se anota lo escrito."""
+        if qam_pad is None or qam_desktop is None:
+            return {"ok": False, "error": "no disponible"}
+        try:
+            x = await self._kx()
+            wid = self._front_wid(x)
+            if not wid:  # sin app de escritorio delante no se escribe a ciegas (iría a la interfaz de Steam)
+                return {"ok": False, "wid": None, "error": "no hay app de escritorio delante"}
+            x.focus(wid)
+            ok = True
+            mm = [m for m in (mods or []) if m in ("ctrl", "alt", "shift")]
+            if mm:
+                name = qam_pad.NAMED_KEYS.get(str(key)) if key else (str(text) if text and len(str(text)) == 1 and str(text).isascii() and str(text).isalnum() else None)
+                if name:
+                    x.key("+".join([*mm, name]))
+                else:
+                    ok = False
+            elif text:
+                for ch in str(text)[:200]:
+                    ok = x.type_char(ch) and ok
+            elif key:
+                name = qam_pad.NAMED_KEYS.get(str(key))
+                if name:
+                    x.key(name)
+                else:
+                    ok = False
+            x.flush()
+            n = getattr(self, "_kx_n", 0)
+            if n < 40 or not ok:
+                self._kx_n = n + 1
+                what = (f"{'+'.join(mm)}+" if mm else "") + (str(key) if key else f"{len(str(text or ''))} carácter(es)")
+                self._tag_log(f"  tecla {what} → ventana {hex(wid)} ok={ok}")  # el contenido escrito no se guarda: podría ser una contraseña
+            return {"ok": ok, "wid": hex(wid), "error": None}
+        except Exception as e:  # noqa: BLE001
+            self._kx_close()
+            return {"ok": False, "error": str(e)[:100]}
+
+    # ---- Caja negra (dev.39): línea de tiempo en timeline.log, vigilante de casos raros y «Reparar» ----
+    def _tl(self, ev: str, **data) -> None:
+        """Una línea JSON en timeline.log (300 KB; el anillo en memoria da el contexto de las anomalías). Nunca recibe lo que se escribe."""
+        if qam_blackbox is None:
+            return
+        try:
+            tl = getattr(self, "_tl_w", None)
+            if tl is None:
+                tl = self._tl_w = qam_blackbox.Timeline()
+            line = tl.add(ev, data)
+            p = _path("timeline.log")
+            if os.path.exists(p) and os.path.getsize(p) > 300 * 1024:
+                os.replace(p, p + ".1")
+            with open(p, "a", encoding="utf-8") as fh:
+                fh.write(line + "\n")
+        except Exception:  # noqa: BLE001 - la caja negra nunca debe afectar al panel
+            pass
+
+    def _ui(self) -> dict:
+        if not hasattr(self, "_ui_v"):
+            self._ui_v = {"panel": False, "kb": False, "steamkb": False, "combo_at": 0.0, "panel_at": 0.0}
+        return self._ui_v
+
+    async def qam_event(self, ev: str, data=None) -> None:
+        """Eventos de la interfaz (panel abierto/cerrado, teclado…) para la caja negra. `ev` en minúsculas; los datos se limpian."""
+        if qam_blackbox is None or not isinstance(ev, str) or not qam_blackbox.EV_OK.match(ev):
+            return
+        ui = self._ui()
+        base, _, state = ev.partition(".")
+        if base in qam_blackbox.FLAGS and state in ("abre", "cierra"):
+            ui[base] = state == "abre"
+            if base == "panel" and state == "abre":
+                ui["panel_at"] = time.time()
+        self._tl("ui." + ev, **(data if isinstance(data, dict) else {}))
+
+    def _tl_combo(self, ev: str, **data) -> None:
+        if ev == "qam.combo":
+            self._ui()["combo_at"] = time.time()
+        self._tl(ev, **data)
+
+    async def _wd_snapshot(self):
+        """Estado de gamescope y de las ventanas de la app que se ve: sin lanzar procesos (una conexión a X reutilizada)."""
+        x = await self._kx()
+        focused = (x.cardinals("GAMESCOPE_FOCUSED_APP") or [None])[0]
+        base = x.cardinals("GAMESCOPECTRL_BASELAYER_APPID")
+        wid_s = getattr(self, "_steam_wid_c", None)
+        overlay = None
+        if wid_s:
+            try:
+                overlay = (x.cardinals("STEAM_OVERLAY", int(str(wid_s), 0)) or [None])[0]
+            except ValueError:
+                overlay = None
+        wins, front = [], self._front_wid(x)
+        if front:
+            g = x.geometry(front)
+            if g:
+                wins.append(g)
+        return x, {"focused": focused, "base": base, "overlay": overlay, "screen": x.screen_size(), "wins": wins, "front": front,
+                   "anim": bool(getattr(self, "_anim_busy", False)), "running": bool(self._claims)}
+
+    async def _wd_loop(self) -> None:
+        """Cada segundo (cada 4 sin apps abiertas ni interfaz) mira el estado y anota las anomalías en la línea de tiempo, con el contexto."""
+        wd = qam_blackbox.Watchdog()
+        while True:
+            try:
+                ui = self._ui()
+                if not (self._claims or ui["panel"] or ui["kb"] or ui["steamkb"]):
+                    await asyncio.sleep(4)
+                    continue
+                x, snap = await self._wd_snapshot()
+                last = getattr(self, "_wd_last", None)
+                key = (snap["focused"], tuple(snap["base"]), snap["overlay"], tuple(snap["wins"]))
+                if key != last:
+                    self._wd_last = key
+                    self._tl("estado", foco=snap["focused"], base=",".join(str(b) for b in snap["base"]), overlay=snap["overlay"],
+                             ventana=(f"{snap['wins'][0][0]}x{snap['wins'][0][1]}" if snap["wins"] else ""), panel=ui["panel"], teclado=ui["kb"] or ui["steamkb"])
+                for name, detail in wd.check(snap, ui, time.time()):
+                    self._tl("anomalia", nombre=name, detalle=detail, foco=snap["focused"], overlay=snap["overlay"],
+                             ventana=(f"{snap['wins'][0][0]}x{snap['wins'][0][1]}" if snap["wins"] else ""), panel=ui["panel"], teclado=ui["kb"] or ui["steamkb"])
+                    self._tl("contexto", ultimos=json.dumps(self._tl_w.recent(12), ensure_ascii=False)[:900])
+                    if name == "ventana_pequena" and snap.get("front"):  # lo único que se arregla solo: es seguro y no tapa nada
+                        x.resize(snap["front"], *snap["screen"])
+                        self._tl("reparacion", que="ventana a pantalla completa")
+                await asyncio.sleep(1)
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:  # noqa: BLE001
+                self._kx_close()
+                self._tl("vigilante.error", error=str(e)[:80])
+                await asyncio.sleep(5)
+
+    async def desktop_repair(self) -> dict:
+        """«Reparar»: salida de emergencia. Ventanas de las apps a pantalla completa, overlay de Steam a 0 si lo subimos nosotros y capa base limpia de
+        ventanas que ya no existen. No cierra nada ni pierde lo escrito."""
+        fixed = []
+        try:
+            x = await self._kx()
+            w, h = x.screen_size()
+            for wid in self._anim_wids():
+                g = x.geometry(wid)
+                if g and (g[0] != w or g[1] != h):
+                    x.resize(wid, w, h)
+                    fixed.append("ventana a pantalla completa")
+            if getattr(self, "_ov_prev", None):
+                r = await self.desktop_overlay(False)
+                if r.get("ok") and not r.get("skipped"):
+                    fixed.append("overlay a 0")
+            ui = self._ui()
+            ui["panel"] = ui["kb"] = ui["steamkb"] = False
+        except Exception as e:  # noqa: BLE001
+            self._tl("reparacion.error", error=str(e)[:80])
+            return {"ok": False, "error": str(e)[:100], "fixed": fixed}
+        self._tl("reparacion", que=", ".join(fixed) or "nada que reparar")
+        return {"ok": True, "fixed": fixed}
+
+    async def desktop_anim(self, on=None) -> dict:
+        """Interruptor de la animación al volver de QAM a la app (activada por defecto)."""
+        if on is not None:
+            try:
+                with open(_path("desktop-anim.json"), "w", encoding="utf-8") as fh:
+                    json.dump({"on": bool(on)}, fh)
+            except OSError:
+                pass
+        return {"ok": qam_pad is not None, "on": self._anim_enabled()}
+
+    def _anim_wids(self) -> list:
+        """Ventanas (ids numéricos) de las apps de escritorio abiertas por QAM Rail."""
+        out = []
+        for w, k in list(self._claims.items()):
+            if str(k).startswith("qam:"):
+                continue
+            try:
+                out.append(int(str(w), 0))
+            except ValueError:
+                continue
+        return out
+
+    async def _anim_start(self):
+        """Antes de quitar el panel: las ventanas de la app se encogen (ocultas aún) y devuelve (X, ids, tamaño) para hacerlas crecer."""
+        if qam_pad is None or not self._anim_enabled():
+            return None
+        wids = self._anim_wids()
+        if not wids:
+            return None
+        self._anim_cancel = False
+        try:
+            display, xauth = await self._pad_env()
+            x = qam_pad.XOut(display, xauth)
+        except Exception as e:  # noqa: BLE001
+            self._tag_log(f"  animación: sin pantalla ({e})")
+            return None
+        try:
+            w, h = x.screen_size()
+            first = qam_pad.grow_steps(w, h)[0]
+            for wid in wids:
+                x.resize(wid, *first)
+        except Exception as e:  # noqa: BLE001
+            self._tag_log(f"  animación: no se pudo encoger ({e})")
+            self._anim_finish_now(x, wids)
+            return None
+        return x, wids, (w, h)
+
+    @staticmethod
+    def _anim_finish_now(x, wids, size=None) -> None:
+        try:
+            w, h = size or x.screen_size()
+            for wid in wids:
+                x.resize(wid, w, h)
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            x.close()
+        except Exception:  # noqa: BLE001
+            pass
+
+    async def _anim_grow(self, st) -> None:
+        """Hace crecer las ventanas hasta pantalla completa. Pase lo que pase, la última orden es el tamaño completo."""
+        x, wids, (w, h) = st
+        t0 = time.monotonic()
+        self._anim_busy = True
+        try:
+            for sz in qam_pad.grow_steps(w, h):
+                if getattr(self, "_anim_cancel", False):  # el panel o el teclado vuelven a subir: nada de redimensionar a la vez
+                    self._tag_log("  animación: cancelada (sube el overlay)")
+                    break
+                for wid in wids:
+                    x.resize(wid, *sz)
+                await asyncio.sleep(0.035)
+        except Exception as e:  # noqa: BLE001
+            self._tag_log(f"  animación: error {e}")
+        finally:
+            self._anim_busy = False
+            self._anim_finish_now(x, wids, (w, h))
+            self._tag_log(f"  animación: {len(wids)} ventana(s) {int((time.monotonic() - t0) * 1000)} ms")
+
+    async def desktop_overlay(self, on: bool, reason: str = "panel") -> dict:
+        """Con el panel abierto y alguna app de escritorio en marcha, sube STEAM_OVERLAY=1 en la ventana de Steam (gamescope dibuja entonces
+        la interfaz de Steam —el panel, el teclado— por encima de la app, como con un juego). Al cerrar vuelve a 0, que es lo que Steam deja."""
+        if qam_desktop is None:
+            return {"ok": False}
+        t0 = time.monotonic()
         try:
             if on and not (await self.desktop_running()).get("keys") and not self._qam_keys:
                 return {"ok": True, "skipped": True}
+            if not on:
+                if not getattr(self, "_ov_prev", None):
+                    return {"ok": True, "skipped": True}
+                self._ov_prev = None
+            else:
+                self._ov_prev = True
+            val = 1 if on else 0
+            if on:
+                self._anim_cancel = True  # si una animación sigue en marcha, termina ya en pantalla completa
+            anim = await self._anim_start() if not on else None  # encoge la app mientras sigue oculta
             prefix, seen = await self._user_session()
             display = seen.get("DISPLAY") or ":0"
             self._xauth = seen.get("XAUTHORITY") or None
-            rc, out, _e = await self._x_run(prefix, display, "xwininfo", "-root", "-tree")
-            wid = next((l.split()[0] for l in out.splitlines() if '"Steam Big Picture Mode"' in l), None) if rc == 0 else None
+            wid = await self._steam_wid(prefix, display)
             if not wid:
                 return {"ok": False, "error": "no hay ventana de Steam"}
-            if on:
-                _r, cur, _e = await self._x_run(prefix, display, "xprop", "-id", wid, "STEAM_OVERLAY")
-                m = re.search(r"=\s*(\d+)", cur)
-                if getattr(self, "_ov_prev", None) is None:
-                    self._ov_prev = int(m.group(1)) if m else 0
-                val = 1
-            else:
-                val = getattr(self, "_ov_prev", None)
-                if val is None:
-                    return {"ok": True, "skipped": True}
-                self._ov_prev = None
             rc2, _o, err = await self._x_run(prefix, display, "xprop", "-id", wid, "-f", "STEAM_OVERLAY", "32c", "-set", "STEAM_OVERLAY", str(val))
-            self._tag_log(f"  overlay {'on' if on else 'off'} {wid} → {val} (código {rc2} {err.strip()[:60]})")
+            if rc2 != 0:  # la ventana de Steam pudo recrearse: nuevo id y un segundo intento
+                wid = await self._steam_wid(prefix, display, fresh=True)
+                if wid:
+                    rc2, _o, err = await self._x_run(prefix, display, "xprop", "-id", wid, "-f", "STEAM_OVERLAY", "32c", "-set", "STEAM_OVERLAY", str(val))
+            self._tag_log(f"  overlay {'on' if on else 'off'} {wid} → {val} (código {rc2} {err.strip()[:60]}) {int((time.monotonic() - t0) * 1000)} ms")
+            self._tl("overlay", on=bool(on), motivo=str(reason)[:12], codigo=rc2, ms=int((time.monotonic() - t0) * 1000))
+            if anim:
+                if rc2 == 0:
+                    self._spawn(self._anim_grow(anim))
+                else:
+                    self._anim_finish_now(anim[0], anim[1], anim[2])
+                anim = None
             return {"ok": rc2 == 0}
         except Exception as e:  # nunca debe afectar al panel
+            if locals().get("anim"):
+                self._anim_finish_now(anim[0], anim[1], anim[2])
             return {"ok": False, "error": str(e)[:100]}
 
     async def desktop_kill(self, key: str) -> dict:
         """Forzar el cierre: SIGKILL a todos los procesos de la app."""
+        self._run_c = None
         unit = self._desk_unit(key) + ".service"
         await self._systemctl_user("kill", "--signal=SIGKILL", unit)
         code, out = await self._systemctl_user("stop", unit)
         import signal
         n = await self._kill_windows_of(key, signal.SIGKILL)
+        if await self._flatpak_kill(key):
+            n += 1
         await self._base_off(key)
         for w in [w for w, k in self._claims.items() if k == key]:
             self._claims.pop(w, None)
@@ -907,9 +1421,12 @@ class Plugin:
     async def desktop_run(self, key: str) -> dict:
         """Abre la app de escritorio dentro de la sesión del usuario (`systemd-run --user`: entorno limpio, sin los límites del servicio de Decky,
         que hacían fallar el sandbox de Firefox con «CanCreateUserNamespace EPERM»). Espera 1,5 s: si se cierra con error devuelve el final de su salida."""
+        self._run_c = None
         pl = await self.desktop_plan(key)
         if not pl.get("ok"):
+            self._tl("app.abrir_fallo", app=str(key)[:30], error=str(pl.get("error"))[:50])
             return pl
+        self._tl("app.abrir", app=str(key)[:30])
         log = _path("desktop-run.log")
         try:
             open(log, "wb").close()
@@ -920,14 +1437,23 @@ class Plugin:
         display = seen.get("DISPLAY") or ":0"
         self._xauth = seen.get("XAUTHORITY") or None
         before = {w["id"] for w in await self._x_windows(prefix, display)}
+        unit = self._desk_unit(key)
         if str(key) in (await self.desktop_running()).get("keys", []):
-            self._spawn(self._desk_tag(key, prefix, display, before))  # ya abierta: se vuelve a mostrar su ventana
-            return {"ok": True, "already": True}
+            n = await self._desk_reshow(key, prefix, display)  # ya abierta: se vuelve a mostrar su ventana (minimizada u abierta fuera de QAM Rail)
+            if n:
+                self._spawn(self._desk_tag(key, prefix, display, before))
+                self._tl("app.mostrar", app=str(key)[:30], ventanas=n)
+                return {"ok": True, "already": True, "shown": n}
+            # En marcha pero SIN ventana que mostrar (p. ej. Edge/Chromium con «seguir en segundo plano», o cerrado desde su propia X): hay que lanzarla de
+            # nuevo; el navegador reenvía a su proceso y abre una ventana. Si nuestra unidad sigue activa, se usa otra para no chocar con ella.
+            self._tag_log(f"== {key}: en marcha sin ventanas; se vuelve a lanzar")
+            if (await self._systemctl_user("is-active", "--quiet", unit + ".service"))[0] == 0:
+                unit += "-fwd"
         sets = []
         if "DISPLAY" not in seen:
             sets.append("--setenv=DISPLAY=:0")
         cwd = pl["dir"] if os.path.isdir(pl["dir"]) else _home()
-        cmd = [*prefix, "systemd-run", "--user", "--wait", "--collect", "--quiet", f"--unit={self._desk_unit(key)}", f"--working-directory={cwd}",
+        cmd = [*prefix, "systemd-run", "--user", "--wait", "--collect", "--quiet", f"--unit={unit}", f"--working-directory={cwd}",
                "-p", f"StandardOutput=file:{log}", "-p", f"StandardError=file:{log}", *sets, "--", *pl["argv"]]
         try:
             proc = await asyncio.create_subprocess_exec(*cmd, env=self._user_env(), stdin=asyncio.subprocess.DEVNULL,
@@ -989,7 +1515,33 @@ class Plugin:
             return {}
         return {k: v for k, v in raw.items() if isinstance(k, str) and len(k) <= 120} if isinstance(raw, dict) else {}
 
-    async def desktop_opts(self, key: str, scale: float | None = None, touch: bool | None = None) -> dict:
+    def _write_firefox_prefs(self, opts: dict) -> int:
+        """Escribe el bloque de QAM Rail en el `user.js` de los perfiles de Firefox (Firefox lo lee al arrancar). Devuelve cuántos perfiles."""
+        home = _home()
+        n = 0
+        try:
+            st = os.stat(home)
+        except OSError:
+            return 0
+        block = qam_desktop.userjs_block(opts)
+        for d in qam_desktop.firefox_profiles(home):
+            f = os.path.join(d, "user.js")
+            try:
+                try:
+                    with open(f, encoding="utf-8") as fh:
+                        old = fh.read()
+                except OSError:
+                    old = ""
+                with open(f, "w", encoding="utf-8") as fh:
+                    fh.write(qam_desktop.merge_userjs(old, block))
+                if os.getuid() == 0:
+                    os.chown(f, st.st_uid, st.st_gid)
+                n += 1
+            except OSError:
+                continue
+        return n
+
+    async def desktop_opts(self, key: str, scale: float | None = None, touch: bool | None = None, fullscreen: bool | None = None) -> dict:
         """Ajustes de lanzamiento de una app de escritorio (hoy solo navegadores: zoom y táctil). Se aplican al abrirla de nuevo."""
         if qam_desktop is None:
             return {"ok": False}
@@ -998,8 +1550,11 @@ class Plugin:
         allo = self._desk_opts()
         cur = qam_desktop.clean_opts(allo.get(str(key)))
         if kind in ("chromium", "firefox") and (scale is not None or touch is not None):
-            cur = qam_desktop.clean_opts({"scale": cur["scale"] if scale is None else scale, "touch": cur["touch"] if touch is None else touch})
+            cur = qam_desktop.clean_opts({"scale": cur["scale"] if scale is None else scale, "touch": cur["touch"] if touch is None else touch,
+                                          "fullscreen": cur["fullscreen"] if fullscreen is None else fullscreen})
             allo[str(key)] = cur
+            if kind == "firefox":
+                self._write_firefox_prefs(cur)
             tmp = _path("desktop-opts.json.tmp")
             try:
                 with open(tmp, "w", encoding="utf-8") as fh:
@@ -1051,6 +1606,26 @@ class Plugin:
 
     # ---- Actualizaciones desde GitHub Releases (0.51; ver py_modules/qam_updates.py) ----
     @staticmethod
+    def _ssl_ctx():
+        """Contexto TLS con verificacion. El Python de Decky no trae certificados raiz:
+        se usa el paquete del sistema (Bazzite/Fedora, Debian) o certifi. Nunca se desactiva la verificacion."""
+        import ssl
+        cands = [os.environ.get("SSL_CERT_FILE"), "/etc/pki/tls/certs/ca-bundle.crt",
+                 "/etc/ssl/certs/ca-certificates.crt", "/etc/ssl/cert.pem"]
+        try:
+            import certifi  # type: ignore
+            cands.append(certifi.where())
+        except Exception:
+            pass
+        for c in cands:
+            if c and os.path.isfile(c):
+                try:
+                    return ssl.create_default_context(cafile=c)
+                except (OSError, ssl.SSLError):
+                    continue
+        return ssl.create_default_context()
+
+    @staticmethod
     def _http(url: str, etag: str | None = None):
         """GET con tiempo limite. Devuelve (estado, etag, texto). Un 304 no es error."""
         import urllib.error
@@ -1059,7 +1634,7 @@ class Plugin:
         if etag:
             req.add_header("If-None-Match", etag)
         try:
-            with urllib.request.urlopen(req, timeout=15) as r:
+            with urllib.request.urlopen(req, timeout=15, context=Plugin._ssl_ctx()) as r:
                 return r.status, r.headers.get("ETag"), r.read(4 * 1024 * 1024).decode("utf-8", "replace")
         except urllib.error.HTTPError as e:
             return e.code, None, ""
@@ -1067,7 +1642,7 @@ class Plugin:
     @staticmethod
     def _opener(url: str):
         import urllib.request
-        r = urllib.request.urlopen(urllib.request.Request(url, headers={"User-Agent": "qam-rail"}), timeout=30)
+        r = urllib.request.urlopen(urllib.request.Request(url, headers={"User-Agent": "qam-rail"}), timeout=30, context=Plugin._ssl_ctx())
         if not qam_updates.https_ok(r.geturl()):  # tras redirecciones sigue siendo un host de GitHub
             r.close()
             raise ValueError("la descarga se redirigió a un sitio no permitido")
@@ -1081,6 +1656,16 @@ class Plugin:
         except (OSError, ValueError):
             return {}
 
+    def _upd_log(self, text: str) -> None:
+        """`updates.log`: qué devolvió cada comprobación de GitHub (antes un error o un «al día» no dejaba rastro)."""
+        try:
+            with open(_path("updates.log"), "a", encoding="utf-8") as fh:
+                fh.write(time.strftime("%H:%M:%S ") + text + "\n")
+            if os.path.getsize(_path("updates.log")) > 40_000:
+                os.replace(_path("updates.log"), _path("updates.log.old"))
+        except OSError:
+            pass
+
     async def apps_check_updates(self, force: bool = False) -> dict:
         """Mira GitHub por cada app con «update» (como mucho cada 6 h salvo force; ETag). Solo avisa, no instala."""
         if qam_apps is None or qam_updates is None:
@@ -1092,7 +1677,12 @@ class Plugin:
             if not (a.get("update") or {}).get("provider"):
                 continue
             c = cache.setdefault(a["id"], {})
-            results[a["id"]] = await asyncio.to_thread(qam_updates.check_app, a, c, self._http, None, bool(force))
+            try:
+                results[a["id"]] = await asyncio.to_thread(qam_updates.check_app, a, c, self._http, None, bool(force))
+            except Exception as e:  # noqa: BLE001  (check_app ya atrapa lo suyo; esto cubre cualquier otra cosa)
+                results[a["id"]] = {"state": "error", "error": str(e)[:160], "current": a.get("version")}
+            r = results[a["id"]]
+            self._upd_log(f"{a['id']} v{a.get('version')} force={bool(force)} → {r.get('state')} última={r.get('latest')} {r.get('error') or ''}".rstrip())
         try:
             tmp = _path("updates.json.tmp")
             with open(tmp, "w", encoding="utf-8") as fh:
@@ -1385,10 +1975,20 @@ class Plugin:
                     if e.startswith(home + os.sep) and e != home and os.path.isdir(e):
                         shutil.rmtree(e, ignore_errors=True)
                         purged.append(e)
-            shutil.rmtree(path, ignore_errors=True)
-            shutil.rmtree(os.path.join(_apps_dir(), ".previous", aid), ignore_errors=True)
-            shutil.rmtree(os.path.join(_apps_dir(), ".previous", aid + ".older"), ignore_errors=True)
-            removed = True
+            errs: list = []
+            for d in (path, os.path.join(_apps_dir(), ".previous", aid), os.path.join(_apps_dir(), ".previous", aid + ".older")):
+                if not os.path.lexists(d):
+                    continue
+                if sys.version_info >= (3, 12):
+                    shutil.rmtree(d, onexc=lambda f, p, e: errs.append(f"{p}: {e}"))
+                else:
+                    shutil.rmtree(d, onerror=lambda f, p, e: errs.append(f"{p}: {e[1]}"))
+            removed = not os.path.exists(path)
+            self._upd_log(f"desinstalar {aid}: carpeta {'borrada' if removed else 'SIGUE'}; script={script}; errores={errs[:3]}")
+            if not removed:  # antes se decía «desinstalada» aunque la carpeta siguiera (ignore_errors)
+                reg[aid] = info
+                self._apps_reg_save(reg)
+                return {"ok": False, "removed": False, "error": (errs[0] if errs else "la carpeta sigue ahí")[:200], "uninstall_script": script}
         self._apps_reg_save(reg)
         return {"ok": True, "removed": removed, "appid": info.get("appid"), "purged": purged, "uninstall_script": script}
 
@@ -1491,6 +2091,17 @@ class Plugin:
             if action != "minimize":
                 self._qam_keys.discard(f"qam:{app_id}")
         return {"ok": True}
+
+    async def keyboard_log(self, text: str) -> None:
+        """Anota en keyboard.log qué método se probó para abrir el teclado de Steam y qué pasó (máx. 40 KB)."""
+        try:
+            p = _path("keyboard.log")
+            if os.path.exists(p) and os.path.getsize(p) > 40 * 1024:
+                os.replace(p, p + ".1")
+            with open(p, "a", encoding="utf-8") as fh:
+                fh.write(f"{time.strftime('%H:%M:%S')} {str(text)[:600]}\n")
+        except OSError:
+            pass
 
     async def keyboard_url(self, close: bool = False) -> dict:
         """Respaldo para el teclado de Steam: `steam steam://open/keyboard` como el usuario (Decky corre como root). [H]"""

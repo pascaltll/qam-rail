@@ -17,6 +17,7 @@ import { AppearanceCard } from "./QamAppearance";
 import { toggleKeyboard } from "./keyboard";
 import { QamAppOptions, QamStore } from "./QamAppsCard";
 import { QamDesktopApps } from "./QamDesktopApps";
+import { OpenAppsStrip } from "./QamOpenApps";
 import { QamChannelCard } from "./QamChannel";
 import { QamSelfUpdateCard } from "./QamSelfUpdate";
 import { BluetoothCard, WifiCard } from "./QamNetwork";
@@ -285,6 +286,20 @@ export const QamApp: FC<{ log: (m: string) => void; onNative: (tab?: number) => 
       remembered: (row) => { const m = rowMemory.current.get(rowKey(row.map((i) => all[i]))); const k = m ? all.indexOf(m) : -1; return k >= 0 ? k : null; },
     });
     e.stopPropagation?.(); e.preventDefault?.();
+    // Red de seguridad: si el modelo de filas no da destino en vertical pero hay elementos más abajo/arriba, se va al más próximo en el orden de la página.
+    if ((to < 0 || to === from) && (b === BTN.UP || b === BTN.DOWN)) {
+      const rowOfFrom = visualRows(rects).find((r) => r.includes(from)) ?? [from];
+      const cand = b === BTN.DOWN
+        ? all.map((_x, i) => i).filter((i) => !rowOfFrom.includes(i) && rects[i].top >= rects[from].bottom - 2)
+        : all.map((_x, i) => i).filter((i) => !rowOfFrom.includes(i) && rects[i].bottom <= rects[from].top + 2);
+      if (cand.length) {
+        const best = cand.reduce((a, c) => (Math.abs((b === BTN.DOWN ? rects[c].top - rects[from].bottom : rects[from].top - rects[c].bottom)) < Math.abs((b === BTN.DOWN ? rects[a].top - rects[from].bottom : rects[from].top - rects[a].bottom)) ? c : a), cand[0]);
+        crumb(`mando: ${b === BTN.DOWN ? "abajo" : "arriba"} sin destino desde «${(act.textContent ?? "").slice(0, 24)}»: voy a «${(all[best].textContent ?? "").slice(0, 24)}»`);
+        takeFocus(all[best]);
+        return;
+      }
+      crumb(`mando: ${b === BTN.DOWN ? "abajo" : "arriba"} sin destino desde «${(act.textContent ?? "").slice(0, 24)}» (${all.length} elementos, ${visualRows(rects).length} filas)`);
+    }
     if (to < 0 || to === from) return;
     // Recordar donde estabas en la fila que dejas.
     if (b === BTN.UP || b === BTN.DOWN) {
@@ -417,6 +432,7 @@ export const QamApp: FC<{ log: (m: string) => void; onNative: (tab?: number) => 
         <Fade k={mode}>
           {/* Con un juego abierto pero viendo el Inicio normal (A sobre Inicio): que se note y se pueda volver. */}
           {game && mode === "normal" && <Chip icon={ICONS2.play} active onClick={toggleNormal}>{`Volver al Inicio de ${game.name}`}</Chip>}
+          <OpenAppsStrip notify={notify} after={onClose} />
           {!inGame && <HomeModeBar active={homeMode} game={false} onPick={pickHomeMode} />}
           {mode === "game" && game && homeMode !== "pelicula" ? (
             <HomeGame log={log} game={game} bright={brightCard} vol={volCard}

@@ -9,14 +9,15 @@ import { appsControl } from "./qamApps";
 import { COLORS, Chip, ICONS2, Row, cardStyle } from "./ui";
 
 /** `qam`: app de QAM (MiniTube…) con las órdenes de su lanzador; sin él, app de escritorio. */
-export const DeskMenu: FC<{ app: { key: string; name: string; qam?: { id: string; controls: string[]; running?: boolean } }; notify: (t: string) => void; onClose: () => void; after?: () => void; onOptions?: (id: string) => void }> = ({ app, notify, onClose, after, onOptions }) => {
+export const DeskMenu: FC<{ app: { key: string; name: string; qam?: { id: string; controls: string[]; running?: boolean } }; notify: (t: string) => void; onClose: () => void; after?: () => void; onOptions?: (id: string) => void; pinned?: boolean; onPin?: () => void }> = ({ app, notify, onClose, after, onOptions, pinned, onPin }) => {
   const [running, setRunning] = useState<boolean>(() => (app.qam ? (app.qam.running ?? true) : false) || runningCached().includes(app.key));
   const [busy, setBusy] = useState(false);
   const box = useRef<HTMLDivElement | null>(null);
   // Navegadores: zoom de la interfaz y táctil al abrirlos (se aplican en la próxima apertura).
   const [bopts, setOpts] = useState<DeskOpts | null>(null);
   useEffect(() => { if (app.qam) return; let on = true; void desktopOpts(app.key).then((o) => { if (on) setOpts(o); }).catch(() => null); return () => { on = false; }; }, [app.key]);
-  const setOpt = (scale: number | null, touch: boolean | null) => void desktopOpts(app.key, scale, touch).then(setOpts).catch(() => null);
+  const setOpt = (scale: number | null, touch: boolean | null, fullscreen: boolean | null = null) => void desktopOpts(app.key, scale, touch, fullscreen).then((o) => { setOpts(o); setChanged(true); }).catch(() => null);
+  const [changed, setChanged] = useState(false);
   useEffect(() => { if (app.qam) return; let on = true; void loadRunning(true).then((k) => { if (on) setRunning(k.includes(app.key)); }); return () => { on = false; }; }, [app.key]);
   useEffect(() => { const t = window.setTimeout(() => { takeFocus(box.current?.querySelector<HTMLElement>("[data-qr]") ?? null); }, 80); return () => window.clearTimeout(t); }, []);
 
@@ -40,6 +41,21 @@ export const DeskMenu: FC<{ app: { key: string; name: string; qam?: { id: string
     void loadRunning(true);
     onClose();
   };
+  // Un navegador abierto reenvía a su instancia y descarta las opciones: se cierra del todo y se vuelve a abrir.
+  const restart = async () => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      await killDesktopApp(app.key, app.name);
+      await new Promise((r) => window.setTimeout(r, 1500));
+      const r = await openDesktopApp(app.key, app.name);
+      notify(r.ok ? `${app.name} reiniciada` : `No se pudo abrir: ${r.error ?? "?"}`);
+      if (r.ok) after?.();
+    } catch (e) { notify(`Error: ${String(e).slice(0, 80)}`); }
+    setBusy(false);
+    void loadRunning(true);
+    onClose();
+  };
   const icon = (id: string) => (id === "open" || id === "show" ? ICONS2.play : id === "minimize" ? ICONS2.download : ICONS2.trash);
   const opts = menuOptions(running).filter((o) => !app.qam || app.qam.controls.includes(o.id === "open" ? "show" : o.id));
   return (
@@ -55,11 +71,16 @@ export const DeskMenu: FC<{ app: { key: string; name: string; qam?: { id: string
           <>
             <div style={{ fontSize: 11, color: COLORS.muted }}>Tamaño de la interfaz del navegador (al abrirlo de nuevo)</div>
             <Row gap={6}>{SCALES.map((sc) => <Chip key={sc} compact active={bopts.scale === sc} onClick={() => setOpt(sc, null)}>{scaleLabel(sc)}</Chip>)}</Row>
-            <Row gap={6}><Chip compact active={bopts.touch} onClick={() => setOpt(null, !bopts.touch)}>{bopts.touch ? "Táctil: sí" : "Táctil: no"}</Chip></Row>
+            <Row gap={6}>
+              <Chip compact active={bopts.touch} onClick={() => setOpt(null, !bopts.touch)}>{bopts.touch ? "Táctil: sí" : "Táctil: no"}</Chip>
+              {bopts.browser === "chromium" && <Chip compact active={bopts.fullscreen} onClick={() => setOpt(null, null, !bopts.fullscreen)}>{bopts.fullscreen ? "Pantalla completa" : "Con pestañas"}</Chip>}
+            </Row>
+            {changed && running && <Row gap={6}><Chip compact active icon={ICONS2.refresh} onClick={() => void restart()}>Reiniciar para aplicar</Chip></Row>}
           </>
         )}
         <Row gap={6}>
           {app.qam && onOptions && <Chip compact icon={ICONS2.plug} onClick={() => { const id = app.qam?.id; onClose(); if (id) onOptions(id); }}>Opciones…</Chip>}
+          {onPin && <Chip compact active={pinned} icon={pinned ? ICONS2.trash : ICONS2.plus} onClick={() => { onClose(); onPin(); }}>{pinned ? "Quitar de QAM" : "Agregar a QAM"}</Chip>}
           <Chip compact onClick={onClose}>Cancelar</Chip>
         </Row>
       </div>
