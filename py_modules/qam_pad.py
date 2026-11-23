@@ -18,7 +18,9 @@ import re
 import struct
 import time
 
-EV_KEY, EV_ABS = 1, 3
+EV_SYN, EV_KEY, EV_ABS = 0, 1, 3
+ABS_MT_SLOT, ABS_MT_POSITION_X, ABS_MT_POSITION_Y, ABS_MT_TRACKING_ID = 0x2F, 0x35, 0x36, 0x39
+BTN_TOUCH = 330
 ABS_X, ABS_Y, ABS_Z, ABS_RX, ABS_RY, ABS_RZ, ABS_HAT0X, ABS_HAT0Y = 0, 1, 2, 3, 4, 5, 16, 17
 # Botones de mando de Linux (xpad / mando virtual de Steam).
 BTN_MODE = 316  # botón Steam/Guía: con él se abre el QAM; sus combinaciones no son para la app
@@ -189,6 +191,10 @@ class XOut:
         x11.XGetGeometry.argtypes = [vp, cl, ctypes.POINTER(cl), ctypes.POINTER(ci), ctypes.POINTER(ci), ctypes.POINTER(cu), ctypes.POINTER(cu),
                                      ctypes.POINTER(cu), ctypes.POINTER(cu)]
         x11.XKeycodeToKeysym.restype, x11.XKeycodeToKeysym.argtypes = cl, [vp, ctypes.c_ubyte, ci]
+        x11.XQueryTree.restype = ci
+        x11.XQueryTree.argtypes = [vp, cl, ctypes.POINTER(cl), ctypes.POINTER(cl), ctypes.POINTER(vp), ctypes.POINTER(cu)]
+        x11.XQueryPointer.restype = ci
+        x11.XQueryPointer.argtypes = [vp, cl, ctypes.POINTER(cl), ctypes.POINTER(cl), ctypes.POINTER(ci), ctypes.POINTER(ci), ctypes.POINTER(ci), ctypes.POINTER(ci), ctypes.POINTER(cu)]
         x11.XDefaultScreen.restype, x11.XDefaultScreen.argtypes = ci, [vp]
         x11.XDisplayWidth.restype, x11.XDisplayWidth.argtypes = ci, [vp, ci]
         x11.XDisplayHeight.restype, x11.XDisplayHeight.argtypes = ci, [vp, ci]
@@ -226,6 +232,17 @@ class XOut:
         self.x11.XFree(data)
         return vals
 
+    def pointer(self) -> tuple | None:
+        """Posición (x, y) del puntero en pantalla, o None si no se pudo leer."""
+        try:
+            r, c = ctypes.c_ulong(), ctypes.c_ulong()
+            rx, ry, wx, wy, m = ctypes.c_int(), ctypes.c_int(), ctypes.c_int(), ctypes.c_int(), ctypes.c_uint()
+            ok = self.x11.XQueryPointer(self.dpy, self.x11.XDefaultRootWindow(self.dpy), ctypes.byref(r), ctypes.byref(c),
+                                        ctypes.byref(rx), ctypes.byref(ry), ctypes.byref(wx), ctypes.byref(wy), ctypes.byref(m))
+            return (int(rx.value), int(ry.value)) if ok else None
+        except Exception:  # noqa: BLE001
+            return None
+
     def screen_size(self) -> tuple:
         sc = self.x11.XDefaultScreen(self.dpy)
         return int(self.x11.XDisplayWidth(self.dpy, sc)), int(self.x11.XDisplayHeight(self.dpy, sc))
@@ -247,6 +264,25 @@ class XOut:
         """Pone el foco de teclado en una ventana (las teclas de XTest van a la que tiene el foco)."""
         self.x11.XSetInputFocus(self.dpy, int(wid), 1, 0)  # RevertToPointerRoot, CurrentTime
         self.x11.XFlush(self.dpy)
+
+    def focus_within(self, wid: int) -> bool:
+        """¿El foco de teclado ya está en `wid` o en una ventana hija suya? Reponerlo cada tecla hace que la página vea «ventana enfocada» de nuevo
+        y webs como Instagram o Facebook cierran o vacían su buscador."""
+        w = self.focus_window()
+        for _ in range(12):
+            if not w:
+                return False
+            if w == int(wid):
+                return True
+            root, par, kids, n = ctypes.c_ulong(), ctypes.c_ulong(), ctypes.c_void_p(), ctypes.c_uint()
+            if not self.x11.XQueryTree(self.dpy, w, ctypes.byref(root), ctypes.byref(par), ctypes.byref(kids), ctypes.byref(n)):
+                return False
+            if kids.value:
+                self.x11.XFree(kids)
+            if par.value == root.value:
+                return False
+            w = int(par.value)
+        return False
 
     def focus_window(self) -> int:
         """Ventana de X que tiene ahora el foco de teclado (0 si no se pudo leer). Solo para el registro."""
@@ -341,13 +377,187 @@ def apply_action(x: XOut, act: tuple) -> None:
         x.key(act[1])
 
 
+
+# ---------------------------------------------------------------- scroll táctil
+def _bits(line: str) -> set:
+    """Líneas `B: ABS=…` de /proc/bus/input/devices: palabras hexadecimales de 64 bits, la más alta primero → conjunto de bits activos."""
+    out = set()
+    words = line.split()
+    for i, w in enumerate(reversed(words)):
+        try:
+            v = int(w, 16)
+        except ValueError:
+            continue
+        out.update(64 * i + n for n in range(64) if (v >> n) & 1)
+    return out
+
+
+def parse_touch(text: str) -> list:
+    """`/proc/bus/input/devices` → [{name, event}] de las pantallas táctiles (propiedad DIRECT y ejes X/Y). Los touchpads no cuentan."""
+    out = []
+    for blk in re.split(r"\n\s*\n", text or ""):
+        name = re.search(r'^N: Name="(.*)"', blk, re.M)
+        hand = re.search(r"^H: Handlers=(.*)$", blk, re.M)
+        prop = re.search(r"^B: PROP=(.*)$", blk, re.M)
+        ab = re.search(r"^B: ABS=(.*)$", blk, re.M)
+        if not (name and hand and prop and ab):
+            continue
+        ev = next((h for h in hand.group(1).split() if re.fullmatch(r"event\d+", h)), None)
+        a = _bits(ab.group(1))
+        if ev and 1 in _bits(prop.group(1)) and (ABS_MT_POSITION_X in a or {0, 1} <= a):
+            out.append({"name": name.group(1), "event": ev})
+    return out
+
+
+class TouchScroll:
+    """Arrastrar con un dedo = rueda del ratón (con inercia). gamescope solo convierte el toque en clics del puntero, así que una app de escritorio
+    no se desplazaba con el dedo. Puro (sin X): `feed` recibe los eventos del dispositivo y devuelve clics de rueda (v, h); `tick` da los de la inercia.
+    La pantalla del Ally es vertical y gamescope la gira: la correspondencia ejes del táctil → pantalla se aprende comparando lo que se mueve el dedo
+    con lo que se mueve el puntero (que gamescope mueve con el mismo toque); mientras no se aprende se supone según la forma de la pantalla."""
+
+    CLICK_PX = 34.0   # recorrido del dedo por cada «clic» de rueda
+    DEAD_PX = 12.0    # por debajo es un toque, no un arrastre
+    FLING_MIN = 450.0  # px/s al soltar para que haya inercia
+    FRICTION = 3.2
+
+    def __init__(self, rx: tuple, ry: tuple, screen: tuple, forced: dict | None = None):
+        self.span = (max(1, rx[1] - rx[0]), max(1, ry[1] - ry[0]))
+        self.screen = (max(1, screen[0]), max(1, screen[1]))
+        self.forced = forced
+        self.cov = [[0.0, 0.0], [0.0, 0.0]]   # cov[eje del táctil][eje de pantalla]
+        self.learned: tuple | None = None
+        self.mt = False
+        self.slot = 0
+        self.down = False
+        self.fling = (0.0, 0.0)
+        self._reset()
+
+    def _reset(self) -> None:
+        self.cx = self.cy = None
+        self.start = self.last = None
+        self.ptr0 = self.ptr = None
+        self.moved = False
+        self.acc = [0.0, 0.0]
+        self.vel = [0.0, 0.0]
+        self.t = None
+
+    def mapping(self) -> tuple:
+        """(eje del táctil que mueve Y de pantalla, signo, eje que mueve X, signo)."""
+        if self.forced:
+            return (int(self.forced.get("ay", 1)), int(self.forced.get("sy", 1)), int(self.forced.get("ax", 0)), int(self.forced.get("sx", 1)))
+        if self.learned:
+            return self.learned
+        same = (self.span[0] < self.span[1]) == (self.screen[0] < self.screen[1])
+        return (1, 1, 0, 1) if same else (0, 1, 1, 1)
+
+    def to_screen(self, dxr: float, dyr: float) -> tuple:
+        ay, sy, ax, sx = self.mapping()
+        raw = (dxr, dyr)
+        return (sx * raw[ax] / self.span[ax] * self.screen[0], sy * raw[ay] / self.span[ay] * self.screen[1])
+
+    def _learn(self) -> None:
+        if not (self.start and self.last and self.ptr0 and self.ptr):
+            return
+        raw = ((self.last[0] - self.start[0]) / self.span[0], (self.last[1] - self.start[1]) / self.span[1])
+        pt = ((self.ptr[0] - self.ptr0[0]) / self.screen[0], (self.ptr[1] - self.ptr0[1]) / self.screen[1])
+        for a in (0, 1):
+            for b in (0, 1):
+                self.cov[a][b] += raw[a] * pt[b]
+        cy, cx = (abs(self.cov[0][1]), abs(self.cov[1][1])), (abs(self.cov[0][0]), abs(self.cov[1][0]))
+        if max(cy) < 0.05 and max(cx) < 0.05:
+            return
+        ay = 0 if cy[0] >= cy[1] else 1
+        ax = 1 - ay
+        sy = 1 if self.cov[ay][1] >= 0 else -1
+        sx = 1 if self.cov[ax][0] >= 0 else -1
+        self.learned = (ay, sy, ax, sx)
+
+    def feed(self, typ: int, code: int, val: int, now: float, ptr: tuple | None = None) -> tuple:
+        if typ == EV_ABS:
+            if code == ABS_MT_SLOT:
+                self.slot = val
+            elif code == ABS_MT_TRACKING_ID and self.slot == 0:
+                self.mt = True
+                self._touch(val != -1, now)
+            elif self.slot == 0 and code in (ABS_MT_POSITION_X, 0):
+                self.cx = val
+            elif self.slot == 0 and code in (ABS_MT_POSITION_Y, 1):
+                self.cy = val
+        elif typ == EV_KEY and code == BTN_TOUCH and not self.mt:
+            self._touch(val == 1, now)
+        elif typ == EV_SYN and code == 0:
+            return self._frame(now, ptr)
+        return (0, 0)
+
+    def _touch(self, on: bool, now: float) -> None:
+        if on and not self.down:
+            self.down = True
+            self.fling = (0.0, 0.0)   # un dedo nuevo detiene la inercia
+            self._reset()
+        elif not on and self.down:
+            self.down = False
+            if self.moved:
+                self._learn()
+                if max(abs(self.vel[0]), abs(self.vel[1])) >= self.FLING_MIN:
+                    self.fling = (self.vel[0], self.vel[1])
+            self._reset()
+
+    def _frame(self, now: float, ptr: tuple | None) -> tuple:
+        if not self.down or self.cx is None or self.cy is None:
+            return (0, 0)
+        cur = (self.cx, self.cy)
+        if ptr is not None:
+            self.ptr = ptr
+        if self.start is None:
+            self.start = self.last = cur
+            self.ptr0 = ptr
+            self.t = now
+            return (0, 0)
+        sx, sy = self.to_screen(cur[0] - self.last[0], cur[1] - self.last[1])
+        tx, ty = self.to_screen(cur[0] - self.start[0], cur[1] - self.start[1])
+        self.last = cur
+        dt = max(1e-3, now - (self.t or now))
+        self.t = now
+        if not self.moved:
+            if (tx * tx + ty * ty) ** 0.5 < self.DEAD_PX:
+                return (0, 0)
+            self.moved = True
+            sx, sy = tx, ty   # lo recorrido hasta pasar la zona muerta cuenta
+        self.vel[0] = 0.6 * self.vel[0] + 0.4 * (sx / dt)
+        self.vel[1] = 0.6 * self.vel[1] + 0.4 * (sy / dt)
+        return self._clicks(sx, sy)
+
+    def _clicks(self, sx: float, sy: float) -> tuple:
+        self.acc[0] += sx
+        self.acc[1] += sy
+        nx, ny = int(self.acc[0] / self.CLICK_PX), int(self.acc[1] / self.CLICK_PX)
+        self.acc[0] -= nx * self.CLICK_PX
+        self.acc[1] -= ny * self.CLICK_PX
+        return (-ny, -nx)   # dedo hacia arriba → la página baja (rueda +)
+
+    def tick(self, dt: float) -> tuple:
+        """Clics de la inercia tras soltar."""
+        vx, vy = self.fling
+        if abs(vx) < 80 and abs(vy) < 80:
+            self.fling = (0.0, 0.0)
+            return (0, 0)
+        k = math.exp(-self.FRICTION * dt)
+        self.fling = (vx * k, vy * k)
+        return self._clicks(vx * dt, vy * dt)
+
+
 # ---------------------------------------------------------------- bucle
 class PadRunner:
     """Con una app de escritorio delante, lee el mando y manda ratón/teclado. `ours()` da los identificadores de las apps de escritorio abiertas;
     `env()` (async) da (DISPLAY, XAUTHORITY). El primer plano se lee de la propiedad de X con una conexión propia: sin lanzar procesos."""
 
-    def __init__(self, ours, env, log, enabled, event=None):
+    def __init__(self, ours, env, log, enabled, event=None, touch=None):
         self.ours_fn, self.env_fn, self.log, self.enabled_fn = ours, env, log, enabled
+        # touch() → None (apagado, o el panel/teclado está delante) o {} / {"ay":…} (correspondencia de ejes forzada)
+        self.touch_fn = touch or (lambda: None)
+        self._tfds: dict = {}       # event → fd de una pantalla táctil
+        self._ts: dict = {}         # event → TouchScroll
+        self._tnoted: set = set()
         self.event = event or (lambda ev, **d: None)   # caja negra: pad.activo, pad.inactivo, qam.combo
         self.mapper = PadMapper()
         self.is_active = False
@@ -410,7 +620,86 @@ class PadRunner:
             loop.add_reader(fd, self._read, d["event"])
             self.log(f"mando: leyendo {d['event']} «{d['name']}» rangos {ranges}")
 
+    def _scan_touch(self) -> None:
+        """Abre las pantallas táctiles (solo lectura, sin agarrarlas: gamescope sigue recibiendo el toque como siempre)."""
+        try:
+            with open("/proc/bus/input/devices", encoding="utf-8", errors="replace") as fh:
+                devs = parse_touch(fh.read())
+        except OSError:
+            return
+        loop = asyncio.get_event_loop()
+        for d in devs:
+            ev = d["event"]
+            if ev in self._tfds or self._x is None:
+                continue
+            try:
+                import fcntl
+                fd = os.open("/dev/input/" + ev, os.O_RDONLY | os.O_NONBLOCK)
+                rg = {}
+                for code in (ABS_MT_POSITION_X, ABS_MT_POSITION_Y, 0, 1):
+                    buf = bytearray(24)
+                    try:
+                        fcntl.ioctl(fd, 0x80184540 + code, buf)
+                        _v, lo, hi, _f, _fl, _r = struct.unpack("6i", bytes(buf))
+                        if hi > lo:
+                            rg[code] = (lo, hi)
+                    except OSError:
+                        pass
+                rx = rg.get(ABS_MT_POSITION_X) or rg.get(0)
+                ry = rg.get(ABS_MT_POSITION_Y) or rg.get(1)
+                if not rx or not ry:
+                    os.close(fd)
+                    continue
+            except OSError as e:
+                if ev not in self._tnoted:
+                    self._tnoted.add(ev)
+                    self.log(f"táctil: no se pudo abrir {ev} ({d['name']}): {e}")
+                continue
+            self._ts[ev] = TouchScroll(rx, ry, self._x.screen_size(), self.touch_fn() or None)
+            self._tfds[ev] = fd
+            loop.add_reader(fd, self._tread, ev)
+            self.log(f"táctil: leyendo {ev} «{d['name']}» ejes {rx} × {ry}, pantalla {self._x.screen_size()}")
+
+    def _tread(self, ev: str) -> None:
+        fd, ts = self._tfds.get(ev), self._ts.get(ev)
+        if fd is None or ts is None:
+            return
+        try:
+            data = os.read(fd, EVENT_SIZE * 128)
+        except (BlockingIOError, OSError):
+            return
+        if not self.is_active or self._x is None or self.touch_fn() is None:
+            ts.down, ts.fling = False, (0.0, 0.0)   # el panel o el teclado están delante: este toque no es para la app
+            return
+        now = time.monotonic()
+        for i in range(0, len(data) - EVENT_SIZE + 1, EVENT_SIZE):
+            _s, _u, typ, code, val = struct.unpack_from(EVENT_FMT, data, i)
+            ptr = self._x.pointer() if (typ == EV_SYN and ts.down) else None
+            was = ts.learned
+            v, h = ts.feed(typ, code, val, now, ptr)
+            if ts.learned != was:
+                self.log(f"táctil: ejes aprendidos (eje Y de pantalla ← eje {ts.learned[0]} signo {ts.learned[1]}; eje X ← {ts.learned[2]} signo {ts.learned[3]})")
+            if v or h:
+                try:
+                    self._x.wheel(v, h)
+                    self._x.flush()
+                except Exception as e:  # noqa: BLE001
+                    self.log(f"táctil: error al mandar la rueda: {e}")
+                    return
+
+    def _close_touch(self) -> None:
+        loop = asyncio.get_event_loop()
+        for ev, fd in list(self._tfds.items()):
+            try:
+                loop.remove_reader(fd)
+                os.close(fd)
+            except OSError:
+                pass
+        self._tfds.clear()
+        self._ts.clear()
+
     def _close(self) -> None:
+        self._close_touch()
         self._mode_down, self._mode_until = False, 0.0
         self._sel_down = self._sel_used = False
         loop = asyncio.get_event_loop()
@@ -561,6 +850,10 @@ class PadRunner:
             if self.is_active:
                 if now >= scan_at:
                     self._scan()
+                    if self.touch_fn() is not None:
+                        self._scan_touch()
+                    elif self._tfds:
+                        self._close_touch()
                     scan_at = now + 2.0
                 if self._x is not None:
                     acts, dx, dy, wv, wh = self.mapper.tick(now - last, now)
@@ -571,6 +864,11 @@ class PadRunner:
                             self._x.move(dx, dy)
                         if wv or wh:
                             self._x.wheel(wv, wh)
+                        for ts in self._ts.values():   # inercia tras soltar el dedo
+                            tv, th = ts.tick(now - last)
+                            if tv or th:
+                                self._x.wheel(tv, th)
+                                wv = wv or tv
                         if acts or dx or dy or wv or wh:
                             self._x.flush()
                     except Exception as e:  # noqa: BLE001

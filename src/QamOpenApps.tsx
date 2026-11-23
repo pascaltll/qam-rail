@@ -2,7 +2,7 @@
 import { Focusable } from "@decky/ui";
 import { useEffect, useState, type FC, type ReactNode } from "react";
 
-import { backToSteam, desktopAnim, desktopCursor, desktopRepair, loadRunning, openDesktopApp, padMouse, runningAppsCached, showOpenStrip, type Pin } from "./qamDesktop";
+import { backToSteam, desktopAnim, desktopCursor, desktopRepair, loadRunning, openDesktopApp, padMouse, padTouch, runningAppsCached, showOpenStrip, type Pin } from "./qamDesktop";
 import { openBigKeyboard } from "./bigKeyboard";
 import { Card } from "./QamSections";
 import { useTap } from "./tap";
@@ -34,9 +34,11 @@ export const OpenAppsStrip: FC<{ notify: (t: string) => void; after: () => void 
   const [pad, setPad] = useState<boolean | null>(null);
   const [anim, setAnim] = useState<boolean | null>(null);
   const [cur, setCur] = useState<boolean | null>(null);
+  const [touch, setTouch] = useState<boolean | null>(null);
   useEffect(() => {
     let on = true;
     void padMouse().then((p) => { if (on) setPad(p.on); }).catch(() => null);
+    void padTouch().then((p) => { if (on && p.ok) setTouch(p.on); }).catch(() => null);
     void desktopAnim().then((p) => { if (on) setAnim(p.on); }).catch(() => null);
     void desktopCursor().then((p) => { if (on && p.ok) setCur(p.on); }).catch(() => null);
     return () => { on = false; };
@@ -66,6 +68,7 @@ export const OpenAppsStrip: FC<{ notify: (t: string) => void; after: () => void 
         {anim !== null && <Chip compact active={anim} onClick={() => void desktopAnim(!anim).then((p) => { setAnim(p.on); notify(p.on ? "Animación al volver: sí" : "Animación al volver: no"); })}>{anim ? "Animación: sí" : "Animación: no"}</Chip>}
       </Row>
       <Row gap={6}>
+        {touch !== null && <Chip compact active={touch} onClick={() => void padTouch(!touch).then((p) => { setTouch(p.on); notify(p.on ? "Scroll táctil: sí (arrastra con el dedo)" : "Scroll táctil: no"); })}>{touch ? "Scroll táctil: sí" : "Scroll táctil: no"}</Chip>}
         <Chip compact icon={ICONS2.terminal} onClick={() => { after(); window.setTimeout(() => { if (!openBigKeyboard()) notify("No se pudo abrir el teclado grande"); }, 350); }}>Teclado</Chip>
         <Chip compact icon={ICONS2.refresh} onClick={() => void desktopRepair().then((r) => notify(r.ok ? (r.fixed?.length ? `Reparado: ${r.fixed.join(", ")}` : "Nada que reparar") : `No se pudo reparar: ${r.error ?? "?"}`)).catch(() => notify("No se pudo reparar"))}>Reparar</Chip>
       </Row>

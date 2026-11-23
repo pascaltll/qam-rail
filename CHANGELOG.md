@@ -1,5 +1,10 @@
 # Cambios
 
+## dev.56
+
+- **Scroll táctil en apps de escritorio:** arrastrar con un dedo mueve la rueda (≈ un clic cada 34 px, con inercia al soltar; un toque nuevo la detiene). gamescope solo convierte el toque en clics del puntero, por eso no se desplazaba. Se leen las pantallas táctiles en solo lectura (sin agarrarlas: Steam y el panel siguen recibiendo el toque igual) y solo con una app de escritorio delante y sin panel ni teclado grande abiertos. La pantalla del Ally es vertical y gamescope la gira, así que la correspondencia ejes del táctil → pantalla se **aprende sola** comparando el dedo con el puntero; `pad.log` anota los dispositivos y los ejes aprendidos (líneas «táctil: …»). Interruptor «Scroll táctil» en Inicio › Abiertas ahora (activado por defecto). [H] sin probar en el equipo; el arrastre también sigue moviendo el puntero con el botón pulsado, así que en algunas páginas puede seleccionar texto a la vez.
+- **Escribir en Instagram / Facebook (Firefox):** el teclado grande ya no «devuelve» el foco a la app en cada tecla si ya lo tiene (ella o una ventana hija suya). Esa orden de foco repetida hace que la página vea «ventana enfocada» una y otra vez y webs como Instagram o Facebook cierran o vacían su buscador. [H] pendiente de confirmar; si sigue igual, el `desktop-tag.log` ya dice `foco=` en cada tecla.
+
 ## dev.55
 
 Revisión general (código, diseño, toque).

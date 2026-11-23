@@ -129,7 +129,7 @@ class Plugin:
             decky.logger.error(f"canal: {exc}")
         try:  # mando como ratón para las apps de escritorio (0.54 dev.26): duerme sin lanzar nada mientras no haya una app delante
             if qam_pad is not None:
-                self._pad = qam_pad.PadRunner(self._pad_ours, self._pad_env, self._pad_log, self._pad_enabled, event=self._tl_combo)
+                self._pad = qam_pad.PadRunner(self._pad_ours, self._pad_env, self._pad_log, self._pad_enabled, event=self._tl_combo, touch=self._touch_cfg)
                 self._spawn(self._pad.run())
             if qam_blackbox is not None and qam_pad is not None:
                 self._spawn(self._wd_loop())
@@ -181,6 +181,39 @@ class Plugin:
                 return bool(json.load(fh).get("on", True))
         except (OSError, ValueError, AttributeError):
             return True
+
+    def _touch_cfg(self):
+        """Scroll táctil: None si está apagado o si el panel/teclado de QAM están delante (el toque es para ellos); si no, la correspondencia de ejes forzada ({} = aprenderla)."""
+        try:
+            with open(_path("touch-scroll.json"), encoding="utf-8") as fh:
+                cfg = json.load(fh)
+        except (OSError, ValueError):
+            cfg = {}
+        if not isinstance(cfg, dict) or not cfg.get("on", True):
+            return None
+        ui = self._ui()
+        if ui.get("panel") or ui.get("kb"):
+            return None
+        m = cfg.get("map")
+        return m if isinstance(m, dict) else {}
+
+    async def pad_touch(self, on=None) -> dict:
+        """Interruptor «scroll táctil» (activado por defecto): arrastrar con el dedo en una app de escritorio hace de rueda."""
+        try:
+            with open(_path("touch-scroll.json"), encoding="utf-8") as fh:
+                cfg = json.load(fh)
+            if not isinstance(cfg, dict):
+                cfg = {}
+        except (OSError, ValueError):
+            cfg = {}
+        if on is not None:
+            cfg["on"] = bool(on)
+            try:
+                with open(_path("touch-scroll.json"), "w", encoding="utf-8") as fh:
+                    json.dump(cfg, fh)
+            except OSError:
+                pass
+        return {"ok": qam_pad is not None, "on": bool(cfg.get("on", True))}
 
     async def _pad_env(self) -> tuple:
         _prefix, seen = await self._user_session()
@@ -1173,7 +1206,8 @@ class Plugin:
             wid = self._front_wid(x)
             if not wid:  # sin app de escritorio delante no se escribe a ciegas (iría a la interfaz de Steam)
                 return {"ok": False, "wid": None, "error": "no hay app de escritorio delante"}
-            x.focus(wid)
+            if not getattr(x, "focus_within", lambda w: False)(wid):   # si ya lo tiene la app (o una hija suya), no se le «vuelve» a dar
+                x.focus(wid)
             fw = getattr(x, "focus_window", lambda: 0)()   # solo para el registro: ¿el foco quedó en la ventana de la app (o en una hija suya)?
             ok = True
             mm = [m for m in (mods or []) if m in ("ctrl", "alt", "shift")]
