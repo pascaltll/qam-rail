@@ -299,4 +299,13 @@ assert any(a[0] == "down" for a in a2), a2
 a3 = tap_filtered(g, 3.0, send_x=False, send_y=True, y=620)   # misma X, otra Y
 assert any(a[0] == "down" for a in a3), a3
 assert [a for a in a3 if a[0] == "move"][0][2] > 0
+# en modo completo no se aprenden ejes (el puntero lo movemos nosotros): un arrastre con salto de puntero no cambia la correspondencia
+lf = full()
+before = lf.mapping()
+lf.feed(EV_ABS, q.ABS_MT_SLOT, 0, 0.0); lf.feed(EV_ABS, q.ABS_MT_TRACKING_ID, 3, 0.0)
+for i in range(25):
+    lf.feed(EV_ABS, q.ABS_MT_POSITION_X, 500, i / 60); lf.feed(EV_ABS, q.ABS_MT_POSITION_Y, 800 - 17 * i, i / 60)
+    lf.feed(EV_SYN, 0, 0, i / 60, (1700, 100) if i else (100, 900))   # el puntero «salta» desde el sitio donde estaba
+lf.feed(EV_ABS, q.ABS_MT_TRACKING_ID, -1, 0.5); lf.feed(EV_SYN, 0, 0, 0.5)
+assert lf.learned is None and lf.mapping() == before, (lf.learned, lf.mapping(), before)
 print("test_touch OK")

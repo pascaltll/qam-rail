@@ -1,5 +1,11 @@
 # Cambios
 
+## dev.73
+- **Autoprueba del navegador** (Más › Pruebas y herramientas › «Autoprueba del navegador» › «Probar navegador»): con Firefox/Edge delante y el panel cerrado, abre una página de prueba en `127.0.0.1` y, **por el mismo camino que el dedo y el teclado de QAM** (eventos de táctil sintéticos → `TouchScroll` → XTest; `desktop_key`), comprueba y mide: cargar la página escribiendo la dirección, tocar un botón (con latencia), tocar 5 veces el mismo botón (el fallo de dev.71), desplazar dos cajas lado a lado con el dedo (que se mueva la de debajo del dedo y no la otra: el fallo de dev.72), el sentido del desplazamiento, la inercia, tocar un desplegable, escribir «hola» con el teclado y pestaña nueva / anterior / siguiente / cerrar (Ctrl+T, Ctrl+Re Pág, Ctrl+Av Pág, Ctrl+W). La página avisa a un servidor local de cada evento, así que cada paso sale ✓/✗ con lo que pasó y lo que tardó. Resultado en `selftest.json`; la tarjeta avisa si es de otra versión. Úsala tras cada actualización para ver de golpe qué se rompió.
+- `scripts/e2e-selftest.py`: la misma autoprueba contra Chrome/Chromium bajo Xvfb (sin consola ni Firefox), para comprobar al desarrollar que `qam_pad.py` no la rompe. Probado quitando a propósito las correcciones de dev.71 y dev.72: la autoprueba falla justo en esos pasos.
+- **Corrección de dev.72 (visto en tu grabación):** llevar el puntero al empezar el scroll hacía que el lector «aprendiera» los ejes mirando ese salto del puntero (`ejes aprendidos … signo -1` a las 04:44:35), lo que podía invertir el desplazamiento. En modo completo ya no se aprenden ejes (con test que falla sin el arreglo).
+- `_tread` pasa a `_touch_feed(ts, eventos, ahora)`: lo usan el lector real y la autoprueba.
+
 ## dev.72
 - **Scroll con el dedo dentro de menús y desplegables (modo táctil completo):** con la pantalla agarrada, gamescope ya no mueve el puntero con el dedo y la rueda iba a lo que hubiera bajo el puntero (donde se tocó por última vez), no bajo el dedo: en el menú ☰ de Firefox, un desplegable o un panel lateral no se desplazaba. Al empezar un arrastre de desplazamiento el puntero se lleva (una vez, sin pulsar) al punto donde empezó el dedo. La grabadora anota `scroll.inicio`.
 

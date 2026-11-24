@@ -52,6 +52,10 @@ try:
 except ImportError:
     qam_trace = None
 try:
+    import qam_selftest
+except ImportError:
+    qam_selftest = None
+try:
     import qam_channel
 except ImportError:
     qam_channel = None
@@ -263,6 +267,87 @@ class Plugin:
             except Exception:  # noqa: BLE001 - la grabadora nunca debe afectar al resto
                 pass
             await asyncio.sleep(1.0)
+
+    # ---- Autoprueba del navegador (dev.73) ----
+    def _st_state(self) -> dict:
+        st = getattr(self, "_st", None)
+        if st is None:
+            last = None
+            try:
+                with open(_path("selftest.json"), encoding="utf-8") as fh:
+                    last = json.load(fh)
+            except (OSError, ValueError):
+                pass
+            st = self._st = {"running": False, "phase": "", "cancel": False, "result": last if isinstance(last, dict) else None}
+        return st
+
+    async def nav_selftest(self, start=None, cancel=None) -> dict:
+        """Autoprueba del navegador: `start` la lanza (hay que cerrar el panel; empieza sola) y `cancel` la para. Devuelve estado y última prueba."""
+        st = self._st_state()
+        if qam_selftest is None or qam_pad is None:
+            return {"ok": False, "error": "no disponible"}
+        if start and not st["running"]:
+            st.update(running=True, phase="Cierra el panel: la prueba empieza sola", cancel=False)
+            self._spawn(self._selftest_task())
+        if cancel:
+            st["cancel"] = True
+        return {"ok": True, "running": st["running"], "phase": st["phase"], "result": st["result"], "version": str(getattr(decky, "DECKY_PLUGIN_VERSION", "") or "")}
+
+    async def _selftest_task(self) -> None:
+        st = self._st_state()
+        res = None
+        try:
+            t0 = time.monotonic()
+            quiet = 0.0
+            while time.monotonic() - t0 < 60 and not st["cancel"]:   # espera a que el panel esté cerrado un momento
+                quiet = quiet + 0.25 if not self._ui().get("panel") else 0.0
+                if quiet >= 1.5:
+                    break
+                await asyncio.sleep(0.25)
+            if st["cancel"]:
+                res = {"ok": None, "error": "cancelada", "steps": []}
+                return
+            if quiet < 1.5:
+                res = {"ok": False, "error": "el panel siguió abierto: ciérralo para que empiece", "steps": []}
+                return
+            pad = getattr(self, "_pad", None)
+            x = await self._kx()
+            if pad is None or pad._x is None or not pad.is_active or not self._front_wid(x):
+                res = {"ok": False, "error": "no hay una app de escritorio delante (abre el navegador desde Apps, ciérralo del panel y pulsa Probar)", "steps": []}
+                return
+            st["phase"] = "Probando… no toques la pantalla"
+
+            async def keys(key, mods):
+                r = await (self.desktop_key(text=key, mods=mods) if len(key) == 1 else self.desktop_key(key=key, mods=mods))
+                return bool(r.get("ok"))
+
+            async def typ(text):
+                return bool((await self.desktop_key(text=text)).get("ok"))
+
+            def log(ev, **kw):
+                if kw.get("name"):
+                    st["phase"] = f"Probando: {kw['name']}"
+                    self._pad_log(f"autoprueba: {kw['name']} → {'OK' if kw.get('ok') else 'FALLA'} · {kw.get('detalle', '')}")
+
+            test = qam_selftest.SelfTest(pad, keys, typ, log)
+            res = await asyncio.wait_for(test.run(), 120)
+            await keys("Left", ["alt"])   # vuelve a la página en la que estabas
+        except asyncio.TimeoutError:
+            res = {"ok": False, "error": "la prueba tardó más de 2 minutos y se paró", "steps": []}
+        except Exception as e:  # noqa: BLE001
+            res = {"ok": False, "error": f"error: {e!r}"[:160], "steps": []}
+        finally:
+            if res is not None:
+                res["at"] = time.time()
+                res["version"] = str(getattr(decky, "DECKY_PLUGIN_VERSION", "") or "")
+                st["result"] = res
+                if res.get("steps"):   # solo las pruebas que llegaron a hacer algo pisan la anterior en el disco
+                    try:
+                        with open(_path("selftest.json"), "w", encoding="utf-8") as fh:
+                            json.dump(res, fh, ensure_ascii=False)
+                    except OSError:
+                        pass
+            st.update(running=False, phase="", cancel=False)
 
     async def pad_touch(self, on=None, full=None, text=None) -> dict:
         """Táctil en las apps de escritorio: «on» (scroll con el dedo y gestos de dos dedos) y «full» (toque, mantener y arrastrar los hacemos nosotros)."""

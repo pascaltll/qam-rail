@@ -568,7 +568,9 @@ class TouchScroll:
         return (sx * raw[ax] / self.span[ax] * self.screen[0], sy * raw[ay] / self.span[ay] * self.screen[1])
 
     def _learn(self) -> None:
-        if not (self.start and self.last and self.ptr0 and self.ptr):
+        # Solo cuando gamescope mueve el puntero con el dedo (modo normal). En modo completo la pantalla va agarrada y el puntero solo se
+        # mueve porque lo llevamos nosotros al empezar el arrastre (dev.72): aprender de eso invertía los ejes del desplazamiento.
+        if self.full or not (self.start and self.last and self.ptr0 and self.ptr):
             return
         raw = ((self.last[0] - self.start[0]) / self.span[0], (self.last[1] - self.start[1]) / self.span[1])
         pt = ((self.ptr[0] - self.ptr0[0]) / self.screen[0], (self.ptr[1] - self.ptr0[1]) / self.screen[1])
@@ -948,9 +950,13 @@ class PadRunner:
                 except Exception:  # noqa: BLE001
                     pass
             return
-        now = time.monotonic()
-        for i in range(0, len(data) - EVENT_SIZE + 1, EVENT_SIZE):
-            _s, _u, typ, code, val = struct.unpack_from(EVENT_FMT, data, i)
+        evs = [struct.unpack_from(EVENT_FMT, data, i)[2:] for i in range(0, len(data) - EVENT_SIZE + 1, EVENT_SIZE)]
+        self._touch_feed(ts, evs, time.monotonic())
+
+    def _touch_feed(self, ts: "TouchScroll", evs: list, now: float) -> None:
+        """Pasa eventos (tipo, código, valor) del táctil por el TouchScroll y manda lo que piden (clics, rueda, zoom). Lo usan el lector real
+        (`_tread`) y la autoprueba del navegador, que inyecta toques sintéticos por el MISMO camino."""
+        for typ, code, val in evs:
             ptr = self._x.pointer() if (typ == EV_SYN and ts.down) else None
             was = ts.learned
             v, h = ts.feed(typ, code, val, now, ptr)
@@ -1251,7 +1257,7 @@ class PadRunner:
                         cfg = self.touch_fn()
                         full = bool(cfg) and bool(cfg.get("full"))
                         for ts in self._ts.values():
-                            ts.full = full
+                            ts.full = full or getattr(ts, "force_full", False)
                         if self._text_at and now >= self._text_at:
                             # Edge pinta el cursor de texto un poco después del toque: se mira hasta 3 veces (0,15 · 0,45 · 0,85 s).
                             tries = getattr(self, "_text_tries", 1) - 1
