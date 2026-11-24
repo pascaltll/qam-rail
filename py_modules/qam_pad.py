@@ -540,6 +540,7 @@ class TouchScroll:
         self.zoom = 0
         self.fling = (0.0, 0.0)
         self.tr = None   # grabadora: tr(evento, **datos) o None
+        self.last_pos: dict = {}   # ranura → [x, y] de su último contacto (el núcleo NO repite un valor igual al anterior de la ranura)
         self._reset()
 
     def _reset(self) -> None:
@@ -593,15 +594,20 @@ class TouchScroll:
                     self.pos.pop(self.slot, None)
                     self._fingers_changed(now)
                 else:
-                    self.pos[self.slot] = [None, None]
+                    # Contacto nuevo: el núcleo de Linux filtra los valores iguales al último de la ranura, así que un dedo que cae en la misma X
+                    # (o Y) que el anterior no manda esa coordenada. Se parte de la última conocida; con None el toque se quedaba sin posición y se
+                    # perdía (justo al tocar de nuevo el mismo botón: «a veces no abre»).
+                    self.pos[self.slot] = list(self.last_pos.get(self.slot, [None, None]))
                     self._fingers_changed(now)
             elif code in (ABS_MT_POSITION_X, ABS_MT_POSITION_Y) or (code in (0, 1) and not self.mt):   # ABS_X/Y solo en táctiles de un contacto
                 if self.slot in self.pos:
-                    self.pos[self.slot][0 if code in (ABS_MT_POSITION_X, 0) else 1] = val
+                    i = 0 if code in (ABS_MT_POSITION_X, 0) else 1
+                    self.pos[self.slot][i] = val
+                    self.last_pos.setdefault(self.slot, [None, None])[i] = val
         elif typ == EV_KEY and code == BTN_TOUCH and not self.mt:
             self.legacy = val == 1
             if val == 1:
-                self.pos[0] = [None, None]
+                self.pos[0] = list(self.last_pos.get(0, [None, None]))
             else:
                 self.pos.pop(0, None)
             self._fingers_changed(now)
@@ -803,7 +809,7 @@ class PadRunner:
         self.trace = trace   # qam_trace.Trace o None: la grabadora de navegación (apagada no cuesta nada)
         self._pend: list = []        # pasos de toque pendientes: (cuándo, acción, cuándo se pidió)
         self._pend_end = 0.0
-        self._tr_wheel = 0
+        self._trw = {"dedo": 0, "inercia": 0, "mando": 0}   # clics de rueda por origen, para la grabadora
         self._tr_wheel_at = 0.0
         self._tr_x_at = 0.0
         # touch() → None (apagado, o el panel/teclado está delante) o {} / {"ay":…} (correspondencia de ejes forzada)
@@ -953,6 +959,7 @@ class PadRunner:
                 try:
                     if v or h:
                         self._x.wheel(v, h)
+                        self._trw["dedo"] += abs(v) + abs(h)
                     if z:
                         self._x.zoom(z)
                     self._x.flush()
@@ -1256,21 +1263,22 @@ class PadRunner:
                                 self._text_at = 0.0
                         if self._tfds:
                             self._grab(full)   # si el panel o el teclado se abren (cfg None) se suelta al instante
+                        self._trw["mando"] += abs(wv) + abs(wh)
                         for ts in self._ts.values():   # inercia tras soltar el dedo
                             tv, th = ts.tick(now - last)
                             if tv or th:
                                 self._x.wheel(tv, th)
-                                wv = wv or tv
+                                self._trw["inercia"] += abs(tv) + abs(th)
+                                wv = wv or tv or th
                             ts.poll(now)
                             tz = ts.take_zoom()
                             if tz:
                                 self._x.zoom(tz)
                                 wv = wv or tz
-                        if wv or wh:
-                            self._tr_wheel += abs(wv) + abs(wh)
-                        if self._tr_wheel and now - self._tr_wheel_at >= 0.5:
-                            self._tr("rueda", clics=self._tr_wheel, en_ms=500)
-                            self._tr_wheel, self._tr_wheel_at = 0, now
+                        if any(self._trw.values()) and now - self._tr_wheel_at >= 0.5:
+                            self._tr("rueda", dedo=self._trw["dedo"], inercia=self._trw["inercia"], mando=self._trw["mando"], en_ms=500)
+                            self._trw = {"dedo": 0, "inercia": 0, "mando": 0}
+                            self._tr_wheel_at = now
                         if acts or dx or dy or wv or wh:
                             t2 = time.perf_counter()
                             self._x.flush()

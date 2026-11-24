@@ -283,4 +283,20 @@ pr._touch_apply(FakeTS([("move", 1, 1), ("down", 1), ("up", 1)]))
 pr._pend_run(_t.monotonic() + 0.025)
 pr._pend_run(_t.monotonic(), force=True)
 assert [e for e in pr._x.ev if e[0] in ("down", "up")] == [("down", 1), ("up", 1)] and not pr._pend
+# el núcleo no repite una coordenada igual a la anterior de la ranura: tocar dos veces el mismo botón no debe perder el segundo toque
+def tap_filtered(ts, t, send_x=True, send_y=True, x=500, y=500):
+    ts.feed(EV_ABS, q.ABS_MT_SLOT, 0, t); ts.feed(EV_ABS, q.ABS_MT_TRACKING_ID, 7, t)
+    if send_x: ts.feed(EV_ABS, q.ABS_MT_POSITION_X, x, t)
+    if send_y: ts.feed(EV_ABS, q.ABS_MT_POSITION_Y, y, t)
+    ts.feed(EV_SYN, 0, 0, t); ts.poll(t); ts.feed(EV_SYN, 0, 0, t + 0.03); ts.poll(t + 0.05)
+    ts.feed(EV_ABS, q.ABS_MT_TRACKING_ID, -1, t + 0.06); ts.feed(EV_SYN, 0, 0, t + 0.06)
+    return ts.take_actions()
+g = full()
+a1 = tap_filtered(g, 1.0)
+assert any(a[0] == "down" for a in a1)
+a2 = tap_filtered(g, 2.0, send_x=False, send_y=False)       # misma X y misma Y: no llega ninguna
+assert any(a[0] == "down" for a in a2), a2
+a3 = tap_filtered(g, 3.0, send_x=False, send_y=True, y=620)   # misma X, otra Y
+assert any(a[0] == "down" for a in a3), a3
+assert [a for a in a3 if a[0] == "move"][0][2] > 0
 print("test_touch OK")

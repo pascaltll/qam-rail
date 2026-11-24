@@ -1,5 +1,9 @@
 # Cambios
 
+## dev.71
+- **Toques perdidos al volver a tocar el mismo sitio (hallado con la grabadora):** el núcleo de Linux no repite una coordenada igual a la anterior de la ranura, así que un dedo que cae en la misma X (o Y) que el toque anterior llega SIN esa coordenada, y el lector se quedaba sin posición (`inicio=False` en la grabación) y no hacía clic. Pasaba justo al reintentar el mismo botón del navegador, que es cuando «a veces no abre». Ahora cada ranura recuerda su última posición y un contacto nuevo parte de ella. Con tests que fallan con el código anterior.
+- Grabadora: `rueda` separa ahora los clics por origen (`dedo` = arrastre, `inercia`, `mando`); antes solo contaba inercia y mando, y el arrastre no salía.
+
 ## dev.70
 - **Corrección de dev.68 (visto en la grabadora):** el respiro entre mover, pulsar y soltar se hacía con `time.sleep`, y eso paraba el bucle (y la lectura del táctil) ~80 ms por toque: en tu grabación cada toque salía con `toque.enviado ms=80.8`, y de 11 toques seguidos 3 no llegaron a clic —los dedos que caían mientras el bucle dormía se procesaban tarde y con los tiempos aplastados—. Ahora los pasos se encolan con su hora y los ejecuta el bucle sin dormir; el respiro baja a 20 ms (mover→pulsar) y 40 ms (pulsar→soltar). Si el panel o el teclado se abren con un toque a medias, el botón se suelta al instante.
 - Grabadora: cada `dedo.arriba` anota ahora `inicio`, `suprime` y `segundo` (para saber por qué un toque no hizo clic), y `toque.enviado` mide `desde_el_dedo_ms` (de levantar el dedo a soltar el clic).
