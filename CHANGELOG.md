@@ -1,5 +1,9 @@
 # Cambios
 
+## dev.68
+- **Menús y desplegables del navegador que «a veces no abren» (modo táctil completo):** el toque mandaba mover + pulsar + soltar de golpe; GTK (Firefox, Edge) a veces aún no había visto llegar el puntero cuando ya recibía la pulsación, o la soltaba antes de abrir el menú. Ahora hay 30 ms entre colocar el puntero y pulsar, y 50 ms entre pulsar y soltar (`TAP_GAP_MOVE`/`TAP_GAP_HOLD`). Los arrastres no cambian. [H] causa sin confirmar en el equipo.
+- Recordatorio: el teclado al tocar un texto necesita activar «Tocar un texto abre el teclado» (Apps › Escritorio); en `touch-scroll.json` debe salir `"text": true`.
+
 ## dev.67
 - **Teclado al tocar un texto, en Edge/Chromium:** Chromium crea sus cursores sin nombre, así que la detección por nombre («text») no los veía nunca y el teclado no se abría. Ahora, si el cursor no trae nombre, se reconoce el cursor de texto por su forma (I simétrica, travesaños arriba y abajo, tallo fino). Además se mira hasta 3 veces tras el toque (0,15 · 0,45 · 0,85 s), porque Edge pinta el cursor un poco después. Cada intento fallido se anota en `pad.log` con lo que se vio («tras el toque el cursor no es de texto (sin nombre 11x20 → otra forma)») para ajustar la forma si hace falta. [H] sin probar en el equipo; el cuelgue de Edge sigue sin causa conocida (hacen falta `pad.log` y `timeline.log`).
 

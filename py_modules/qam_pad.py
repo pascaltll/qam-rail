@@ -790,6 +790,9 @@ class PadRunner:
     """Con una app de escritorio delante, lee el mando y manda ratón/teclado. `ours()` da los identificadores de las apps de escritorio abiertas;
     `env()` (async) da (DISPLAY, XAUTHORITY). El primer plano se lee de la propiedad de X con una conexión propia: sin lanzar procesos."""
 
+    TAP_GAP_MOVE = 0.03   # s entre colocar el puntero y pulsar (toque en modo completo)
+    TAP_GAP_HOLD = 0.05   # s entre pulsar y soltar
+
     def __init__(self, ours, env, log, enabled, event=None, touch=None):
         self.ours_fn, self.env_fn, self.log, self.enabled_fn = ours, env, log, enabled
         # touch() → None (apagado, o el panel/teclado está delante) o {} / {"ay":…} (correspondencia de ejes forzada)
@@ -947,7 +950,17 @@ class PadRunner:
 
     def _touch_apply(self, ts: "TouchScroll") -> None:
         """Lo que el modo completo pide: colocar el puntero, pulsar/soltar botones y anotar (con tope) lo que hizo."""
+        prev = None
         for a in ts.take_actions():
+            # Un toque es mover → pulsar → soltar. Mandado todo de golpe, GTK (menús y desplegables de Firefox/Edge) a veces aún no ha visto
+            # llegar el puntero cuando ya recibe la pulsación, o la suelta antes de abrir el menú: por eso «a veces no abren». Se deja un respiro.
+            if a[0] == "down" and prev == "move":
+                self._x.flush()
+                time.sleep(self.TAP_GAP_MOVE)
+            elif a[0] == "up" and prev == "down":
+                self._x.flush()
+                time.sleep(self.TAP_GAP_HOLD)
+            prev = a[0]
             if a[0] == "move":
                 self._x.move_abs(a[1], a[2])
             elif a[0] == "down":
