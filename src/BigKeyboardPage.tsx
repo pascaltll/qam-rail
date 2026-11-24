@@ -10,7 +10,7 @@ import { solid } from "./color";
 import { COLORS } from "./ui";
 
 /** Alto de la barra de ayudas de Steam (MENÚ / ATRÁS) que va por encima de cualquier ruta: sin este margen tapa la fila de la barra espaciadora. */
-export const STEAM_FOOTER = 48;
+export const STEAM_FOOTER = 68;
 
 export const BigKeyboardPage: FC = () => {
   // Si la ruta aparece sin que nosotros la abriéramos (entrada vieja del historial de Steam al cerrar con B: se vio el teclado «sin overlay»), se sale de ella.

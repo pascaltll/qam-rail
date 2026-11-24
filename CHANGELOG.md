@@ -1,5 +1,9 @@
 # Cambios
 
+## dev.94
+- **Teclado grande, mando como el de Xbox:** **Y = espacio**, **Start = Intro**, X = borrar, B = cerrar. Tu segunda foto lo aclaró: en Steam la «opción» (`onOptionsButton`) es el botón **Y** y el «menú» (`onMenuButton`) es **Start**; el texto de la cabecera decía «Start Intro» y «Menú espacio» pero la barra de Steam mostraba «Y INTRO». Estaba al revés y mal rotulado. La barra de ayudas de Steam ya muestra los botones, así que se quita el texto repetido de la cabecera.
+- Margen inferior 48 → 68 px: en la foto de dev.93 la barra de Steam aún tapaba la mitad de abajo de la barra espaciadora.
+
 ## dev.93
 - **Teclado grande: ya no queda tapado por la barra de Steam.** En tu foto la fila de abajo (Ctrl, AltGr, **barra espaciadora** y flechas) quedaba debajo de la barra de ayudas de Steam («MENÚ / ATRÁS»). Ahora el teclado se apoya 48 px más arriba (`STEAM_FOOTER` en `BigKeyboardPage.tsx`; si ves que sobra o falta, es un solo número). Los consejos de los botones de la cabecera pasan de 11 a 13 px.
 - Pendiente (diseño tipo Xbox): cuadrícula alineada en vertical, página de símbolos/números, Y = espacio, LT/RT = Mayús/símbolos.

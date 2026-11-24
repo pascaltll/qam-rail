@@ -1,7 +1,7 @@
 // Teclado en español para las apps de escritorio, a pantalla grande (ver BigKeyboardPage). Cada tecla se manda a la app de delante
 // (backend `desktop_key`); como la app queda debajo, una línea muestra lo escrito. Nunca se registra lo que escribes.
 // Distribución como un teclado real (filas escalonadas, 15 unidades de ancho, flechas siempre a mano, atajos plegados en "Más")
-// y manejable con el mando: X = borrar, Start = Intro, Menú = espacio, B = cerrar.
+// y manejable con el mando: X = borrar, Y = espacio, Start (menú) = Intro, B = cerrar.
 import { Focusable } from "@decky/ui";
 import { useRef, useState, type FC, type ReactNode } from "react";
 
@@ -73,10 +73,11 @@ export const PanelKeyboard: FC<{ notify?: (t: string) => void; onClose?: () => v
 
   return (
     <Focusable
-      // Mando como en los teclados de Steam/Xbox: X borra, Start = Intro, Menú = espacio, B cierra (si hay `onClose`).
+      // Mando como el teclado de Xbox: X borra, Y = espacio, Menú (Start) = Intro, B cierra. En Steam la «opción» (onOptionsButton) es la Y y el «menú»
+      // (onMenuButton) es Start: la barra de ayudas de Steam lo dice sola con las descripciones de abajo.
       onSecondaryButton={padBtn("X/secundario → borrar", { key: "BackSpace" })} onSecondaryActionDescription="Borrar"
-      onOptionsButton={padBtn("Start → Intro", { key: "Return" })} onOptionsActionDescription="Intro"
-      onMenuButton={padBtn("Menú → espacio", { text: " " })}
+      onOptionsButton={padBtn("Y/opciones → espacio", { text: " " })} onOptionsActionDescription="Espacio"
+      onMenuButton={padBtn("Start/menú → Intro", { key: "Return" })} onMenuActionDescription="Intro"
       onCancel={onClose ? (e: CustomEvent) => { e.stopPropagation(); onClose(); } : undefined} onCancelActionDescription={onClose ? "Cerrar teclado" : undefined}
       style={{ display: "flex", flexDirection: "column", gap: GAP }}>
       <div style={{ minHeight: 30, padding: "3px 14px", borderRadius: 12, background: COLORS.track, fontSize: 14, fontFamily: "monospace", display: "flex", alignItems: "center", gap: 12 }}>
@@ -84,7 +85,6 @@ export const PanelKeyboard: FC<{ notify?: (t: string) => void; onClose?: () => v
           {err || buf || <span style={{ color: COLORS.muted }}>Lo que escribas aparece aquí y se manda a la app</span>}
           {!err && <span style={{ color: COLORS.muted }}>▏</span>}
         </div>
-        <span style={{ fontSize: 13, color: COLORS.muted, whiteSpace: "nowrap", fontFamily: "inherit" }}>X borrar · Menú espacio · Start Intro · B cerrar</span>
         {onClose && <Chip compact grow={false} onClick={onClose}>✕ Cerrar</Chip>}
       </div>
       {row([...ROWS[0].map((k) => ch(k)), rep(2, big("⌫"), "BackSpace")], "r1")}
