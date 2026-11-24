@@ -1,5 +1,9 @@
 # Cambios
 
+## dev.87
+- **Zoom con dos dedos (fallaba en Firefox y en Edge):** el zoom es Ctrl + rueda, y la X del mando no conocía la forma de aplicar Ctrl que la autoprueba guarda (`lock`): solo la tenía la X del teclado. Era la causa de que el zoom no cambiara nada aunque el scroll sí funcionara. Ahora la X del mando carga `kbd-mode.json` al conectar y la autoprueba se la actualiza al cambiar de modo.
+- Resultado de dev.86 en tu Edge: 49 de 51 pasos bien. Teclado 12/12, pantalla completa de vídeo y F11, desplegables y menús bien. Solo fallaba el zoom (arreglado arriba). Las transiciones pasan: QAM abre en 38 ms, el táctil vuelve en 171 ms; teclado grande cierra en 445 ms.
+
 ## dev.86
 - **Teclado: batería completa en «Probar navegador»** (`teclado: batería completa`). Pasa 12 casos y dice, uno a uno, qué esperaba y qué salió: minúsculas y dígitos, MAYÚSCULAS, símbolos (2 grupos), acentos y ñ, letras repetidas, texto largo (80), flechas/Inicio/Fin/Borrar/Supr, Intro en un cuadro de texto, Ctrl+A/C/V, Ctrl+X y pegar, Mayús+flechas; y la velocidad (caracteres/s). La página de prueba tiene ahora un cuadro de texto (`textarea`) para Intro.
 - **Si algo falla, prueba solo todas las combinaciones** (Ctrl: keys/slow/lock × símbolos: levels/remap = 6) con la misma batería y se queda con la que más casos pasa (`teclado: mejor combinación`, con la tabla de todas). Queda guardada. Así, en Edge, una sola ejecución dice qué falla y deja puesto el mejor modo.

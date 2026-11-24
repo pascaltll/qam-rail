@@ -140,6 +140,7 @@ class Plugin:
         try:  # mando como ratón para las apps de escritorio (0.54 dev.26): duerme sin lanzar nada mientras no haya una app delante
             if qam_pad is not None:
                 self._pad = qam_pad.PadRunner(self._pad_ours, self._pad_env, self._pad_log, self._pad_enabled, event=self._tl_combo, touch=self._touch_cfg, trace=self._trace_obj())
+                self._pad.kmode_fn = self._kmode
                 self._spawn(self._pad.run())
             if qam_blackbox is not None and qam_pad is not None:
                 self._spawn(self._wd_loop())
@@ -339,6 +340,8 @@ class Plugin:
                     x.mod_mode = mod
                 if ch:
                     x.char_mode = ch
+                if pad is not None and pad._x is not None:   # el mando usa la misma forma (zoom = Ctrl + rueda)
+                    pad._x.mod_mode, pad._x.char_mode = x.mod_mode, x.char_mode
                 if save:
                     try:
                         with open(_path("kbd-mode.json"), "w", encoding="utf-8") as fh:
@@ -1399,6 +1402,17 @@ class Plugin:
             except (OSError, ValueError):
                 pass
         return self._kx_x
+
+    def _kmode(self):
+        """(mod_mode, char_mode) de kbd-mode.json para la X del mando (el zoom con dos dedos necesita el mismo Ctrl que el teclado), o None."""
+        try:
+            with open(_path("kbd-mode.json"), encoding="utf-8") as fh:
+                km = json.load(fh)
+            if km.get("mod") in qam_pad.XOut.GAPS and km.get("ch") in ("levels", "remap"):
+                return km["mod"], km["ch"]
+        except (OSError, ValueError, AttributeError):
+            pass
+        return None
 
     def _kx_close(self) -> None:
         x = getattr(self, "_kx_x", None)

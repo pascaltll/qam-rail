@@ -1054,6 +1054,7 @@ class PadRunner:
         self._tr_wins: dict = {}    # ventanas visibles ya vistas: id → (x, y, w, h, override)
         self._tr_tap_at = 0.0       # hora del último toque (para decir «la ventana apareció N ms después»)
         self._probes: list = []     # (cuándo, id, ancho, alto): mirar el contenido de una ventana emergente nueva
+        self.kmode_fn = None        # () → (mod_mode, char_mode) guardados por la autoprueba, o None
         self._snaps: list = []      # (cuándo, ventana bajo el puntero al pulsar, nº de ventanas al pulsar) para anotar el efecto del toque
         # touch() → None (apagado, o el panel/teclado está delante) o {} / {"ay":…} (correspondencia de ejes forzada)
         self.touch_fn = touch or (lambda: None)
@@ -1469,6 +1470,9 @@ class PadRunner:
                     if self._x is None and time.monotonic() >= self._xfail:
                         display, xauth = await self.env_fn()
                         self._x = XOut(display, xauth)
+                        km = self.kmode_fn() if self.kmode_fn else None   # cómo se aplican Ctrl/símbolos (lo que halló la autoprueba): el zoom con dos dedos es Ctrl + rueda
+                        if km:
+                            self._x.mod_mode, self._x.char_mode = km
                         self.log(f"mando: conectado a X en {display}")
                     on = self._x is not None and self.focused_is_ours(self._x, ours)
             except Exception as e:  # noqa: BLE001
