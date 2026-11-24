@@ -1,5 +1,8 @@
 # Cambios
 
+## dev.82
+- **Grabadora: ¿está pintado el menú que se abre?** Con dev.81 se vio que al tocar, Firefox crea la ventana del menú (aparece en X a los 35–175 ms), pero tú dices que en pantalla no hay nada. Ahora, 0,35 s después de aparecer una ventana emergente, la grabadora lee su contenido y apunta `ventana.contenido pintado=N colores…`: si tiene un solo color (negro), Firefox no llegó a pintarla; si tiene muchos y no la ves, es gamescope el que no la enseña. `ventana.nueva` añade `capa=n/total` (su posición en la pila de ventanas).
+
 ## dev.81
 - **La grabadora ve ahora lo que pasa en X cuando tocas** («Grabar navegación» → `nav-trace.log`): `ventana.nueva` / `ventana.cierra` (los menús y desplegables de GTK son ventanas aparte; dice cuántos ms después del toque aparecieron), `toque.efecto` (0,4 s después de cada clic: a qué ventana iba el clic y cuántas ventanas había antes→después) y `ventanas.inicio`. Así, un menú que «no abre» se distingue de uno que abre y se cierra solo, o de un clic que fue a otra ventana.
 - **Zoom con dos dedos en Firefox:** el Ctrl falso se ignoraba; ahora se fija con XKB (igual que Ctrl+T) antes de girar la rueda.

@@ -271,6 +271,31 @@ class XOut:
             pass
         return out
 
+    def window_probe(self, wid: int, w: int, h: int) -> str:
+        """Mira qué hay DENTRO de una ventana (lo que Firefox ha pintado, aunque gamescope no lo enseñe): colores distintos entre ~300 puntos
+        y fracción del color más común. Una ventana de menú pintada tiene varios colores; una sin pintar, uno solo (negro o transparente)."""
+        try:
+            x = self.x11
+            x.XGetImage.restype = ctypes.c_void_p
+            x.XGetImage.argtypes = [ctypes.c_void_p, ctypes.c_ulong, ctypes.c_int, ctypes.c_int, ctypes.c_uint, ctypes.c_uint, ctypes.c_ulong, ctypes.c_int]
+            x.XGetPixel.restype = ctypes.c_ulong
+            x.XGetPixel.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_int]
+            img = x.XGetImage(self.dpy, int(wid), 0, 0, w, h, 0xFFFFFFFF, 2)
+            if not img:
+                return "no se pudo leer"
+            cols: dict = {}
+            n = 0
+            for iy in range(1, 21):
+                for ix in range(1, 16):
+                    c = int(x.XGetPixel(img, ix * w // 16, iy * h // 21))
+                    cols[c] = cols.get(c, 0) + 1
+                    n += 1
+            x.XDestroyImage(ctypes.c_void_p(img)) if hasattr(x, "XDestroyImage") else None
+            top = max(cols.items(), key=lambda kv: kv[1])
+            return f"{len(cols)} colores, el más común {hex(top[0])} en {round(100 * top[1] / n)}%"
+        except Exception as e:  # noqa: BLE001
+            return f"error {e!r}"
+
     def pointer_child(self) -> tuple:
         """(x, y, ventana hija de la raíz bajo el puntero): para saber a qué ventana cree X que va un clic."""
         try:
@@ -1028,6 +1053,7 @@ class PadRunner:
         self._tr_win_at = 0.0       # cuándo mirar las ventanas visibles (grabadora)
         self._tr_wins: dict = {}    # ventanas visibles ya vistas: id → (x, y, w, h, override)
         self._tr_tap_at = 0.0       # hora del último toque (para decir «la ventana apareció N ms después»)
+        self._probes: list = []     # (cuándo, id, ancho, alto): mirar el contenido de una ventana emergente nueva
         self._snaps: list = []      # (cuándo, ventana bajo el puntero al pulsar, nº de ventanas al pulsar) para anotar el efecto del toque
         # touch() → None (apagado, o el panel/teclado está delante) o {} / {"ay":…} (correspondencia de ejes forzada)
         self.touch_fn = touch or (lambda: None)
@@ -1200,6 +1226,9 @@ class PadRunner:
             _t, (ch, n0, px, py) = self._snaps.pop(0)
             n1 = len(self._x.windows())
             self._tr("toque.efecto", clic_en=f"{px},{py}", ventana_bajo_el_puntero=hex(ch), ventanas=f"{n0}→{n1}")
+        if self._probes and now >= self._probes[0][0]:
+            _t, wid, ww, hh = self._probes.pop(0)
+            self._tr("ventana.contenido", id=hex(wid), pintado=self._x.window_probe(wid, ww, hh))
         if now < self._tr_win_at:
             return
         self._tr_win_at = now + 0.2
@@ -1211,7 +1240,10 @@ class PadRunner:
         ms = round((now - self._tr_tap_at) * 1000) if self._tr_tap_at else -1
         for i, v in cur.items():
             if i not in self._tr_wins:
-                self._tr("ventana.nueva", id=hex(i), pos=f"{v[0]},{v[1]}", tam=f"{v[2]}x{v[3]}", emergente=v[4], desde_el_toque_ms=ms)
+                orden = list(cur).index(i) + 1
+                self._tr("ventana.nueva", id=hex(i), pos=f"{v[0]},{v[1]}", tam=f"{v[2]}x{v[3]}", emergente=v[4], desde_el_toque_ms=ms, capa=f"{orden}/{len(cur)}")
+                if v[4]:
+                    self._probes.append((now + 0.35, i, v[2], v[3]))
         for i, v in self._tr_wins.items():
             if i not in cur:
                 self._tr("ventana.cierra", id=hex(i), tam=f"{v[2]}x{v[3]}", emergente=v[4], desde_el_toque_ms=ms)
