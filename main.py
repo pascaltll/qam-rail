@@ -40,6 +40,10 @@ try:
 except ImportError:
     qam_cursor = qam_cursor_theme = None
 try:
+    import qam_forensics
+except ImportError:
+    qam_forensics = None
+try:
     import qam_blackbox
 except ImportError:
     qam_blackbox = None
@@ -2655,9 +2659,7 @@ class Plugin:
                 try:
                     with open(p, encoding="utf-8", errors="replace") as fh:
                         lines = fh.read()[-60000:].splitlines()
-                    # Solo lo fechado dentro de la ventana (las lineas empiezan por [AAAA-MM-DD hh:mm:ss]).
-                    keep = [l for l in lines if l[1:20] >= since[:19]] or lines[-40:]
-                    out[name] = self._clean(keep, 120)
+                    out[name] = self._clean(qam_forensics.window_lines(lines, since), 120)
                 except OSError:
                     pass
         env = self._user_env()
@@ -2674,47 +2676,28 @@ class Plugin:
         js = await cmd("journalctl", "--no-pager", "-o", "short-iso", "--since", since, "-n", "6000")
         out["journal_usuario"] = self._clean(ju, 150)
         out["evidencias"] = self._clean([l for l in ju + js if any(k in l.lower() for k in self._EVIDENCE)], 120)
-        dumps = []
-        for d in ("/tmp/dumps", os.path.join(_home(), ".local", "share", "Steam", "dumps")):
-            try:
-                for f in os.listdir(d):
-                    p = os.path.join(d, f)
-                    mt = os.path.getmtime(p)
-                    if mt >= start - 600:
-                        dumps.append({"archivo": f, "hora": time.strftime("%H:%M:%S", time.localtime(mt)), "kb": os.path.getsize(p) // 1024})
-            except OSError:
-                pass
-        out["volcados_steam"] = sorted(dumps, key=lambda x: x["hora"])
+        dump_dirs = ["/tmp/dumps", os.path.join(_home(), ".local", "share", "Steam", "dumps")]
+        out["volcados_steam"] = qam_forensics.recent_dumps(dump_dirs, start)
         # El texto del aviso que hizo saltar cada volcado («Assertion Failed: ...», fichero.cpp:linea).
         for dmp in out["volcados_steam"][-3:]:
             if dmp["archivo"].endswith(".dmp"):
-                for d in ("/tmp/dumps", os.path.join(_home(), ".local", "share", "Steam", "dumps")):
+                for d in dump_dirs:
                     pth = os.path.join(d, dmp["archivo"])
                     if os.path.isfile(pth):
-                        dmp["texto"] = self._dump_strings(pth)
+                        dmp["texto"] = qam_forensics.dump_strings(pth)
                         break
         # ¿Se reinicio TODA la sesion de juego (gamescope + Xwayland), no solo Steam? Entonces el fallo no es de Steam
         # ni de un plugin: es del compositor (se ve como «Fatal IO error ... on X server» y gamescope arrancando de nuevo).
         allj = ju + js
         steam_lines = [l for k in ("webhelper.txt", "console-linux.txt", "console_log.txt") for l in (out.get(k) or []) if isinstance(l, str)]
-        x_lost = [l for l in steam_lines + allj if "Fatal IO error" in l or "X server" in l and "lost" in l.lower()]
-        gs_start = [l for l in allj if "gamescope version" in l or "OpenGamepadUI v" in l]
-        out["sesion_grafica"] = {"servidor_x_perdido": x_lost[:4], "gamescope_arranco": gs_start[:4],
-                                 "fin_del_juego": [l for l in steam_lines if "TerminateApp" in l or "Game process removed" in l][-3:]}
+        out["sesion_grafica"] = qam_forensics.graphic_session(steam_lines, allj)
         # Las ultimas lineas del gamescope que murio (sin la ayuda de su consola), por si dice por que.
-        pids = []
-        for l in allj:
-            m = l.split("gamescope-session-plus[", 1)
-            if len(m) == 2:
-                pid = m[1].split("]", 1)[0]
-                if pid not in pids:
-                    pids.append(pid)
+        pids = qam_forensics.gamescope_pids(allj)
         if len(pids) > 1:
-            old = [l for l in allj if f"gamescope-session-plus[{pids[0]}]" in l and "console:" not in l and "binding:" not in l]
+            old = qam_forensics.previous_gamescope(allj, pids[0])
             out["gamescope_anterior"] = self._clean(old[-40:], 40)
-            # OpenGamepadUI (Godot) al cerrarse deja «leaked at exit» / «Unreferenced static string»: si aparece, fue
-            # el que se cerro y con el cayo la sesion (zip 2026-11-07 21:19).
-            ogui = [l for l in old if "at exit" in l or "Unreferenced static string" in l]
+            # OpenGamepadUI (Godot) al cerrarse deja «leaked at exit»: si aparece, fue el que se cerro y con el cayo la sesion (zip 2026-11-07 21:19).
+            ogui = qam_forensics.opengamepadui_closed(old)
             out["sesion_grafica"]["opengamepadui_se_cerro"] = bool(ogui)
             out["sesion_grafica"]["hora_cierre_opengamepadui"] = ogui[0][:25] if ogui else None
         out["orca"] = (await cmd("systemctl", "--user", "show", "orca", "-p", "ActiveState", "-p", "NRestarts", "-p", "Result"))[:4]
@@ -2725,24 +2708,6 @@ class Plugin:
             pass
         out["ventana"] = [since, time.strftime("%Y-%m-%d %H:%M:%S")]
         return out
-
-    @staticmethod
-    def _dump_strings(path: str) -> list:
-        """Cadenas legibles de un volcado de Steam que parecen el motivo (assert, fichero .cpp, error)."""
-        import re
-        try:
-            with open(path, "rb") as fh:
-                data = fh.read(4_000_000)
-        except OSError:
-            return []
-        found = []
-        for m in re.finditer(rb"[\x20-\x7e]{12,300}", data):
-            t = m.group().decode("ascii", "replace")
-            if re.search(r"assert|Assertion|\.cpp|\.h:\d|fatal|error|failed", t, re.I) and t not in found:
-                found.append(t)
-            if len(found) >= 15:
-                break
-        return found
 
     async def session_begin(self, info: dict) -> dict:
         """El frontend arranco. Si la sesion anterior no se cerro limpia (Steam se cayo, se reinicio o se cambio de
