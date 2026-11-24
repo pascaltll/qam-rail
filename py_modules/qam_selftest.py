@@ -701,7 +701,7 @@ class SelfTest:
             elegido = (base_bien, actual[0], actual[1], [b[0] for b in fallos])
         self._sm(mod=elegido[1], ch=elegido[2], save=True)
         tabla = " | ".join(f"{m}+{c}: {b}/{total}" for b, m, c, _ in sorted(marcador, key=lambda t: (t[1], t[2])))
-        cambio = "cambia a" if elegido is mejor else "se queda en"
+        cambio = "cambia a" if (elegido[1], elegido[2]) != actual else "se queda en"   # mismo modo que al empezar (aunque la 2.ª pasada salga mejor): no es un cambio
         self.res("teclado: mejor combinación", elegido[0] >= total - 1,
                  f"{cambio} «{elegido[1]}» + «{elegido[2]}» ({elegido[0]}/{total}; al empezar {base_bien}/{total} con «{actual[0]}» + «{actual[1]}»). Todas: {tabla}"
                  + (f". Sigue fallando: {', '.join(elegido[3])}" if elegido[3] else ""))
