@@ -187,12 +187,14 @@ def fit_axis(p1: float, p2: float, c1: float, c2: float):
 
 
 class SelfTest:
-    def __init__(self, runner, keys, typ, log=None, title=None, opener=None, setmode=None, setfs=None):
+    def __init__(self, runner, keys, typ, log=None, title=None, opener=None, setmode=None, setfs=None, act=None):
         """`runner`: el PadRunner en marcha (con su X). `keys(key, mods)` y `typ(text)`: el teclado de QAM (async, devuelven bool)."""
         self.r, self.keys, self.typ = runner, keys, typ
         self.log = log or (lambda *_, **__: None)
         self.title = title or (lambda: "")   # título de la ventana del navegador (para el diagnóstico)
         self.setfs_cb = setfs
+        self.act = act                       # async act(nombre): pide a la interfaz abrir/cerrar el QAM o el teclado grande (sirve para cerrar lo que se abra por fuera)
+        self.interf = 0                      # veces que el teclado o el panel se abrieron durante la prueba (alguien tocó la pantalla)
         self.setmode = setmode               # setmode(mod=None, ch=None, save=False): cambia/guarda cómo se aplican Ctrl/Mayús en el teclado de QAM
         self.modo = {"mod": "keys", "ch": "levels"}   # último modo aplicado (lo mantiene _sm)
         self.opener = opener                 # abre una URL en el navegador por el sistema (xdg-open): no depende de la barra de direcciones
@@ -225,7 +227,24 @@ class SelfTest:
     async def feed(self, evs: list) -> None:
         self.r._touch_feed(self.ts, evs, time.monotonic())
 
+    async def _libre(self) -> None:
+        """Con el teclado grande o el panel abiertos el táctil está en pausa y los toques de la prueba no llegan: si se abrieron por fuera (alguien tocó
+        la pantalla durante la prueba), se cierran antes de seguir y se anota."""
+        if self.act is None or self.r.touch_fn() is not None:
+            return
+        self.interf += 1
+        for nombre in ("kb_close", "qam_close"):
+            try:
+                await self.act(nombre)
+            except Exception:  # noqa: BLE001
+                return
+            for _ in range(10):
+                await asyncio.sleep(0.15)
+                if self.r.touch_fn() is not None:
+                    return
+
     async def tap(self, x: int, y: int, hold: float = 0.07) -> float:
+        await self._libre()
         await self.feed(self.finger.down(x, y))
         await asyncio.sleep(hold)
         t = time.monotonic()
@@ -233,6 +252,7 @@ class SelfTest:
         return t
 
     async def drag(self, x0: int, y0: int, x1: int, y1: int, dur: float = 0.35, release: bool = True) -> None:
+        await self._libre()
         await self.feed(self.finger.down(x0, y0))
         n = max(4, int(dur / 0.016))
         for i in range(1, n + 1):
@@ -243,6 +263,7 @@ class SelfTest:
 
     async def drag2(self, a0: tuple, b0: tuple, a1: tuple, b1: tuple, dur: float = 0.6) -> None:
         """Dos dedos que van de (a0, b0) a (a1, b1) a la vez."""
+        await self._libre()
         await self.feed(self.hands.down(a0, b0))
         n = max(5, int(dur / 0.016))
         for i in range(1, n + 1):
@@ -297,6 +318,8 @@ class SelfTest:
             except Exception:  # noqa: BLE001
                 pass
             await self.probe.stop()
+        if self.interf:
+            self.res("interferencias", False, f"el teclado grande o el panel se abrieron {self.interf} vez/veces durante la prueba (¿se tocó la pantalla?); se cerraron solos, pero los pasos de ese momento pueden haber fallado por eso")
         bad = [s for s in self.steps if s["ok"] is False]
         return {"ok": not bad and bool(self.steps), "steps": self.steps, "secs": round(time.monotonic() - t_all), "eventos": len(self.probe.events)}
 

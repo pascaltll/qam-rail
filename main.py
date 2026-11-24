@@ -354,11 +354,11 @@ class Plugin:
                         pass
                 self._pad_log(f"autoprueba: teclado modo mod={x.mod_mode} símbolos={x.char_mode}" + (" (guardado)" if save else ""))
             wid = self._front_wid(x)
+
+            async def act(name):
+                await decky.emit("qam_trans", name)
             if kind == "trans" and qam_transtest is not None:
                 sink: list = []
-
-                async def act(name):
-                    await decky.emit("qam_trans", name)
                 self._tsink = sink
                 try:
                     test = qam_transtest.TransTest(pad, keys, typ, log, title=lambda: x.window_title(wid), opener=lambda u: self._open_url(u, self._front_key(wid)),
@@ -375,7 +375,7 @@ class Plugin:
                         break
                 except ValueError:
                     continue
-            test = qam_selftest.SelfTest(pad, keys, typ, log, title=lambda: x.window_title(wid), opener=lambda u: self._open_url(u, fkey), setmode=setmode, setfs=lambda on: x.set_wm_fullscreen(wid, on))
+            test = qam_selftest.SelfTest(pad, keys, typ, log, title=lambda: x.window_title(wid), opener=lambda u: self._open_url(u, fkey), setmode=setmode, setfs=lambda on: x.set_wm_fullscreen(wid, on), act=act)
             res = await asyncio.wait_for(test.run(), 300)
         except asyncio.TimeoutError:
             res = {"ok": False, "error": "la prueba tardó más de 2 minutos y se paró", "steps": []}

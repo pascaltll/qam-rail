@@ -1,5 +1,9 @@
 # Cambios
 
+## dev.95
+- **La autoprueba se recupera si se abre el teclado grande o el panel durante la prueba.** En tu equipo, a las 11:50 se abrió el teclado de verdad (alguien tocó el campo de texto de la página; el registro lo muestra: «cursor de texto → teclado grande» sin cerrarse después), el táctil quedó en pausa y todos los pasos siguientes fallaron con «el toque no llegó» (también «vídeo: pantalla completa», por eso no se pudo ver si Firefox pide la pantalla completa). Ahora, antes de cada toque o arrastre, si el táctil está en pausa se cierra el teclado (y, si hace falta, el panel) y se sigue; al final aparece un paso «interferencias» que dice cuántas veces pasó. **Durante la prueba no toques la pantalla** (el aviso «no toques la pantalla» ya sale).
+- Pendiente: ver el resultado de «vídeo: pantalla completa» sin interferencias; en `pad.log` se verá «pantalla completa: la ventana 0x… la pide → hecho» si Firefox manda la petición.
+
 ## dev.94
 - **Teclado grande, mando como el de Xbox:** **Y = espacio**, **Start = Intro**, X = borrar, B = cerrar. Tu segunda foto lo aclaró: en Steam la «opción» (`onOptionsButton`) es el botón **Y** y el «menú» (`onMenuButton`) es **Start**; el texto de la cabecera decía «Start Intro» y «Menú espacio» pero la barra de Steam mostraba «Y INTRO». Estaba al revés y mal rotulado. La barra de ayudas de Steam ya muestra los botones, así que se quita el texto repetido de la cabecera.
 - Margen inferior 48 → 68 px: en la foto de dev.93 la barra de Steam aún tapaba la mitad de abajo de la barra espaciadora.
