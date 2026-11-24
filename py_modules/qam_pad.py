@@ -1379,76 +1379,100 @@ class PadRunner:
             _s, _u, typ, code, val = struct.unpack_from(EVENT_FMT, data, i)
             self.events += 1
             acts = []
-            if typ == EV_KEY:
-                if val in (0, 1):
-                    prev = self._last_key.get((code, val))
-                    self._last_key[(code, val)] = (now, ev)
-                    if prev and prev[1] != ev and now - prev[0] < 0.025:
-                        # el mismo botón llegó por otro dispositivo casi a la vez: es el mismo mando visto dos veces
-                        if not self._dup_noted:
-                            self._dup_noted = True
-                            self.log(f"mando: doble entrada: el botón {code} llega por {prev[1]} y {ev}; se cuenta una vez")
-                        continue
-                    if code == BTN_MODE:
-                        if val == 1 and 0 < now - self._y_at < 1.0:
-                            # Steam + Y con el aviso de Steam llegando después de la Y (así lo vimos en el equipo): también abre el teclado
-                            self._y_at = 0.0
-                            self.log("mando: combo Y→Steam → teclado grande")
-                            self.event("kb.combo")
-                        self._mode_down = val == 1
-                        self._mode_until = now + 0.5 if val == 0 else 0.0
-                    elif val == 1 and (self._mode_down or now < self._mode_until):
-                        if code == 304 and self._mode_down:
-                            self.log("mando: combo Steam+A → QAM")
-                            self.event("qam.combo")  # Steam + A: el usuario pidió el QAM
-                        elif code == 308 and self._mode_down:
-                            self.log("mando: combo Steam+Y → teclado grande")
-                            self.event("kb.combo")   # Steam + Y: el usuario pidió el teclado grande
-                        continue  # Steam + botón (abrir el QAM, capturas…): no es un clic para la app
-                    if code == 314:
-                        # Select no manda Esc al pulsarlo sino al soltarlo, y solo si no se usó de combinación
-                        if val == 1:
-                            self._sel_down, self._sel_used = True, False
-                        else:
-                            self._sel_down = False
-                            if not self._sel_used:
-                                acts = self.mapper.feed_button(314, True, now)
-                        if self._logged < 150:
-                            self._logged += 1
-                            self.log(f"mando: botón 314 {'pulsado' if val else 'soltado'} ({ev})")
-                        for a in acts:
-                            apply_action(self._x, a)
-                        continue
-                    if code == 308 and val == 1 and self._sel_down:
-                        self._sel_used = True
-                        self.log("mando: combo Select+Y → teclado grande")
-                        self.event("kb.combo")   # Select + Y: el teclado grande, sin pasar por el botón Steam
-                        continue
-                    if code == 308 and val == 1:
-                        self._y_at = now
-                    if self._logged < 150:
-                        self._logged += 1
-                        self.log(f"mando: botón {code} {'pulsado' if val else 'soltado'} ({ev})")
-                    acts = self.mapper.feed_button(code, val != 0, now)
+            if typ == EV_KEY and val in (0, 1):
+                acts = self._key_event(code, val, ev, now)
             elif typ == EV_ABS:
-                if (ev, code) not in self._axes_seen:
-                    self._axes_seen.add((ev, code))
-                    self.log(f"mando: primer movimiento del eje {code} en {ev}")
-                if code in (ABS_HAT0X, ABS_HAT0Y):
-                    v = float(val)
-                else:
-                    lo, hi = ranges.get(code, (-32768, 32767))
-                    v = norm_axis(val, lo, hi, trigger=code in (ABS_Z, ABS_RZ))
-                acts = self.mapper.feed_axis(code, v, now)
-            for a in acts:
-                try:
-                    apply_action(self._x, a)
-                except Exception as e:  # noqa: BLE001
-                    self.log(f"mando: error al enviar {a}: {e}")
+                acts = self._abs_event(code, val, ev, ranges, now)
+            self._apply_acts(acts)
         try:
             self._x.flush()
         except Exception:  # noqa: BLE001
             pass
+
+    def _apply_acts(self, acts: list) -> None:
+        for a in acts:
+            try:
+                apply_action(self._x, a)
+            except Exception as e:  # noqa: BLE001
+                self.log(f"mando: error al enviar {a}: {e}")
+
+    def _is_duplicate(self, code: int, val: int, ev: str, now: float) -> bool:
+        """El mismo botón llegó por otro dispositivo casi a la vez: es el mismo mando visto dos veces."""
+        prev = self._last_key.get((code, val))
+        self._last_key[(code, val)] = (now, ev)
+        if not (prev and prev[1] != ev and now - prev[0] < 0.025):
+            return False
+        if not self._dup_noted:
+            self._dup_noted = True
+            self.log(f"mando: doble entrada: el botón {code} llega por {prev[1]} y {ev}; se cuenta una vez")
+        return True
+
+    def _steam_button(self, val: int, now: float) -> None:
+        if val == 1 and 0 < now - self._y_at < 1.0:
+            # Steam + Y con el aviso de Steam llegando después de la Y (así lo vimos en el equipo): también abre el teclado
+            self._y_at = 0.0
+            self.log("mando: combo Y→Steam → teclado grande")
+            self.event("kb.combo")
+        self._mode_down = val == 1
+        self._mode_until = now + 0.5 if val == 0 else 0.0
+
+    def _steam_combo(self, code: int) -> None:
+        """Steam + botón (abrir el QAM, capturas…): no es un clic para la app."""
+        if code == 304 and self._mode_down:
+            self.log("mando: combo Steam+A → QAM")
+            self.event("qam.combo")  # Steam + A: el usuario pidió el QAM
+        elif code == 308 and self._mode_down:
+            self.log("mando: combo Steam+Y → teclado grande")
+            self.event("kb.combo")   # Steam + Y: el usuario pidió el teclado grande
+
+    def _note_button(self, code: int, val: int, ev: str) -> None:
+        if self._logged < 150:
+            self._logged += 1
+            self.log(f"mando: botón {code} {'pulsado' if val else 'soltado'} ({ev})")
+
+    def _select_event(self, val: int, ev: str, now: float) -> list:
+        """Select no manda Esc al pulsarlo sino al soltarlo, y solo si no se usó de combinación."""
+        acts = []
+        if val == 1:
+            self._sel_down, self._sel_used = True, False
+        else:
+            self._sel_down = False
+            if not self._sel_used:
+                acts = self.mapper.feed_button(314, True, now)
+        self._note_button(314, val, ev)
+        return acts
+
+    def _key_event(self, code: int, val: int, ev: str, now: float) -> list:
+        """Un botón del mando → acciones para X (lista vacía: nada que enviar)."""
+        if self._is_duplicate(code, val, ev, now):
+            return []
+        if code == BTN_MODE:
+            self._steam_button(val, now)
+        elif val == 1 and (self._mode_down or now < self._mode_until):
+            self._steam_combo(code)
+            return []
+        if code == 314:
+            return self._select_event(val, ev, now)
+        if code == 308 and val == 1 and self._sel_down:
+            self._sel_used = True
+            self.log("mando: combo Select+Y → teclado grande")
+            self.event("kb.combo")   # Select + Y: el teclado grande, sin pasar por el botón Steam
+            return []
+        if code == 308 and val == 1:
+            self._y_at = now
+        self._note_button(code, val, ev)
+        return self.mapper.feed_button(code, val != 0, now)
+
+    def _abs_event(self, code: int, val: int, ev: str, ranges: dict, now: float) -> list:
+        if (ev, code) not in self._axes_seen:
+            self._axes_seen.add((ev, code))
+            self.log(f"mando: primer movimiento del eje {code} en {ev}")
+        if code in (ABS_HAT0X, ABS_HAT0Y):
+            v = float(val)
+        else:
+            lo, hi = ranges.get(code, (-32768, 32767))
+            v = norm_axis(val, lo, hi, trigger=code in (ABS_Z, ABS_RZ))
+        return self.mapper.feed_axis(code, v, now)
 
     @staticmethod
     def focused_is_ours(x: XOut, ours: set) -> bool:
