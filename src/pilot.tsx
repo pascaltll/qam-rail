@@ -221,9 +221,42 @@ export function startPilot(doc: Document, hooks: PilotHooks): () => void {
     }, 180);
   };
 
+  // Vigilante del panel fantasma (dev.99): el registro del 24-nov mostró «panel abre» sin «panel cierra» y la pantalla de Steam
+  // desenfocada sin panel visible (Steam+A con el menú izquierdo ya abierto). Mientras el panel figura abierto se comprueba cada
+  // segundo que su elemento existe, está conectado y tiene tamaño dentro de la ventana; tras 4 fallos seguidos se cierra todo
+  // (panel, menús de Steam y overlay del backend) para no dejar al usuario en un limbo sin respuesta.
+  let badTicks = 0;
+  const ghostWatch = window.setInterval(() => {
+    if (modal === null || Date.now() - openedAt < 2500) { badTicks = 0; return; }
+    const el = (window as unknown as { __qamRailModalEl?: HTMLElement | null }).__qamRailModalEl;
+    let why = "";
+    if (!el) why = "sin elemento";
+    else if (!el.isConnected) why = "desconectado";
+    else {
+      const r = el.getBoundingClientRect();
+      const win = el.ownerDocument?.defaultView;
+      const vw = win?.innerWidth ?? 0, vh = win?.innerHeight ?? 0;
+      if (r.width < 40 || r.height < 40) why = `tamaño ${Math.round(r.width)}x${Math.round(r.height)}`;
+      else if (vw && (r.right < 0 || r.left > vw || r.bottom < 0 || r.top > vh)) why = `fuera de la ventana (${Math.round(r.left)},${Math.round(r.top)} en ${vw}x${vh})`;
+    }
+    badTicks = why ? badTicks + 1 : 0;
+    if (badTicks === 1) hooks.log(`vigilante: el panel no se ve (${why})`);
+    if (badTicks >= 4) {
+      badTicks = 0;
+      hooks.log(`vigilante: panel fantasma (${why}); se cierra todo`);
+      markCloseReason("panel fantasma (vigilante)");
+      closeOwn();
+      hideNative(false);
+      try { Navigation.CloseSideMenus(); } catch { /* nada */ }
+      desktopOverlay(false, "panel").catch(() => undefined);
+      qamEvent("panel.cierra").catch(() => undefined);
+    }
+  }, 1000);
+
   doc.addEventListener("visibilitychange", onVis);
   hooks.log("piloto de QAM propio activo");
   return () => {
+    window.clearInterval(ghostWatch);
     doc.removeEventListener("visibilitychange", onVis);
     patch?.dispose();
     hideNative(false);

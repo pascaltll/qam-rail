@@ -1,5 +1,8 @@
 # Cambios
 
+## dev.99
+- **Vigilante del panel fantasma.** El 24-nov, con VacuumTube abierto, pulsar Steam (menú izquierdo) y luego Steam+A dejó la pantalla de Steam desenfocada sin ningún panel visible y sin respuesta: el registro tenía «panel abre» pero nunca «panel cierra», y el overlay seguía puesto. Ahora, mientras el panel figura abierto, se comprueba cada segundo que su elemento existe, está conectado y tiene tamaño dentro de la ventana; tras 4 fallos seguidos se cierran el panel, los menús de Steam y el overlay del backend. El primer fallo queda en el registro como «vigilante: el panel no se ve (motivo)». Es una red de seguridad: la causa exacta del limbo sigue sin confirmar.
+
 ## dev.98
 - **Autoprueba: nuevo paso «suavidad del desplazamiento».** La página registra cada evento de scroll de la lista (con su hora) y, 300 ms después de soltar, resume: eventos por segundo, salto máximo entre dos eventos y parón más largo. Solo mide, no cambia el comportamiento: sirve de línea base antes de afinar el scroll (pasos de rueda más finos / inercia).
 
