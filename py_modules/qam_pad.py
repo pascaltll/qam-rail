@@ -317,6 +317,31 @@ class XOut:
     def move(self, dx: int, dy: int) -> None:
         self.xt.XTestFakeRelativeMotionEvent(self.dpy, int(dx), int(dy), 0)
 
+    def cursor_is_text(self) -> tuple:
+        """(¿cursor de texto?, descripción para el registro). Primero por nombre; si el cursor no lo trae (Chromium/Edge), por la forma."""
+        try:
+            self.cursor_name()   # carga XFixes
+            if not getattr(self, "_fx", None):
+                return False, "sin XFixes"
+            p = self._fx.XFixesGetCursorImage(self.dpy)
+            if not p:
+                return False, "sin imagen"
+            try:
+                c = p.contents
+                nm = c.name.decode("utf-8", "replace") if c.name else ""
+                w, h = int(c.width), int(c.height)
+                if nm:
+                    return (nm.endswith("text") or nm.endswith("xterm") or nm.endswith("ibeam")), f"nombre «{nm}» {w}x{h}"
+                if not (0 < w <= 128 and 0 < h <= 128):
+                    return False, f"sin nombre {w}x{h}"
+                rows = [[1 if (c.pixels[y * w + x] >> 24) & 0xFF > 40 else 0 for x in range(w)] for y in range(h)]
+                ok = looks_like_ibeam(w, h, rows)
+                return ok, f"sin nombre {w}x{h} → {'forma de I' if ok else 'otra forma'}"
+            finally:
+                self.x11.XFree(ctypes.cast(p, ctypes.c_void_p))
+        except Exception as e:  # noqa: BLE001
+            return False, f"error {e}"
+
     def cursor_name(self) -> str | None:
         """Nombre del cursor que X muestra ahora («text» sobre un campo de texto…), o None. XFixes se carga la primera vez que se pide."""
         try:
@@ -431,6 +456,33 @@ def _bits(line: str) -> set:
             continue
         out.update(64 * i + n for n in range(64) if (v >> n) & 1)
     return out
+
+
+def looks_like_ibeam(w: int, h: int, rows: list) -> bool:
+    """¿Es la forma del cursor de texto (I)? `rows`: por fila, lista de 0/1 (pixel visible). Chromium/Edge crean sus cursores SIN nombre, así que
+    el nombre «text» no llega nunca: se reconoce por la forma. La I es simétrica, más alta que ancha, con travesaños anchos arriba y abajo y un
+    tallo fino en medio (la flecha empieza en punta y las de redimensionar tienen puntas de flecha, no travesaños)."""
+    if w < 5 or h < 9 or h < w * 1.3 or len(rows) != h:
+        return False
+    widths = [sum(r) for r in rows]
+    mx = max(widths)
+    if mx < 3:
+        return False
+    vis = [i for i, x in enumerate(widths) if x]
+    if not vis:
+        return False
+    top, bot = vis[0], vis[-1]
+    mid = widths[(top + bot) // 2]
+    if widths[top] < 3 or widths[bot] < 3 or widths[top] < mid + 2 or widths[bot] < mid + 2 or mid > max(4, mx // 2):
+        return False
+    sym = tot = 0
+    for r in rows:
+        for x in range(w // 2):
+            a, b = r[x], r[w - 1 - x]
+            if a or b:
+                tot += 1
+                sym += 1 if a == b else 0
+    return tot > 0 and sym / tot >= 0.8
 
 
 def parse_touch(text: str) -> list:
@@ -906,7 +958,7 @@ class PadRunner:
                 self.log("táctil: dos dedos → teclado grande")
                 self.event("kb.combo")
             elif a[0] == "tap":
-                self._text_at = time.monotonic() + 0.15   # mirar luego qué cursor hay: si es de texto y está activado, se abre el teclado
+                self._text_at = time.monotonic() + 0.15; self._text_tries = 3   # mirar luego qué cursor hay: si es de texto y está activado, se abre el teclado
             elif a[0] == "log" and self._tlogged < 40:
                 self._tlogged += 1
                 self.log("táctil: " + a[1])
@@ -1114,11 +1166,21 @@ class PadRunner:
                         for ts in self._ts.values():
                             ts.full = full
                         if self._text_at and now >= self._text_at:
-                            self._text_at = 0.0
-                            nm = (self._x.cursor_name() or "") if cfg and cfg.get("text") else ""
-                            if nm.endswith("text") or nm.endswith("xterm") or nm.endswith("ibeam"):
-                                self.log(f"táctil: cursor «{nm}» tras el toque → teclado grande")
-                                self.event("kb.combo")
+                            # Edge pinta el cursor de texto un poco después del toque: se mira hasta 3 veces (0,15 · 0,45 · 0,85 s).
+                            tries = getattr(self, "_text_tries", 1) - 1
+                            self._text_tries = tries
+                            self._text_at = now + (0.3 if tries == 2 else 0.4) if tries > 0 else 0.0
+                            if cfg and cfg.get("text"):
+                                is_t, why = self._x.cursor_is_text()
+                                if is_t:
+                                    self._text_at = 0.0
+                                    self.log(f"táctil: cursor de texto ({why}) tras el toque → teclado grande")
+                                    self.event("kb.combo")
+                                elif tries <= 0 and self._tlogged < 40:
+                                    self._tlogged += 1
+                                    self.log(f"táctil: tras el toque el cursor no es de texto ({why})")
+                            else:
+                                self._text_at = 0.0
                         if self._tfds:
                             self._grab(full)   # si el panel o el teclado se abren (cfg None) se suelta al instante
                         for ts in self._ts.values():   # inercia tras soltar el dedo

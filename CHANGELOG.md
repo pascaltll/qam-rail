@@ -1,5 +1,8 @@
 # Cambios
 
+## dev.67
+- **Teclado al tocar un texto, en Edge/Chromium:** Chromium crea sus cursores sin nombre, así que la detección por nombre («text») no los veía nunca y el teclado no se abría. Ahora, si el cursor no trae nombre, se reconoce el cursor de texto por su forma (I simétrica, travesaños arriba y abajo, tallo fino). Además se mira hasta 3 veces tras el toque (0,15 · 0,45 · 0,85 s), porque Edge pinta el cursor un poco después. Cada intento fallido se anota en `pad.log` con lo que se vio («tras el toque el cursor no es de texto (sin nombre 11x20 → otra forma)») para ajustar la forma si hace falta. [H] sin probar en el equipo; el cuelgue de Edge sigue sin causa conocida (hacen falta `pad.log` y `timeline.log`).
+
 ## dev.66
 - Integración con Panel de Control v0.95: se leen también `--pdc-theme-radius-sm` (radio de las tarjetas internas), `--pdc-theme-stroke` (grosor del borde de las tarjetas) y `--pdc-theme-label-transform` (mayúsculas/minúsculas de los títulos). Con «Del tema» el QAM sigue esos valores; sin ellos, todo queda como antes.
 

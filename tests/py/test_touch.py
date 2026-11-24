@@ -247,4 +247,15 @@ assert fingerF(n, [(960, 540)] * 6) == []
 # to_abs con el eje girado (táctil vertical 1080x1920, pantalla 1920x1080, X del táctil ← Y de pantalla)
 al = q.TouchScroll((0, 1080), (0, 1920), (1920, 1080), {"ay": 0, "sy": 1, "ax": 1, "sx": -1})
 assert al.to_abs(0, 0) == (1919, 0) and al.to_abs(1080, 1920) == (0, 1079)
+# cursor de texto sin nombre (Chromium/Edge): se reconoce por la forma
+def _rows(pic):
+    return [[1 if ch == "#" else 0 for ch in ln] for ln in pic]
+IB = _rows([
+    "#######", "...#...", "...#...", "...#...", "...#...", "...#...", "...#...", "...#...", "...#...", "...#...", "#######"])
+assert q.looks_like_ibeam(7, len(IB), IB)
+ARROW = _rows(["#......", "##.....", "###....", "####...", "#####..", "######.", "#######", "###....", "##.....", "#......"])
+assert not q.looks_like_ibeam(7, 10, ARROW)
+NS = _rows(["...#...", "..###..", ".#####.", "...#...", "...#...", "...#...", ".#####.", "..###..", "...#..."])
+assert not q.looks_like_ibeam(7, 9, NS)
+assert not q.looks_like_ibeam(3, 3, _rows(["###", ".#.", "###"]))
 print("test_touch OK")
