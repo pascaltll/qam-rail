@@ -24,7 +24,7 @@ select,input[type=text]{font-size:24px;height:56px;width:300px}
 .bn{position:fixed;left:0;right:0;bottom:0;height:70px;background:#223;display:flex;align-items:center;gap:16px;padding:0 20px;visibility:hidden;z-index:4}.bn.on{visibility:visible}
 .bn button{width:150px;height:46px;font-size:20px}
 #vbox,#abox{width:640px;background:#000;position:relative;margin:8px 20px}
-#vbox:fullscreen{width:100vw;height:100vh;margin:0;display:flex;flex-direction:column}#vbox:fullscreen video{flex:1;height:auto}
+#vbox:fullscreen{width:100vw;height:100vh;margin:0;display:flex;flex-direction:column}#vbox:fullscreen video{flex:1;height:auto;min-height:0;width:100%;object-fit:contain}
 video{display:block;width:100%;height:290px;background:#223}
 .bar{display:flex;align-items:center;gap:12px;padding:8px 12px;background:#1d2630;height:56px;box-sizing:border-box}.bar button{width:60px;height:40px;font-size:20px}
 .seek{flex:1;height:22px;background:#345;border-radius:11px;position:relative;touch-action:none}.seek .fill{height:100%;width:0;background:#5bd;border-radius:11px}
@@ -55,7 +55,7 @@ video{display:block;width:100%;height:290px;background:#223}
 const post=(k,d)=>{try{fetch('/ev?k='+k+'&d='+encodeURIComponent(JSON.stringify(d||{})),{keepalive:true,cache:'no-store'})}catch(e){}};
 const $=id=>document.getElementById(id);
 const rects=()=>{const o={};document.querySelectorAll('[id]').forEach(e=>{const r=e.getBoundingClientRect();if(r.width>0&&r.height>0)o[e.id]=[r.left,r.top,r.width,r.height]});return o};
-const geo=()=>({iw:innerWidth,ih:innerHeight,sw:screen.width,sh:screen.height,dpr:window.devicePixelRatio});
+const geo=()=>({iw:innerWidth,ih:innerHeight,sw:screen.width,sh:screen.height,dpr:window.devicePixelRatio,fe:document.fullscreenEnabled});
 let scene='base';
 function show(n){for(const s of ['base','popups','video','audio','menu'])$('s_'+s).style.display=(s===n?'':'none');scene=n;setTimeout(()=>post('scene',Object.assign({n:n,rects:rects()},geo())),80)}
 let cmdN=0;setInterval(async()=>{try{const r=await fetch('/cmd',{cache:'no-store'});const j=await r.json();if(j.n!==cmdN){cmdN=j.n;show(j.scene)}}catch(e){}},150);
@@ -90,7 +90,8 @@ function player(p,m){const seek=$(p+'seek'),fill=$(p+'fill');let drag=false,move
  document.addEventListener('mouseup',()=>{if(drag){drag=false;post('vdrag',{id:p,n:moves})}});
  $(p+'vol').addEventListener('input',e=>{m.volume=e.target.value/100;post('media',{id:p,s:'vol',vol:m.volume})});m.volume=$(p+'vol').value/100}
 player('v',$('v'));player('a',$('a'));
-$('vfs').onclick=()=>{if(document.fullscreenElement)document.exitFullscreen();else $('vbox').requestFullscreen().catch(e=>post('fs',{err:String(e).slice(0,60),on:false}))};
+$('vfs').onclick=()=>{if(document.fullscreenElement){document.exitFullscreen()}else{post('fs',{stage:'pedido',on:false,fe:document.fullscreenEnabled});try{const p=$('vbox').requestFullscreen();if(p&&p.catch)p.catch(e=>post('fs',{err:String(e).slice(0,80),on:false}))}catch(e){post('fs',{err:String(e).slice(0,80),on:false})}}};
+document.addEventListener('fullscreenerror',()=>post('fs',{err:'fullscreenerror',on:false}));
 // --- menús
 const s2=$('sel2');for(let i=0;i<60;i++){const o=document.createElement('option');o.textContent='Opción '+i;s2.appendChild(o)}
 s2.addEventListener('change',()=>post('change',{id:'sel2',v:s2.value,i:s2.selectedIndex}));s2.addEventListener('mousedown',()=>post('down',{id:'sel2'}));

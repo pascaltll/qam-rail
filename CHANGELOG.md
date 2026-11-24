@@ -1,5 +1,12 @@
 # Cambios
 
+## dev.79
+- **Resultados de tu Firefox con dev.78 (pasan 28 de 34):** pop-ups, enlace a pestaña nueva, reproducir/saltar/pausar vídeo y música, y volumen tocando funcionan. Fallaban: arrastrar el volumen, pantalla completa del vídeo, el desplegable largo y F11.
+- **Arrastrar controles deslizantes:** un arrastre normal con un dedo es desplazamiento (por diseño); arrastrar un control (volumen, barra de progreso, seleccionar) es **«toca y arrastra enseguida»**. La prueba usaba un arrastre normal para el volumen (fallaba) y, para la barra, uno que por casualidad iba justo detrás de un toque (pasaba). Ahora las dos pruebas usan el gesto correcto («toca y arrastra»).
+- **Pantalla completa del vídeo:** la prueba distingue si el toque llegó al botón ⛶, si el navegador lo pidió, si dio error y si tiene la pantalla completa desactivada. Corregido un fallo de la página: en pantalla completa el vídeo empujaba los controles fuera de la pantalla.
+- **F11:** cuenta como «entró» si la página crece al ocultarse la barra (en gamescope no tiene por qué ocupar toda la pantalla); si algo cambió pero no llegó, vuelve a pulsar F11 para no dejar el navegador raro (eso rompía el paso de pestañas); el detalle da los tamaños antes y después. El toque de comprobación va en medio de una caja (arriba el navegador enseña su barra).
+- **Desplegable largo:** tres pruebas separadas (elegir con el teclado, elegir tocando una opción, desplazar con el dedo y elegir) para saber en cuál falla.
+
 ## dev.78
 - **Autoprueba ampliada (página con escenas):** además de lo de antes, ahora prueba con tu navegador (1) **pop-ups**: modal con ✕, aviso de cookies («Rechazar») y un anuncio con una ✕ pequeña que aparece al cabo de 1 s, y un enlace que abre pestaña nueva y se cierra con Ctrl+W; (2) **vídeo**: reproducir, saltar tocando la barra, arrastrar la barra, pausar, volumen tocando y arrastrando, **pantalla completa** (tocar los controles dentro y salir tocando ⛶ y con Esc); (3) **música**: lo mismo sin pantalla completa (suena un tono suave unos segundos); (4) **menús**: desplegable largo (desplazar la lista con el dedo y elegir) y menú de la página con scroll; (5) **F11**: pantalla completa del navegador, tocar dentro y salir. El servidor de la prueba sirve un vídeo y un audio propios (con soporte de rangos para poder saltar) y manda a la página qué escena mostrar.
 - La página se carga primero con `xdg-open` (en tu Firefox era el único camino que funcionaba) y solo si falla escribe la dirección con el teclado.

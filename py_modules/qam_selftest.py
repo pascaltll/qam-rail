@@ -207,6 +207,12 @@ class SelfTest:
         if release:
             await self.feed(self.finger.up())
 
+    async def tap_drag(self, x0: int, y0: int, x1: int, y1: int, dur: float = 0.5) -> None:
+        """«Toca y arrastra enseguida» (el gesto de arrastrar de verdad: controles deslizantes, seleccionar): un toque y, sin esperar, otro dedo que se mueve."""
+        await self.tap(x0, y0, 0.05)
+        await asyncio.sleep(0.12)
+        await self.drag(x0, y0, x1, y1, dur)
+
     async def top(self, id_: str) -> int:
         """scrollTop actual de una caja (la página lo manda cada 250 ms y al desplazarse)."""
         await asyncio.sleep(0.3)
@@ -463,6 +469,17 @@ class SelfTest:
         if e:
             self.rects = e["d"]["rects"]
 
+    @staticmethod
+    def _fs(on: bool):
+        return lambda d: d.get("on") is on and "err" not in d and "stage" not in d
+
+    def _fs_info(self, i: int) -> str:
+        ev = [e["d"] for e in self.probe.events[i:] if e["k"] == "fs"]
+        peds = [d for d in ev if d.get("stage")]
+        errs = [d.get("err") for d in ev if d.get("err")]
+        fe = next((d.get("fe") for d in ev if "fe" in d), None)
+        return ("el toque llegó y el navegador lo pidió" if peds else "el toque no llegó al botón ⛶") + (f"; error: {errs[0]}" if errs else "") + ("; el navegador tiene la pantalla completa desactivada" if fe is False else "")
+
     def last_media(self, id_: str, s_: str = "time", field: str = "t"):
         for e in reversed(self.probe.events):
             if e["k"] == "media" and e["d"].get("id") == id_ and e["d"].get("s") == s_:
@@ -526,13 +543,13 @@ class SelfTest:
         self.res(f"{nombre}: reproducir", t > 0.8, f"avanzó hasta {t:.1f} s" if t > 0.8 else f"no avanza (en {t:.1f} s)")
         f = await self._seek_tap(p, 0.75)
         self.res(f"{nombre}: saltar tocando la barra", f is not None and 0.6 <= f <= 0.9, f"fue al {f * 100:.0f} % (pedido: 75 %)" if f is not None else "no llegó el salto")
-        await self._seek_tap(p, 0.10)
+        await asyncio.sleep(0.6)
         j = self.probe.mark()
-        await self.drag(*self.scr(p + "seek", 0.15, 0.5), *self.scr(p + "seek", 0.85, 0.5), 0.5)
+        await self.tap_drag(*self.scr(p + "seek", 0.15, 0.5), *self.scr(p + "seek", 0.85, 0.5), 0.5)
         await asyncio.sleep(0.8)
         f2 = (self.last_media(p) or 0) / max(0.1, self.last_media(p, "time", "d") or 6)
         dr = next((ev["d"].get("n") for ev in self.probe.events[j:] if ev["k"] == "vdrag" and ev["d"].get("id") == p), None)
-        self.res(f"{nombre}: arrastrar la barra de progreso", f2 > 0.6, f"llegó al {f2 * 100:.0f} %" if f2 > 0.6 else f"llegó solo al {f2 * 100:.0f} %" + (" (el dedo desplazó la página en vez de arrastrar la barra)" if dr is None else f" ({dr} movimientos)"))
+        self.res(f"{nombre}: arrastrar la barra de progreso (toca y arrastra)", f2 > 0.6, f"llegó al {f2 * 100:.0f} %" if f2 > 0.6 else f"llegó solo al {f2 * 100:.0f} %" + (" (el gesto no arrastró la barra)" if dr is None else f" ({dr} movimientos)"))
         j = self.probe.mark()
         await self.tap(*self.scr(p + "play"))
         e = await self.probe.wait(j, "media", lambda d: d.get("id") == p and d.get("s") == "pause", 2.0)
@@ -544,11 +561,12 @@ class SelfTest:
         self.res(f"{nombre}: volumen tocando la barra", v is not None and abs(v - 0.35) < 0.15, f"volumen {v:.2f} (pedido: 0.35)" if v is not None else "no llegó el toque")
         await asyncio.sleep(0.5)
         j = self.probe.mark()
-        await self.drag(*self.scr(p + "vol", 0.3, 0.5), *self.scr(p + "vol", 0.95, 0.5), 0.5)
+        await asyncio.sleep(0.6)
+        await self.tap_drag(*self.scr(p + "vol", 0.3, 0.5), *self.scr(p + "vol", 0.95, 0.5), 0.5)
         await asyncio.sleep(0.5)
         vols = [ev["d"]["vol"] for ev in self.probe.events[j:] if ev["k"] == "media" and ev["d"].get("id") == p and ev["d"].get("s") == "vol"]
         ult = vols[-1] if vols else None
-        self.res(f"{nombre}: arrastrar el volumen", ult is not None and ult > 0.75, f"volumen {ult:.2f}" if ult is not None else "el dedo no movió el control (se interpretó como desplazamiento)")
+        self.res(f"{nombre}: arrastrar el volumen (toca y arrastra)", ult is not None and ult > 0.75, f"volumen {ult:.2f}" if ult is not None else "el gesto no movió el control")
 
     async def s_video(self) -> None:
         if not await self.scene("video"):
@@ -559,10 +577,9 @@ class SelfTest:
         for salida in ("⛶", "Esc"):
             i = self.probe.mark()
             await self.tap(*self.scr("vfs"))
-            e = await self.probe.wait(i, "fs", lambda d: d.get("on") is True, 3.0)
+            e = await self.probe.wait(i, "fs", self._fs(True), 6.0)
             if not e:
-                err = next((ev["d"].get("err") for ev in self.probe.events[i:] if ev["k"] == "fs" and ev["d"].get("err")), None)
-                self.res("vídeo: pantalla completa", False, "no entró en pantalla completa" + (f" ({err})" if err else ""))
+                self.res("vídeo: pantalla completa", False, "no entró en pantalla completa: " + self._fs_info(i))
                 return
             if salida == "⛶":
                 self.res("vídeo: pantalla completa", True, f"{int(e['d']['iw'])}x{int(e['d']['ih'])} px CSS")
@@ -575,6 +592,7 @@ class SelfTest:
                 self.ax, self.ay = old
                 return
             self.ax, self.ay = cal
+            await self.scene("video")   # posiciones nuevas con el diseño ya asentado
             if salida == "⛶":
                 j = self.probe.mark()
                 await self.tap(*self.scr("vplay"))
@@ -586,10 +604,10 @@ class SelfTest:
                 await self.tap(*self.scr("vfs"))
             else:
                 await self.keys("Escape", [])
-            e3 = await self.probe.wait(j, "fs", lambda d: d.get("on") is False, 3.0)
+            e3 = await self.probe.wait(j, "fs", self._fs(False), 4.0)
             if not e3:   # que no quede atascado: se prueba el otro camino
                 await self.keys("Escape", [])
-                e3 = await self.probe.wait(j, "fs", lambda d: d.get("on") is False, 2.0)
+                e3 = await self.probe.wait(j, "fs", self._fs(False), 3.0)
                 self.res(f"vídeo: salir de pantalla completa con {salida}", False, "no salió" + (" (sí con Esc)" if e3 and salida != "Esc" else ""))
             else:
                 self.res(f"vídeo: salir de pantalla completa con {salida}", True, "salió")
@@ -614,14 +632,42 @@ class SelfTest:
         if not await self.scene("menu"):
             self.res("menús", False, "la página no cambió de escena")
             return
-        # desplegable nativo largo (como los menús del navegador: es una ventana emergente aparte)
+        # desplegable nativo largo (como los menús del navegador: es una ventana emergente aparte). Tres pruebas para saber DÓNDE falla
         x, y, w, h = self.rects["sel2"]
         sx, sy = self.scr("sel2")
         bottom = round(self.ay[1] + (y + h) * self.ay[0])
-        i = self.probe.mark()
-        await self.tap(sx, sy)
-        e = await self.probe.wait(i, "down", lambda d: d.get("id") == "sel2", 1.5)
-        await asyncio.sleep(0.8)
+
+        async def abrir() -> bool:
+            i = self.probe.mark()
+            await self.tap(sx, sy)
+            ok = bool(await self.probe.wait(i, "down", lambda d: d.get("id") == "sel2", 1.5))
+            await asyncio.sleep(0.9)
+            return ok
+
+        async def cierra() -> None:
+            await self.keys("Escape", [])
+            await asyncio.sleep(0.5)
+
+        ab = await abrir()
+        j = self.probe.mark()
+        for _ in range(5):
+            await self.keys("Down", [])
+        await self.keys("Return", [])
+        e0 = await self.probe.wait(j, "change", lambda d: d.get("id") == "sel2", 1.5)
+        self.res("desplegable largo: elegir con el teclado", bool(e0), f"eligió «{e0['d']['v']}»" if e0 else "no eligió nada" + ("" if ab else " (ni siquiera se abrió)"))
+        if not e0:
+            await cierra()
+        await asyncio.sleep(0.4)
+        ab = await abrir()
+        j = self.probe.mark()
+        await self.tap(sx, bottom + 90)   # segunda o tercera fila de la lista, sin desplazar
+        e1 = await self.probe.wait(j, "change", lambda d: d.get("id") == "sel2", 1.5)
+        self.res("desplegable largo: elegir tocando una opción", bool(e1), f"eligió «{e1['d']['v']}»" if e1 else "el toque no eligió nada" + ("" if ab else " (ni siquiera se abrió)"))
+        if not e1:
+            await cierra()
+        await asyncio.sleep(0.4)
+        ab = await abrir()
+        prev = e1["d"]["i"] if e1 else -1
         await self.drag(sx, bottom + 220, sx, bottom + 40, 0.5)   # dedo hacia arriba dentro de la lista: baja
         await asyncio.sleep(1.2)
         j = self.probe.mark()
@@ -629,10 +675,10 @@ class SelfTest:
         e2 = await self.probe.wait(j, "change", lambda d: d.get("id") == "sel2", 1.5)
         if e2:
             k = e2["d"]["i"]
-            self.res("desplegable largo: desplazar y elegir con el dedo", k >= 3, f"eligió «{e2['d']['v']}»" + ("" if k >= 3 else " (la lista no se desplazó: eligió una de las primeras)"))
+            self.res("desplegable largo: desplazar con el dedo y elegir", k >= 4 and k != prev, f"eligió «{e2['d']['v']}»" + ("" if k >= 4 else " (la lista no se desplazó: eligió una de las primeras)"))
         else:
-            await self.keys("Escape", [])
-            self.res("desplegable largo: desplazar y elegir con el dedo", False, "no se eligió nada" + ("" if e else " (ni siquiera se abrió)"))
+            await cierra()
+            self.res("desplegable largo: desplazar con el dedo y elegir", False, "no se eligió nada" + ("" if ab else " (ni siquiera se abrió)"))
         await asyncio.sleep(0.6)
         # menú de la página con scroll
         j = self.probe.mark()
@@ -656,17 +702,35 @@ class SelfTest:
         await self.tap(*self.scr("hmb"))
         await asyncio.sleep(0.4)
 
+    def _last_geo(self):
+        for e in reversed(self.probe.events):
+            if e["k"] in ("resize", "scene", "ready") and "iw" in e["d"]:
+                return e["d"]
+        return {}
+
     async def s_pantalla_navegador(self) -> None:
         if not await self.scene("base"):
             self.res("pantalla completa del navegador", False, "la página no volvió a la escena base")
             return
+        g0 = self._last_geo()
         i = self.probe.mark()
         await self.keys("F11", [])
-        e = await self.probe.wait(i, "resize", lambda d: d.get("ih", 0) >= d.get("sh", 1e9) - 8 and d.get("iw", 0) >= d.get("sw", 1e9) - 8, 4.0)
+        end = time.monotonic() + 4.0
+        e = None
+        while time.monotonic() < end and not e:   # entró si la página crece (se oculta la barra) o llega a toda la pantalla
+            await asyncio.sleep(0.25)
+            for ev in self.probe.events[i:]:
+                if ev["k"] == "resize" and (ev["d"].get("ih", 0) >= g0.get("ih", 0) + 20 or ev["d"].get("ih", 0) >= ev["d"].get("sh", 1e9) - 8):
+                    e = ev
+                    break
+        g1 = self._last_geo()
         if not e:
-            self.res("pantalla completa del navegador (F11)", False, "el navegador no pasó a pantalla completa con F11 ({})".format(self.title()[:40] if callable(self.title) else ""))
+            if (g1.get("iw"), g1.get("ih")) != (g0.get("iw"), g0.get("ih")):   # algo cambió: se deshace para no dejar el navegador raro
+                await self.keys("F11", [])
+                await asyncio.sleep(1.0)
+            self.res("pantalla completa del navegador (F11)", False, f"tamaño de la página {g0.get('iw')}x{g0.get('ih')} → {g1.get('iw')}x{g1.get('ih')} (pantalla {g1.get('sw')}x{g1.get('sh')}): F11 no cambió el tamaño")
             return
-        self.res("pantalla completa del navegador (F11)", True, f"{int(e['d']['iw'])}x{int(e['d']['ih'])} px CSS")
+        self.res("pantalla completa del navegador (F11)", True, f"{int(g0.get('iw', 0))}x{int(g0.get('ih', 0))} → {int(e['d']['iw'])}x{int(e['d']['ih'])} px CSS")
         await self.new_rects(i)
         old = (self.ax, self.ay)
         cal = await self._calib([(int(self.W * 0.30), int(self.H * 0.55)), (int(self.W * 0.62), int(self.H * 0.80))])
@@ -674,13 +738,16 @@ class SelfTest:
             self.res("tocar en pantalla completa del navegador", False, cal)
         else:
             self.ax, self.ay = cal
-        j = self.probe.mark()
-        await self.tap(*self.scr("b1"))
-        e2 = await self.probe.wait(j, "click", lambda d: d.get("id") == "b1", 1.2)
-        self.res("tocar en pantalla completa del navegador", bool(e2), "llegó el clic" if e2 else f"el toque no llegó a la página (calibración {self.ax[0]:.2f}·{self.ax[1]:.0f} / {self.ay[0]:.2f}·{self.ay[1]:.0f})")
+            await self.scene("base")
+            bx, by, bw, bh = self.rects["box1"]   # en medio de una caja: arriba, el navegador enseña su barra al acercarse al borde
+            cx, cy = bx + bw / 2, by + bh / 2
+            j = self.probe.mark()
+            await self.tap(*self.scr("box1"))
+            e2 = await self.probe.wait(j, "click", lambda d: abs(d.get("cx", -1e9) - cx) < 25 and abs(d.get("cy", -1e9) - cy) < 25, 1.2)
+            self.res("tocar en pantalla completa del navegador", bool(e2), "llegó el clic" if e2 else "el toque no llegó a la página")
         j = self.probe.mark()
         await self.keys("F11", [])
-        e3 = await self.probe.wait(j, "resize", lambda d: d.get("ih", 0) < d.get("sh", 0) - 40, 4.0)
+        e3 = await self.probe.wait(j, "resize", lambda d: d.get("ih", 0) <= g0.get("ih", 0) + 10, 4.0)
         self.res("salir de pantalla completa del navegador (F11)", bool(e3), "salió" if e3 else "sigue en pantalla completa")
         self.ax, self.ay = old
         await self.new_rects(j)
