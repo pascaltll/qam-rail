@@ -1514,6 +1514,131 @@ class PadRunner:
                 self._x = None
             await asyncio.sleep(0.4 if ours else 1.5)
 
+    def _scan_devices(self) -> None:
+        """Cada 2 s: busca mandos y, si el táctil está activo, la pantalla táctil (o suelta el táctil si ya no toca)."""
+        self._scan()
+        if self.touch_fn() is not None:
+            try:
+                self._scan_touch()
+            except Exception as e:  # noqa: BLE001  (un fallo del táctil no debe parar el mando)
+                if "scan" not in self._tnoted:
+                    self._tnoted.add("scan")
+                    self.log(f"táctil: error al buscar la pantalla: {e!r}")
+        elif self._tfds:
+            self._close_touch()
+
+    def _trace_loop(self, now: float, last: float) -> None:
+        """Grabadora: parones del bucle, ida y vuelta a X y ventanas visibles (apagada no cuesta nada)."""
+        tr = self.trace
+        if tr is None or not tr.on:
+            return
+        if now - last > 0.1 and last:
+            self._tr("parón.lector", ms=(now - last) * 1000)   # el bucle (60 Hz) tardó más de 100 ms en volver: algo lo frenó
+        if self._x is not None and now >= self._tr_x_at:
+            self._tr_x_at = now + 1.0
+            t1 = time.perf_counter()
+            fw = self._x.focus_window()
+            self._tr("x.ida-vuelta", ms=(time.perf_counter() - t1) * 1000, foco=hex(fw))
+        if self._x is not None:
+            self._tr_windows(now)
+
+    def _text_check(self, now: float, cfg) -> None:
+        """Edge pinta el cursor de texto un poco después del toque: se mira hasta 3 veces (0,15 · 0,45 · 0,85 s)."""
+        if not (self._text_at and now >= self._text_at):
+            return
+        tries = getattr(self, "_text_tries", 1) - 1
+        self._text_tries = tries
+        self._text_at = now + (0.3 if tries == 2 else 0.4) if tries > 0 else 0.0
+        if not (cfg and cfg.get("text")):
+            self._text_at = 0.0
+            return
+        is_t, why = self._x.cursor_is_text()
+        self._tr("cursor.tras-toque", texto=is_t, visto=why)
+        if is_t:
+            self._text_at = 0.0
+            self.log(f"táctil: cursor de texto ({why}) tras el toque → teclado grande")
+            self.event("kb.combo")
+        elif tries <= 0 and self._tlogged < 40:
+            self._tlogged += 1
+            self.log(f"táctil: tras el toque el cursor no es de texto ({why})")
+
+    def _touch_tick(self, now: float, last: float, wv: int) -> int:
+        """Inercia, sondeo y zoom de cada pantalla táctil; devuelve `wv` ampliado si hubo movimiento."""
+        for ts in self._ts.values():   # inercia tras soltar el dedo
+            tv, th = ts.tick(now - last)
+            if tv or th:
+                self._x.wheel(tv, th)
+                self._trw["inercia"] += abs(tv) + abs(th)
+                wv = wv or tv or th
+            ts.poll(now)
+            tz = ts.take_zoom()
+            if tz:
+                self._x.zoom(tz)
+                wv = wv or tz
+        return wv
+
+    def _trace_wheel(self, now: float) -> None:
+        if any(self._trw.values()) and now - self._tr_wheel_at >= 0.5:
+            self._tr("rueda", dedo=self._trw["dedo"], inercia=self._trw["inercia"], mando=self._trw["mando"], en_ms=500)
+            self._trw = {"dedo": 0, "inercia": 0, "mando": 0}
+            self._tr_wheel_at = now
+
+    def _flush_timed(self) -> None:
+        t2 = time.perf_counter()
+        self._x.flush()
+        if (time.perf_counter() - t2) > 0.02:
+            self._tr("x.flush-lento", ms=(time.perf_counter() - t2) * 1000)
+
+    def _output_tick(self, now: float, last: float) -> bool:
+        """Mando y táctil → X en este fotograma. Devuelve True si hay que buscar el táctil ya (el panel o el teclado se acaban de cerrar)."""
+        rescan = False
+        acts, dx, dy, wv, wh = self.mapper.tick(now - last, now)
+        try:
+            for a in acts:
+                apply_action(self._x, a)
+            if dx or dy:
+                self._x.move(dx, dy)
+            if wv or wh:
+                self._x.wheel(wv, wh)
+            cfg = self.touch_fn()
+            if cfg is None:
+                self._rescanned = False
+            elif not self._tfds and not getattr(self, "_rescanned", False):
+                self._rescanned = True
+                rescan = True
+            full = bool(cfg) and bool(cfg.get("full"))
+            for ts in self._ts.values():
+                ts.full = full or getattr(ts, "force_full", False)
+            self._text_check(now, cfg)
+            if self._tfds:
+                self._grab(full)   # si el panel o el teclado se abren (cfg None) se suelta al instante
+            self._trw["mando"] += abs(wv) + abs(wh)
+            wv = self._touch_tick(now, last, wv)
+            self._trace_wheel(now)
+            if acts or dx or dy or wv or wh:
+                self._flush_timed()
+        except Exception as e:  # noqa: BLE001
+            self.log(f"mando: error al mover: {e}")
+            self._x.close()
+            self._x = None
+        return rescan
+
+    def _step(self, now: float, last: float, scan_at: float) -> float:
+        """Un fotograma con el mando activo; devuelve cuándo toca buscar dispositivos de nuevo."""
+        if now >= scan_at:
+            self._scan_devices()
+            scan_at = now + 2.0
+        self._trace_loop(now, last)
+        if self._pend:
+            try:
+                self._pend_run(now)
+            except Exception as e:  # noqa: BLE001
+                self._pend.clear()
+                self.log(f"táctil: error al enviar el toque: {e!r}")
+        if self._x is not None and self._output_tick(now, last):
+            scan_at = 0.0
+        return scan_at
+
     async def run(self) -> None:
         asyncio.ensure_future(self._watch())
         last = time.monotonic()
@@ -1521,97 +1646,7 @@ class PadRunner:
         while not self._stop:
             now = time.monotonic()
             if self.is_active:
-                if now >= scan_at:
-                    self._scan()
-                    if self.touch_fn() is not None:
-                        try:
-                            self._scan_touch()
-                        except Exception as e:  # noqa: BLE001  (un fallo del táctil no debe parar el mando)
-                            if "scan" not in self._tnoted:
-                                self._tnoted.add("scan")
-                                self.log(f"táctil: error al buscar la pantalla: {e!r}")
-                    elif self._tfds:
-                        self._close_touch()
-                    scan_at = now + 2.0
-                tr = self.trace
-                if tr is not None and tr.on:
-                    if now - last > 0.1 and last:
-                        self._tr("parón.lector", ms=(now - last) * 1000)   # el bucle (60 Hz) tardó más de 100 ms en volver: algo lo frenó
-                    if self._x is not None and now >= self._tr_x_at:
-                        self._tr_x_at = now + 1.0
-                        t1 = time.perf_counter()
-                        fw = self._x.focus_window()
-                        self._tr("x.ida-vuelta", ms=(time.perf_counter() - t1) * 1000, foco=hex(fw))
-                if tr is not None and tr.on and self._x is not None:
-                    self._tr_windows(now)
-                if self._pend:
-                    try:
-                        self._pend_run(now)
-                    except Exception as e:  # noqa: BLE001
-                        self._pend.clear()
-                        self.log(f"táctil: error al enviar el toque: {e!r}")
-                if self._x is not None:
-                    acts, dx, dy, wv, wh = self.mapper.tick(now - last, now)
-                    try:
-                        for a in acts:
-                            apply_action(self._x, a)
-                        if dx or dy:
-                            self._x.move(dx, dy)
-                        if wv or wh:
-                            self._x.wheel(wv, wh)
-                        cfg = self.touch_fn()
-                        if cfg is None:
-                            self._rescanned = False
-                        elif not self._tfds and not getattr(self, "_rescanned", False):
-                            self._rescanned = True
-                            scan_at = 0.0   # el panel o el teclado se acaban de cerrar: se busca el táctil ya, sin esperar a la ronda de cada 2 s
-                        full = bool(cfg) and bool(cfg.get("full"))
-                        for ts in self._ts.values():
-                            ts.full = full or getattr(ts, "force_full", False)
-                        if self._text_at and now >= self._text_at:
-                            # Edge pinta el cursor de texto un poco después del toque: se mira hasta 3 veces (0,15 · 0,45 · 0,85 s).
-                            tries = getattr(self, "_text_tries", 1) - 1
-                            self._text_tries = tries
-                            self._text_at = now + (0.3 if tries == 2 else 0.4) if tries > 0 else 0.0
-                            if cfg and cfg.get("text"):
-                                is_t, why = self._x.cursor_is_text()
-                                self._tr("cursor.tras-toque", texto=is_t, visto=why)
-                                if is_t:
-                                    self._text_at = 0.0
-                                    self.log(f"táctil: cursor de texto ({why}) tras el toque → teclado grande")
-                                    self.event("kb.combo")
-                                elif tries <= 0 and self._tlogged < 40:
-                                    self._tlogged += 1
-                                    self.log(f"táctil: tras el toque el cursor no es de texto ({why})")
-                            else:
-                                self._text_at = 0.0
-                        if self._tfds:
-                            self._grab(full)   # si el panel o el teclado se abren (cfg None) se suelta al instante
-                        self._trw["mando"] += abs(wv) + abs(wh)
-                        for ts in self._ts.values():   # inercia tras soltar el dedo
-                            tv, th = ts.tick(now - last)
-                            if tv or th:
-                                self._x.wheel(tv, th)
-                                self._trw["inercia"] += abs(tv) + abs(th)
-                                wv = wv or tv or th
-                            ts.poll(now)
-                            tz = ts.take_zoom()
-                            if tz:
-                                self._x.zoom(tz)
-                                wv = wv or tz
-                        if any(self._trw.values()) and now - self._tr_wheel_at >= 0.5:
-                            self._tr("rueda", dedo=self._trw["dedo"], inercia=self._trw["inercia"], mando=self._trw["mando"], en_ms=500)
-                            self._trw = {"dedo": 0, "inercia": 0, "mando": 0}
-                            self._tr_wheel_at = now
-                        if acts or dx or dy or wv or wh:
-                            t2 = time.perf_counter()
-                            self._x.flush()
-                            if (time.perf_counter() - t2) > 0.02:
-                                self._tr("x.flush-lento", ms=(time.perf_counter() - t2) * 1000)
-                    except Exception as e:  # noqa: BLE001
-                        self.log(f"mando: error al mover: {e}")
-                        self._x.close()
-                        self._x = None
+                scan_at = self._step(now, last, scan_at)
                 last = now
                 await asyncio.sleep(1 / 60)
             else:
