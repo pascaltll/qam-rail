@@ -256,20 +256,23 @@ class Plugin:
             if os.path.exists(_path("vigilante-off")):
                 return
             t = self._trace_obj()
-            if t is None or t.on:
+            if t is None:
                 return
-            await self.nav_trace(on=True)
+            if t.on:   # ya grabando (otra app abierta hace poco): solo se anota que ésta se abrió
+                t.add("MARCA", t=f"vigilante: se abrió {app}"[:80])
+                return
+            await self.nav_trace(on=True, label=app)
             t.add("MARCA", t=f"vigilante: se abrió {app}"[:80])
         except Exception:  # noqa: BLE001 - nunca debe impedir abrir la app
             pass
 
-    async def nav_trace(self, on=None, mark=None) -> dict:
+    async def nav_trace(self, on=None, mark=None, label="") -> dict:
         """Grabadora de navegación (Más › Pruebas y herramientas): `on` la enciende/apaga, `mark` anota «esto fue lento» con la hora. Devuelve el estado."""
         t = self._trace_obj()
         if t is None:
             return {"ok": False, "error": "no disponible"}
         if on is True and not t.on:
-            t.start()
+            t.start(str(label))
             self._spawn(self._trace_loop())
         elif on is False:
             t.stop()

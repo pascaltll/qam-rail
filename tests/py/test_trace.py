@@ -9,7 +9,7 @@ tr.flush(); assert not os.path.exists(tr.path) or open(tr.path).read() == ""
 tr.start(); tr.add("dedo.arriba", ms=120, movido=True, t="hola mundo"); tr.add("MARCA", t="lento")
 tr.stop()
 txt = open(tr.path, encoding="utf-8").read().splitlines()
-assert txt[0].endswith("inicio auto_stop_min=15") and "dedo.arriba ms=120 movido=True t='hola mundo'" in txt[1]
+assert txt[0].endswith("inicio auto_stop_min=15 app=manual") and "dedo.arriba ms=120 movido=True t='hola mundo'" in txt[1]
 assert txt[-1].split(" ", 1)[1].startswith("fin ") and not tr.on
 # /proc simulado
 p = os.path.join(d, "proc"); os.makedirs(p + "/10"); os.makedirs(p + "/11")

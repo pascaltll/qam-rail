@@ -10,6 +10,11 @@ sec "fecha y versión"; { date; cat "$D/ultima-version" 2>/dev/null; } >> "$OUT"
 sec "vigilante: apps sin ventana, fallos, paneles fantasma, paradas"
 grep -hE "ui\.js|app\.sin_ventana|app\.abrir_fallo|app\.ventana|vigilante|panel fantasma|parón|MARCA" "$D/timeline.log" "$D/pad.log" "$D/nav-trace.log" "$D/nav-trace.log.old" 2>/dev/null | tail -n 80 >> "$OUT"
 for f in timeline.log pad.log desktop-tag.log desktop-run.log keyboard.log; do sec "$f (últimas 80)"; tail -n 80 "$D/$f" 2>/dev/null >> "$OUT"; done
+sec "apps abiertas (línea de tiempo: abrió / ventana en ms / sin ventana)"
+grep -hE "app\.(abrir|ventana|sin_ventana|abrir_fallo|mostrar)" "$D/timeline.log.1" "$D/timeline.log" 2>/dev/null | tail -n 120 >> "$OUT"
+sec "grabaciones guardadas (una por app, trazas/)"
+ls -la --time-style=long-iso "$D/trazas" 2>/dev/null | tail -n 30 >> "$OUT"
+for f in $(ls -t "$D"/trazas/*.log 2>/dev/null | head -n 5); do sec "traza $(basename "$f") (últimas 120)"; tail -n 120 "$f" >> "$OUT"; done
 sec "nav-trace.log (últimas 250)"; tail -n 250 "$D/nav-trace.log" 2>/dev/null >> "$OUT"
 for DSP in :0 :1; do
   sec "X $DSP: ventanas (clase, tamaño, posición)"

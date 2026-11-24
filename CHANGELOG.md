@@ -1,5 +1,9 @@
 # Cambios
 
+## dev.102
+- **Una grabación por app abierta.** Antes la grabadora guardaba solo una copia anterior (`nav-trace.log.old`). Ahora cada grabación se archiva en `trazas/AAAAMMDD-HHMMSS-<app>.log` (se conservan las últimas 25 o 12 MB) y la primera línea lleva el nombre de la app. Si abres otra app con la grabadora encendida, queda una marca «se abrió X» en la grabación en curso.
+- `informe.sh` lista las apps abiertas (línea de tiempo) y añade las últimas líneas de las 5 grabaciones más recientes.
+
 ## dev.101
 - **Errores de la interfaz al registro.** Cualquier error de JavaScript o promesa rechazada en la ventana de Steam o del panel queda en `timeline.log` como `ui.js.error` / `ui.js.rechazo` (mensaje corto, archivo y línea; tope de 12 por minuto; nunca datos del usuario).
 - **`informe.sh` más completo:** ahora incluye las ventanas de X (`:0` y `:1`), los átomos de gamescope y de Steam en la raíz, las páginas abiertas de la interfaz de Steam (CEF, puerto 8080), los errores `ui.js.*` y los procesos que más CPU gastan.

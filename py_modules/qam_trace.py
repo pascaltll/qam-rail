@@ -10,6 +10,8 @@ import time
 MAX_BYTES = 1_500_000          # el archivo se rota (nav-trace.log.old) al pasar de aquí
 AUTO_STOP_S = 15 * 60          # se apaga sola: así no se queda grabando olvidada
 FLUSH_S = 0.5
+KEEP_FILES = 25                # grabaciones guardadas en trazas/ (una por app abierta)
+KEEP_BYTES = 12_000_000
 WATCH_RE = re.compile(r"^(msedge|firefox|firefox-bin|chrome|chromium|brave|steamwebhelper|gamescope.*|opengamepad.*|mangoapp|pipewire|Isolated Web Co|WebExtensions|Web Content)$")
 
 
@@ -51,20 +53,36 @@ class Trace:
         self._flushed = 0.0
         self._prev: dict = {}   # pid → (ticks, t)
 
-    def start(self) -> None:
+    def start(self, label: str = "") -> None:
         if self.on:
             return
         self.on, self.t0, self.lines, self._prev = True, time.time(), 0, {}
-        try:
-            if os.path.getsize(self.path) > 0:   # la grabación anterior se conserva (una sola copia): con la grabación automática no se pierde nada
-                os.replace(self.path, self.path + ".old")
-        except OSError:
-            pass
+        self.archive()
         try:
             open(self.path, "w", encoding="utf-8").close()   # cada grabación empieza limpia
         except OSError:
             pass
-        self.add("inicio", auto_stop_min=AUTO_STOP_S // 60)
+        self.add("inicio", auto_stop_min=AUTO_STOP_S // 60, app=re.sub(r"[^\w.-]", "_", label)[:40] or "manual")
+
+    def archive(self) -> None:
+        """La grabación anterior pasa a `trazas/AAAAMMDD-HHMMSS-<app>.log` (se queda con las últimas KEEP_FILES / KEEP_BYTES): así hay una por app abierta."""
+        try:
+            if os.path.getsize(self.path) <= 0:
+                return
+            with open(self.path, encoding="utf-8", errors="replace") as fh:
+                m = re.search(r"\bapp=(\S+)", fh.readline())
+            folder = os.path.join(os.path.dirname(self.path), "trazas")
+            os.makedirs(folder, exist_ok=True)
+            stamp = time.strftime("%Y%m%d-%H%M%S", time.localtime(os.path.getmtime(self.path)))
+            os.replace(self.path, os.path.join(folder, f"{stamp}-{m.group(1) if m else 'manual'}.log"))
+            files = sorted(os.listdir(folder))
+            total = sum(os.path.getsize(os.path.join(folder, f)) for f in files)
+            while files and (len(files) > KEEP_FILES or total > KEEP_BYTES):
+                f = files.pop(0)
+                total -= os.path.getsize(os.path.join(folder, f))
+                os.remove(os.path.join(folder, f))
+        except OSError:
+            pass
 
     def stop(self) -> None:
         if not self.on:
