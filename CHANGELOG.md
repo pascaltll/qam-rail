@@ -1,5 +1,8 @@
 # Cambios
 
+## dev.72
+- **Scroll con el dedo dentro de menús y desplegables (modo táctil completo):** con la pantalla agarrada, gamescope ya no mueve el puntero con el dedo y la rueda iba a lo que hubiera bajo el puntero (donde se tocó por última vez), no bajo el dedo: en el menú ☰ de Firefox, un desplegable o un panel lateral no se desplazaba. Al empezar un arrastre de desplazamiento el puntero se lleva (una vez, sin pulsar) al punto donde empezó el dedo. La grabadora anota `scroll.inicio`.
+
 ## dev.71
 - **Toques perdidos al volver a tocar el mismo sitio (hallado con la grabadora):** el núcleo de Linux no repite una coordenada igual a la anterior de la ranura, así que un dedo que cae en la misma X (o Y) que el toque anterior llega SIN esa coordenada, y el lector se quedaba sin posición (`inicio=False` en la grabación) y no hacía clic. Pasaba justo al reintentar el mismo botón del navegador, que es cuando «a veces no abre». Ahora cada ranura recuerda su última posición y un contacto nuevo parte de ella. Con tests que fallan con el código anterior.
 - Grabadora: `rueda` separa ahora los clics por origen (`dedo` = arrastre, `inercia`, `mando`); antes solo contaba inercia y mando, y el arrastre no salía.

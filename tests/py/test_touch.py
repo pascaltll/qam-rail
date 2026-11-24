@@ -223,9 +223,9 @@ for fl in (False, True):
         k.feed(EV_ABS, q.ABS_MT_SLOT, s_, 0.1); k.feed(EV_ABS, q.ABS_MT_TRACKING_ID, -1, 0.1)
     k.feed(EV_SYN, 0, 0, 0.1)
     assert ("kb",) in k.take_actions(), fl
-f = full()   # arrastrar sin mantener: desplaza, NO pulsa botones ni mueve el puntero
+f = full()   # arrastrar sin mantener: desplaza, NO pulsa botones; lleva el puntero (una vez) adonde empezó el dedo para que la rueda llegue a lo de debajo
 acts = fingerF(f, [(500, 800 - 17 * i) for i in range(21)])
-assert acts == [], acts
+assert [a[0] for a in acts] == ["move"] and acts[0][1:] == f.to_abs(500, 800), acts
 # un toque que solo frena la inercia no hace clic
 f = full()
 fingerF(f, [(500, 900 - 40 * i) for i in range(12)])

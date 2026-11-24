@@ -700,6 +700,14 @@ class TouchScroll:
                 self.drag = True
                 x, y = self.to_abs(*self.start)
                 self.actions += [("move", x, y), ("down", 1), ("log", f"toque + arrastrar → selección desde {x},{y}")]
+            elif self.full:
+                # Con la pantalla táctil agarrada gamescope ya no mueve el puntero con el dedo, y la rueda va a lo que hay bajo el PUNTERO (donde se
+                # tocó la última vez), no bajo el dedo: en el menú de Firefox, un desplegable o un panel lateral no se desplazaba. Se lleva el puntero
+                # al punto donde empezó el dedo (sin pulsar) antes de mandar la rueda.
+                x, y = self.to_abs(*self.start)
+                self.actions.append(("move", x, y))
+                if self.tr:
+                    self.tr("scroll.inicio", puntero=f"{x},{y}")
             sx, sy = tx, ty   # lo recorrido hasta pasar la zona muerta cuenta
         if self.drag:
             x, y = self.to_abs(*cur)
