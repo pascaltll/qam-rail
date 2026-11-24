@@ -168,6 +168,14 @@ class XOut:
     """Ratón y teclado falsos con XTest sobre la pantalla del usuario. Lanza OSError si no puede abrirla o faltan las bibliotecas."""
 
     MODS = {"ctrl": "Control_L", "shift": "Shift_L", "alt": "Alt_L"}
+    MASKS = {"Shift_L": 0x01, "Control_L": 0x04, "Alt_L": 0x08, "ISO_Level3_Shift": 0x80}
+    # Cómo aplicar Ctrl/Mayús/AltGr (la autoprueba elige el que funciona en el navegador de delante; con gamescope, Firefox ignoraba los
+    # modificadores «falsos» de XTest): «keys» = pulsar la tecla del modificador (pausa corta), «slow» = igual con pausa larga,
+    # «lock» = fijar el estado del modificador en el servidor (XKB) y pulsar la tecla suelta.
+    mod_mode = "keys"
+    # Cómo escribir un carácter que pide modificador: «levels» = con su modificador; «remap» = prestar una tecla libre al símbolo (sin modificadores).
+    char_mode = "levels"
+    GAPS = {"keys": 0.012, "slow": 0.08, "lock": 0.03}
 
     def __init__(self, display: str, xauth: str | None):
         if xauth:
@@ -313,34 +321,94 @@ class XOut:
             return 0
 
     def _pausa(self, gap: float) -> None:
-        """Vuelca lo pendiente y espera `gap` s: así el modificador llega ANTES que la tecla (con gamescope delante, Firefox ignoraba Ctrl/Mayús si todo iba en una ráfaga)."""
+        """Vuelca lo pendiente y espera `gap` s (el modificador debe llegar ANTES que la tecla)."""
         if gap > 0:
             self.x11.XFlush(self.dpy)
             time.sleep(gap)
 
-    def type_char(self, ch: str, gap: float = 0.0) -> bool:
+    def _xkb_lock(self, mask: int, value: int) -> None:
+        f = self.x11.XkbLockModifiers
+        f.restype, f.argtypes = ctypes.c_int, [ctypes.c_void_p, ctypes.c_uint, ctypes.c_uint, ctypes.c_uint]
+        f(self.dpy, 0x100, mask, value)   # 0x100 = XkbUseCoreKbd
+
+    def _chord(self, names: list, code: int) -> None:
+        """Pulsa y suelta `code` con los modificadores `names` (nombres de símbolo) según `mod_mode`."""
+        if not names:
+            self.xt.XTestFakeKeyEvent(self.dpy, code, 1, 0)
+            self.xt.XTestFakeKeyEvent(self.dpy, code, 0, 0)
+            return
+        gap = self.GAPS.get(self.mod_mode, 0.012)
+        if self.mod_mode == "lock":
+            mask = 0
+            for n in names:
+                mask |= self.MASKS.get(n, 0)
+            self._xkb_lock(mask, mask)
+            self._pausa(gap)
+            self.xt.XTestFakeKeyEvent(self.dpy, code, 1, 0)
+            self.xt.XTestFakeKeyEvent(self.dpy, code, 0, 0)
+            self._pausa(gap)
+            self._xkb_lock(mask, 0)
+            self.x11.XFlush(self.dpy)
+            return
+        mods = [self._code(n) for n in names]
+        for m in mods:
+            self.xt.XTestFakeKeyEvent(self.dpy, m, 1, 0)
+        self._pausa(gap)
+        self.xt.XTestFakeKeyEvent(self.dpy, code, 1, 0)
+        self.xt.XTestFakeKeyEvent(self.dpy, code, 0, 0)
+        self._pausa(gap)
+        for m in reversed(mods):
+            self.xt.XTestFakeKeyEvent(self.dpy, m, 0, 0)
+        self.x11.XFlush(self.dpy)
+
+    def _type_remap(self, ks: int) -> bool:
+        """Escribe el símbolo `ks` prestándoselo a una tecla libre (sin modificadores), como hace xdotool. False si no hay tecla libre."""
+        x = self.x11
+        lo, hi = ctypes.c_int(), ctypes.c_int()
+        x.XDisplayKeycodes.argtypes = [ctypes.c_void_p, ctypes.POINTER(ctypes.c_int), ctypes.POINTER(ctypes.c_int)]
+        x.XDisplayKeycodes(self.dpy, ctypes.byref(lo), ctypes.byref(hi))
+        per = ctypes.c_int()
+        x.XGetKeyboardMapping.restype = ctypes.POINTER(ctypes.c_ulong)
+        x.XGetKeyboardMapping.argtypes = [ctypes.c_void_p, ctypes.c_ubyte, ctypes.c_int, ctypes.POINTER(ctypes.c_int)]
+        mp = x.XGetKeyboardMapping(self.dpy, lo.value, hi.value - lo.value + 1, ctypes.byref(per))
+        if not mp:
+            return False
+        free = 0
+        for kc in range(hi.value, lo.value - 1, -1):
+            row = [mp[(kc - lo.value) * per.value + j] for j in range(per.value)]
+            if not any(row):
+                free = kc
+                break
+        x.XFree(mp)
+        if not free:
+            return False
+        x.XChangeKeyboardMapping.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_int, ctypes.POINTER(ctypes.c_ulong), ctypes.c_int]
+        syms = (ctypes.c_ulong * per.value)(*([ks] * per.value))
+        x.XChangeKeyboardMapping(self.dpy, free, per.value, syms, 1)
+        self._pausa(0.03)   # que el navegador reciba el cambio de teclado antes de la tecla
+        self.xt.XTestFakeKeyEvent(self.dpy, free, 1, 0)
+        self.xt.XTestFakeKeyEvent(self.dpy, free, 0, 0)
+        self._pausa(0.03)
+        none = (ctypes.c_ulong * per.value)()
+        x.XChangeKeyboardMapping(self.dpy, free, per.value, none, 1)
+        self._pausa(0.01)
+        return True
+
+    def type_char(self, ch: str, gap: float | None = None) -> bool:
         """Escribe un carácter con la distribución activa: busca su tecla y el nivel (Mayús, AltGr) y pulsa lo necesario. False si no existe."""
         if not ch or ch == "\n":
             return False
         ks = keysym_for_char(ch)
         code = self.x11.XKeysymToKeycode(self.dpy, ks)
-        if not code:
+        idx = None
+        if code:
+            idx = next((i for i in range(4) if self.x11.XKeycodeToKeysym(self.dpy, code, i) == ks), None)
+        if self.char_mode == "remap" and (idx is None or idx > 0):
+            return self._type_remap(ks)
+        if not code or idx is None:
             return False
-        idx = next((i for i in range(4) if self.x11.XKeycodeToKeysym(self.dpy, code, i) == ks), None)
-        if idx is None:
-            return False
-        mods = [self._code(n) for n in LEVEL_MODS[idx]]
-        for m in mods:
-            self.xt.XTestFakeKeyEvent(self.dpy, m, 1, 0)
-        if mods:
-            self._pausa(gap)
-        self.xt.XTestFakeKeyEvent(self.dpy, code, 1, 0)
-        self.xt.XTestFakeKeyEvent(self.dpy, code, 0, 0)
-        if mods:
-            self._pausa(gap)
-        for m in reversed(mods):
-            self.xt.XTestFakeKeyEvent(self.dpy, m, 0, 0)
-        self._pausa(gap)
+        self._chord(list(LEVEL_MODS[idx]), code)
+        self.x11.XFlush(self.dpy)
         return True
 
     def move(self, dx: int, dy: int) -> None:
@@ -409,24 +477,14 @@ class XOut:
             self._codes[name] = self.x11.XKeysymToKeycode(self.dpy, ks) if ks else 0
         return self._codes[name]
 
-    def key(self, combo: str, gap: float = 0.0) -> None:
+    def key(self, combo: str, gap: float | None = None) -> None:
         """«ctrl+shift+Tab»: modificadores, tecla, y se sueltan en orden inverso."""
         parts = combo.split("+")
-        mods = [self._code(self.MODS[p.lower()]) for p in parts[:-1] if p.lower() in self.MODS]
+        names = [self.MODS[p.lower()] for p in parts[:-1] if p.lower() in self.MODS]
         k = self._code(parts[-1])
         if not k:
             return
-        for m in mods:
-            self.xt.XTestFakeKeyEvent(self.dpy, m, 1, 0)
-        if mods:
-            self._pausa(gap)
-        self.xt.XTestFakeKeyEvent(self.dpy, k, 1, 0)
-        self.xt.XTestFakeKeyEvent(self.dpy, k, 0, 0)
-        if mods:
-            self._pausa(gap)
-        for m in reversed(mods):
-            self.xt.XTestFakeKeyEvent(self.dpy, m, 0, 0)
-        self._pausa(gap)
+        self._chord(names, k)
 
     def zoom(self, n: int) -> None:
         """Zoom del navegador: Ctrl + rueda (n > 0 acerca, n < 0 aleja)."""

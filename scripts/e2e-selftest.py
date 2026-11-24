@@ -1,3 +1,4 @@
+import os
 #!/usr/bin/env python3
 """Prueba de extremo a extremo de la autoprueba del navegador SIN la consola: arranca Xvfb y Chrome (o Chromium) y pasa por la misma
 autoprueba (toques, scroll, inercia, teclado, pestañas) que corre en el equipo con Firefox. Sirve para ver que un cambio en qam_pad.py o en
@@ -14,6 +15,7 @@ ch = subprocess.Popen([next((b for b in ("google-chrome", "chromium", "chromium-
                        "--window-size=1920,1080", "--disable-features=Translate", "about:blank"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 time.sleep(4.0)
 x = q.XOut(DISP, None)
+x.mod_mode = os.environ.get('KMOD', x.mod_mode); x.char_mode = os.environ.get('KCH', x.char_mode)   # forzar un modo de teclado
 def top_windows():
     root = x.x11.XDefaultRootWindow(x.dpy)
     r, p, kids, n = ctypes.c_ulong(), ctypes.c_ulong(), ctypes.POINTER(ctypes.c_ulong)(), ctypes.c_uint()

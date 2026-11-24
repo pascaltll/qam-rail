@@ -1,5 +1,9 @@
 # Cambios
 
+## dev.77
+- **Ctrl y Mayús en Firefox (visto en tu autoprueba dev.76):** aun con pausa, Firefox ignoraba los modificadores «falsos»: Ctrl+A salía como «a», «A» como «a», «:» como «;», «_» como «-»; Ctrl+T y las pestañas no funcionaban. Ahora hay tres formas de aplicarlos (`keys` pulsando la tecla del modificador, `slow` con pausa larga, `lock` fijando el estado en el servidor con XKB) y, para los símbolos, otra (`remap`: prestar una tecla libre al carácter, como xdotool). La autoprueba prueba cada una en el navegador de delante, se queda con la primera que funciona y la guarda en `kbd-mode.json`; el teclado de QAM la usa desde entonces. Los pasos «atajos con Ctrl» y «mayúsculas y símbolos» dicen cuál funcionó.
+- `scripts/e2e-selftest.py` admite `KMOD`/`KCH` para forzar un modo.
+
 ## dev.76
 - **La autoprueba ya no depende de la barra de direcciones:** si escribir la dirección (Ctrl+T, luego Ctrl+L) no carga la página en ~11 s —como en tu Firefox con barra reducida, pestañas verticales y Perfect Home como pestaña nueva— la abre con `xdg-open` como el usuario de la sesión. El resultado dice con cuál de los tres caminos cargó.
 - Anota en `pad.log` el título de la ventana tras Ctrl+T, tras escribir y tras Return, para ver en qué punto se pierde.

@@ -146,11 +146,12 @@ def fit_axis(p1: float, p2: float, c1: float, c2: float):
 
 
 class SelfTest:
-    def __init__(self, runner, keys, typ, log=None, title=None, opener=None):
+    def __init__(self, runner, keys, typ, log=None, title=None, opener=None, setmode=None):
         """`runner`: el PadRunner en marcha (con su X). `keys(key, mods)` y `typ(text)`: el teclado de QAM (async, devuelven bool)."""
         self.r, self.keys, self.typ = runner, keys, typ
         self.log = log or (lambda *_, **__: None)
         self.title = title or (lambda: "")   # título de la ventana del navegador (para el diagnóstico)
+        self.setmode = setmode               # setmode(mod=None, ch=None, save=False): cambia/guarda cómo se aplican Ctrl/Mayús en el teclado de QAM
         self.opener = opener                 # abre una URL en el navegador por el sistema (xdg-open): no depende de la barra de direcciones
         self.opened = False                  # abrimos una pestaña para la prueba: al acabar se cierra
         self.probe = Probe()
@@ -344,14 +345,74 @@ class SelfTest:
         await self.typ("hola")
         e = await self.probe.wait(j, "input", lambda d: d.get("v") == "hola", 1.5)
         self.res("escribir con el teclado de QAM", bool(e), ("escribió «hola»" if e else "no llegó el texto al campo") + ("" if f else " (el toque no dio foco al campo)"))
-        # Mayúsculas y símbolos (Mayús): una dirección lleva «:» y «/»; en Firefox salía «;» por no llegar la Mayús
-        k = self.probe.mark()
-        want = "Ab:/_9"
+        await self.s_modificadores()
+
+    async def _vaciar(self) -> None:
+        for _ in range(12):
+            await self.keys("BackSpace", [])
+        await asyncio.sleep(0.15)
+
+    async def _espera_valor(self, want: str, timeout: float) -> bool:
+        end = time.monotonic() + timeout
+        while time.monotonic() < end:
+            got = next((ev["d"].get("v") for ev in reversed(self.probe.events) if ev["k"] == "input"), None)
+            if got == want:
+                return True
+            await asyncio.sleep(0.05)
+        return False
+
+    async def _prueba_ctrl(self) -> bool:
+        await self._vaciar()
+        await self.typ("zz")
+        await asyncio.sleep(0.1)
         await self.keys("a", ["ctrl"])
-        await self.typ(want)
-        e2 = await self.probe.wait(k, "input", lambda d: d.get("v") == want, 2.0)
-        got = next((ev["d"].get("v") for ev in reversed(self.probe.events[k:]) if ev["k"] == "input"), None)
-        self.res("escribir mayúsculas y símbolos", bool(e2), f"escribió «{want}»" if e2 else f"se esperaba «{want}» y llegó «{got}» (¿no llega Mayús/AltGr?)")
+        await asyncio.sleep(0.1)
+        await self.typ("q")
+        return await self._espera_valor("q", 1.2)
+
+    async def _prueba_simbolos(self) -> bool:
+        await self._vaciar()
+        await self.typ("Ab:/_9")
+        return await self._espera_valor("Ab:/_9", 1.5)
+
+    async def s_modificadores(self) -> None:
+        """Ctrl y Mayús por el teclado de QAM: prueba varias formas de aplicarlos y se queda con la que funciona (queda guardada)."""
+        if not self.setmode:
+            ok = await self._prueba_ctrl()
+            self.res("atajos con Ctrl", ok, "Ctrl+A seleccionó el texto" if ok else "Ctrl+A se escribió como letra: el navegador ignora Ctrl")
+            ok2 = await self._prueba_simbolos()
+            self.res("mayúsculas y símbolos", ok2, "escribió «Ab:/_9»" if ok2 else "no llegó Mayús/AltGr")
+            return
+        tried: list = []
+        mod = None
+        for m in ("keys", "slow", "lock"):
+            self.setmode(mod=m)
+            good = await self._prueba_ctrl()
+            tried.append(f"{m}:{'sí' if good else 'no'}")
+            if good:
+                mod = m
+                break
+        if mod is None:
+            self.setmode(mod="keys")
+            self.res("atajos con Ctrl", False, "ninguna forma de aplicar Ctrl funcionó (" + ", ".join(tried) + ")")
+            self.setmode(ch="levels")
+        else:
+            self.res("atajos con Ctrl", True, f"Ctrl llega con el modo «{mod}»" + (f" (probé: {', '.join(tried)})" if len(tried) > 1 else ""))
+        chm = None
+        for c in ("levels", "remap"):
+            self.setmode(ch=c)
+            good = await self._prueba_simbolos()
+            if good:
+                chm = c
+                break
+        if chm is None:
+            self.setmode(ch="levels")
+            self.res("mayúsculas y símbolos", False, "ni con Mayús ni prestando una tecla llegó «Ab:/_9»")
+        else:
+            self.res("mayúsculas y símbolos", True, f"escribió «Ab:/_9» con el modo «{chm}»")
+        if mod is not None and chm is not None:
+            self.setmode(save=True)   # se queda para el uso normal
+        await self._vaciar()
 
     async def s_select(self) -> None:
         x, y = self.scr("sel")

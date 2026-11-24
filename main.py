@@ -329,8 +329,20 @@ class Plugin:
                     st["phase"] = f"Probando: {kw['name']}"
                     self._pad_log(f"autoprueba: {kw['name']} → {'OK' if kw.get('ok') else 'FALLA'} · {kw.get('detalle', '')}")
 
+            def setmode(mod=None, ch=None, save=False):
+                if mod:
+                    x.mod_mode = mod
+                if ch:
+                    x.char_mode = ch
+                if save:
+                    try:
+                        with open(_path("kbd-mode.json"), "w", encoding="utf-8") as fh:
+                            json.dump({"mod": x.mod_mode, "ch": x.char_mode}, fh)
+                    except OSError:
+                        pass
+                self._pad_log(f"autoprueba: teclado modo mod={x.mod_mode} símbolos={x.char_mode}" + (" (guardado)" if save else ""))
             wid = self._front_wid(x)
-            test = qam_selftest.SelfTest(pad, keys, typ, log, title=lambda: x.window_title(wid), opener=self._open_url)
+            test = qam_selftest.SelfTest(pad, keys, typ, log, title=lambda: x.window_title(wid), opener=self._open_url, setmode=setmode)
             res = await asyncio.wait_for(test.run(), 120)
         except asyncio.TimeoutError:
             res = {"ok": False, "error": "la prueba tardó más de 2 minutos y se paró", "steps": []}
@@ -1339,6 +1351,15 @@ class Plugin:
         if getattr(self, "_kx_x", None) is None:
             display, xauth = await self._pad_env()
             self._kx_x = qam_pad.XOut(display, xauth)
+            try:   # forma de aplicar Ctrl/Mayús que la autoprueba encontró buena (kbd-mode.json)
+                with open(_path("kbd-mode.json"), encoding="utf-8") as fh:
+                    km = json.load(fh)
+                if km.get("mod") in qam_pad.XOut.GAPS:
+                    self._kx_x.mod_mode = km["mod"]
+                if km.get("ch") in ("levels", "remap"):
+                    self._kx_x.char_mode = km["ch"]
+            except (OSError, ValueError):
+                pass
         return self._kx_x
 
     def _kx_close(self) -> None:
@@ -1381,7 +1402,7 @@ class Plugin:
             fw = getattr(x, "focus_window", lambda: 0)()   # solo para el registro: ¿el foco quedó en la ventana de la app (o en una hija suya)?
             ok = True
             mm = [m for m in (mods or []) if m in ("ctrl", "alt", "shift")]
-            GAP = 0.012   # pausa entre modificador y tecla (dev.74: Firefox ignoraba Ctrl y Mayús si iban pegados: «t» en vez de Ctrl+T, «;» en vez de «:»)
+            GAP = None   # la pausa y la forma de aplicar el modificador las decide x.mod_mode (la autoprueba elige la que funciona en el navegador)
 
             def _run() -> bool:   # en un hilo: las pausas no deben parar el bucle del mando y el táctil
                 good = True
