@@ -1646,14 +1646,16 @@ class PadRunner:
         while not self._stop:
             now = time.monotonic()
             if self.is_active:
+                if not last:
+                    last = now - 1 / 60   # primer fotograma tras estar inactivo: no es un parón del bucle
                 scan_at = self._step(now, last, scan_at)
                 last = now
                 await asyncio.sleep(1 / 60)
             else:
                 if self._fds:
                     self._close()
-                last = time.monotonic()
-                await asyncio.sleep(0.3)
+                last = 0.0
+                await asyncio.sleep(0.1)   # al volver (cerrar el panel o el teclado) se agarra el táctil en ≤ 0,1 s, no 0,3
         self._close()
         if self._x:
             self._x.close()
