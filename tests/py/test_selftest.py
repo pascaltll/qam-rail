@@ -26,12 +26,20 @@ async def probe_test():
         r, w = await asyncio.open_connection("127.0.0.1", p.port)
         w.write(f"GET {path} HTTP/1.1\r\nHost: x\r\n\r\n".encode()); await w.drain()
         data = await r.read(); w.close(); return data
+    async def get_range(path, rg):
+        r, w = await asyncio.open_connection("127.0.0.1", p.port)
+        w.write(f"GET {path} HTTP/1.1\r\nHost: x\r\nRange: {rg}\r\n\r\n".encode()); await w.drain()
+        data = await r.read(); w.close(); return data
     i = p.mark()
     assert b"204" in (await get("/ev?k=click&d=%7B%22id%22%3A%22b1%22%7D")).split(b"\r\n")[0]
     assert b"QAM autoprueba" in await get("/")
     e = await p.wait(i, "click", lambda d: d.get("id") == "b1", 0.5)
     assert e and e["d"]["id"] == "b1"
     assert await p.wait(i, "vis", None, 0.1) is None
+    assert b'"scene": "base"' in (await get("/cmd"))
+    full = await get("/v.webm"); assert full.split(b"\r\n")[0].endswith(b"200 OK") and b"Accept-Ranges" in full
+    part = await get_range("/v.webm", "bytes=0-99"); assert part.split(b"\r\n")[0].endswith(b"206 Partial Content") and b"Content-Range: bytes 0-99/" in part and part.endswith(b"\r\n\r\n" + full.split(b"\r\n\r\n", 1)[1][:100])
+    assert b"audio/wav" in await get("/a.wav") and b"Pesta" in await get("/blank")
     await p.stop()
 asyncio.run(probe_test())
 print("test_selftest OK")

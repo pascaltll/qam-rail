@@ -1,5 +1,11 @@
 # Cambios
 
+## dev.78
+- **Autoprueba ampliada (página con escenas):** además de lo de antes, ahora prueba con tu navegador (1) **pop-ups**: modal con ✕, aviso de cookies («Rechazar») y un anuncio con una ✕ pequeña que aparece al cabo de 1 s, y un enlace que abre pestaña nueva y se cierra con Ctrl+W; (2) **vídeo**: reproducir, saltar tocando la barra, arrastrar la barra, pausar, volumen tocando y arrastrando, **pantalla completa** (tocar los controles dentro y salir tocando ⛶ y con Esc); (3) **música**: lo mismo sin pantalla completa (suena un tono suave unos segundos); (4) **menús**: desplegable largo (desplazar la lista con el dedo y elegir) y menú de la página con scroll; (5) **F11**: pantalla completa del navegador, tocar dentro y salir. El servidor de la prueba sirve un vídeo y un audio propios (con soporte de rangos para poder saltar) y manda a la página qué escena mostrar.
+- La página se carga primero con `xdg-open` (en tu Firefox era el único camino que funcionaba) y solo si falla escribe la dirección con el teclado.
+- La prueba de scroll e inercia usa la altura real de la caja (con la caja más baja salía de ella y fallaba).
+- La página de prueba está en `py_modules/qam_selftest_page.py`.
+
 ## dev.77
 - **Ctrl y Mayús en Firefox (visto en tu autoprueba dev.76):** aun con pausa, Firefox ignoraba los modificadores «falsos»: Ctrl+A salía como «a», «A» como «a», «:» como «;», «_» como «-»; Ctrl+T y las pestañas no funcionaban. Ahora hay tres formas de aplicarlos (`keys` pulsando la tecla del modificador, `slow` con pausa larga, `lock` fijando el estado en el servidor con XKB) y, para los símbolos, otra (`remap`: prestar una tecla libre al carácter, como xdotool). La autoprueba prueba cada una en el navegador de delante, se queda con la primera que funciona y la guarda en `kbd-mode.json`; el teclado de QAM la usa desde entonces. Los pasos «atajos con Ctrl» y «mayúsculas y símbolos» dicen cuál funcionó.
 - `scripts/e2e-selftest.py` admite `KMOD`/`KCH` para forzar un modo.

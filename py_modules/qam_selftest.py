@@ -11,31 +11,8 @@ import time
 import urllib.parse
 
 import qam_pad as q
-
-PAGE = """<!doctype html><meta charset=utf-8><title>QAM autoprueba</title>
-<style>html,body{margin:0;height:100%;overflow:hidden;background:#101418;color:#eee;font:22px sans-serif}
-.row{display:flex;gap:24px;padding:18px 24px}button{width:230px;height:96px;font-size:26px}
-.box{width:420px;height:260px;overflow:auto;background:#1b222b;border:2px solid #345}
-.box div{height:70px;border-bottom:1px solid #456;padding:20px;box-sizing:border-box}
-select,input{font-size:26px;height:64px;width:300px}</style>
-<div class=row><button id=b1>B1</button><button id=b2>B2</button><button id=b3>B3</button></div>
-<div class=row><div class=box id=box1></div><div class=box id=box2></div></div>
-<div class=row><select id=sel><option>uno<option>dos<option>tres</select><input id=inp autocomplete=off></div>
-<script>
-const post=(k,d)=>{try{fetch('/ev?k='+k+'&d='+encodeURIComponent(JSON.stringify(d||{})),{keepalive:true,cache:'no-store'})}catch(e){}};
-for(const id of ['box1','box2']){const b=document.getElementById(id);for(let i=0;i<60;i++){const d=document.createElement('div');d.textContent=id+' fila '+i;b.appendChild(d)}
- let t=0;b.addEventListener('scroll',()=>{const n=performance.now();if(n-t>40){t=n;post('scroll',{id:id,top:Math.round(b.scrollTop)})}});
- setTimeout(()=>{},0)}
-setInterval(()=>{for(const id of ['box1','box2'])post('pos',{id:id,top:Math.round(document.getElementById(id).scrollTop)})},250);
-document.addEventListener('mousedown',e=>post('down',{id:e.target.id||e.target.tagName}),true);
-document.addEventListener('click',e=>post('click',{id:e.target.id||e.target.tagName,cx:e.clientX,cy:e.clientY}),true);
-document.getElementById('inp').addEventListener('input',e=>post('input',{v:e.target.value}));
-document.getElementById('inp').addEventListener('focus',()=>post('focus',{id:'inp'}));
-document.addEventListener('visibilitychange',()=>post('vis',{s:document.visibilityState}));
-const rects=()=>{const o={};for(const id of ['b1','b2','b3','box1','box2','sel','inp']){const r=document.getElementById(id).getBoundingClientRect();o[id]=[r.left,r.top,r.width,r.height]}return o};
-post('ready',{rects:rects(),dpr:window.devicePixelRatio,w:innerWidth,h:innerHeight});
-</script>"""
-
+import qam_selftest_page as pg
+PAGE = pg.PAGE
 
 class Probe:
     """Servidor mínimo en 127.0.0.1: sirve la página y apunta cada evento que ella le manda."""
@@ -43,6 +20,8 @@ class Probe:
     def __init__(self):
         self.events: list = []
         self.hits: list = []   # TODAS las peticiones (también la de la página): distingue «el navegador no pidió nada» de «la página no mandó eventos»
+        self.cmd = {"n": 0, "scene": "base"}   # qué escena debe mostrar la página (la página lo consulta cada 150 ms)
+        self._media = {"/v.webm": ("video/webm", None), "/a.wav": ("audio/wav", None)}
         self.server = None
         self.port = 0
 
@@ -59,13 +38,31 @@ class Probe:
                 pass
             self.server = None
 
+    def _body(self, path: str):
+        if path == "/":
+            return "text/html; charset=utf-8", pg.PAGE.encode("utf-8")
+        if path == "/blank":
+            return "text/html; charset=utf-8", pg.BLANK.encode("utf-8")
+        if path in self._media:
+            typ, data = self._media[path]
+            if data is None:
+                data = pg.video_bytes() if path == "/v.webm" else pg.audio_bytes()
+                self._media[path] = (typ, data)
+            return typ, data
+        return None
+
     async def _handle(self, r, w) -> None:
         try:
             line = (await asyncio.wait_for(r.readline(), 5)).decode("latin-1")
-            while True:   # cabeceras
+            rng = None
+            while True:   # cabeceras (el vídeo y el audio piden «Range»: sin él el navegador no deja saltar a otro punto)
                 h = await asyncio.wait_for(r.readline(), 5)
                 if h in (b"\r\n", b"\n", b""):
                     break
+                if h.lower().startswith(b"range:"):
+                    m = re.search(rb"bytes=(\d*)-(\d*)", h)
+                    if m:
+                        rng = (m.group(1), m.group(2))
             path = line.split(" ")[1] if line.count(" ") >= 2 else "/"
             u = urllib.parse.urlparse(path)
             self.hits.append(u.path)
@@ -77,11 +74,25 @@ class Probe:
                     d = {}
                 self.events.append({"t": time.monotonic(), "k": (qs.get("k") or [""])[0], "d": d})
                 w.write(b"HTTP/1.1 204 No Content\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n")
-            elif u.path == "/":
-                body = PAGE.encode("utf-8")
-                w.write(b"HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nCache-Control: no-store\r\nContent-Length: " + str(len(body)).encode() + b"\r\nConnection: close\r\n\r\n" + body)
+            elif u.path == "/cmd":
+                body = json.dumps(self.cmd).encode()
+                w.write(b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nCache-Control: no-store\r\nContent-Length: " + str(len(body)).encode() + b"\r\nConnection: close\r\n\r\n" + body)
             else:
-                w.write(b"HTTP/1.1 204 No Content\r\nConnection: close\r\n\r\n")
+                got = self._body(u.path)
+                if got is None:
+                    w.write(b"HTTP/1.1 204 No Content\r\nConnection: close\r\n\r\n")
+                else:
+                    typ, data = got
+                    total = len(data)
+                    status, extra = b"200 OK", b""
+                    if rng and (rng[0] or rng[1]):
+                        a0 = int(rng[0]) if rng[0] else max(0, total - int(rng[1]))
+                        b0 = min(int(rng[1]), total - 1) if (rng[0] and rng[1]) else total - 1
+                        if a0 <= b0:
+                            data = data[a0:b0 + 1]
+                            status, extra = b"206 Partial Content", f"Content-Range: bytes {a0}-{b0}/{total}\r\n".encode()
+                    w.write(b"HTTP/1.1 " + status + b"\r\nContent-Type: " + typ.encode() + b"\r\nAccept-Ranges: bytes\r\nCache-Control: no-store\r\n" + extra
+                            + b"Content-Length: " + str(len(data)).encode() + b"\r\nConnection: close\r\n\r\n" + data)
             await w.drain()
         except Exception:  # noqa: BLE001
             pass
@@ -168,6 +179,10 @@ class SelfTest:
         self.log("autoprueba", name=name, ok=ok, detalle=detail, ms=ms)
         return bool(ok)
 
+    def half(self, id_: str) -> int:
+        """Medio recorrido (px de pantalla) que se puede arrastrar sin salirse del elemento: 80 % de su semialtura."""
+        return max(30, round(self.rects[id_][3] * self.ay[0] / 2 * 0.8))
+
     def scr(self, id_: str, fx: float = 0.5, fy: float = 0.5) -> tuple:
         """Punto de pantalla (px) dentro del elemento `id_` de la página (fx, fy en 0..1)."""
         x, y, w, h = self.rects[id_]
@@ -204,6 +219,7 @@ class SelfTest:
     async def run(self) -> dict:
         t_all = time.monotonic()
         W, H = self.r._x.screen_size()
+        self.W, self.H = W, H
         self.ts = q.TouchScroll((0, W), (0, H), (W, H))
         self.ts.full = self.ts.force_full = True
         self.ts.tr = self.r._tr
@@ -211,7 +227,8 @@ class SelfTest:
         await self.probe.start()
         try:
             if await self.s_cargar(W, H) and await self.s_calibrar(W, H):
-                for step in (self.s_clic, self.s_mismo_sitio, self.s_scroll, self.s_inercia, self.s_texto, self.s_select, self.s_pestanas):
+                for step in (self.s_clic, self.s_mismo_sitio, self.s_scroll, self.s_inercia, self.s_texto, self.s_select, self.s_popups, self.s_video, self.s_audio,
+                             self.s_menus, self.s_pantalla_navegador, self.s_pestanas):
                     try:
                         await step()
                     except Exception as e:  # noqa: BLE001 - un paso roto no debe parar los demás
@@ -240,18 +257,25 @@ class SelfTest:
         tit0 = (self.title() or "").strip()
         if re.search(r"restore session|restaurar sesi|session restore", tit0, re.I):
             return self.res("cargar página", False, f"el navegador está en la pantalla de restaurar sesión («{tit0[:50]}»): toca «Start New Session» o «Restore Session» y repite")
-        how = "teclado (Ctrl+T)"
-        ok = await self.keys("t", ["ctrl"])
-        self.opened = True
-        await asyncio.sleep(0.8)
-        self.log(f"título tras Ctrl+T: «{(self.title() or '')[:50]}»")
-        ok = await self.typ(url) and ok
-        await asyncio.sleep(0.2)
-        self.log(f"título tras escribir: «{(self.title() or '')[:60]}»")
-        ok = await self.keys("Return", []) and ok
-        e = await self.probe.wait(i, "ready", timeout=6.0)
-        self.log(f"título tras Return: «{(self.title() or '')[:50]}»")
-        if not e:   # segundo intento: por la barra de direcciones de la pestaña en la que estemos
+        how, e, ok = "", None, True
+        if self.opener:   # primero sin teclado: el sistema abre la dirección en el navegador (no depende de la barra de direcciones: barras reducidas, extensiones de pestaña nueva…)
+            how = "xdg-open"
+            try:
+                await self.opener(url)
+                self.opened = True
+            except Exception as ex:  # noqa: BLE001
+                self.log(f"xdg-open falló: {str(ex)[:60]}")
+            e = await self.probe.wait(i, "ready", timeout=9.0)
+        if not e:
+            how = "teclado (Ctrl+T)"
+            ok = await self.keys("t", ["ctrl"])
+            self.opened = True
+            await asyncio.sleep(0.8)
+            ok = await self.typ(url) and ok
+            await asyncio.sleep(0.2)
+            ok = await self.keys("Return", []) and ok
+            e = await self.probe.wait(i, "ready", timeout=6.0)
+        if not e:   # último intento: por la barra de direcciones de la pestaña en la que estemos
             how = "teclado (Ctrl+L)"
             await self.keys("l", ["ctrl"])
             await asyncio.sleep(0.4)
@@ -259,38 +283,36 @@ class SelfTest:
             await asyncio.sleep(0.2)
             await self.keys("Return", [])
             e = await self.probe.wait(i, "ready", timeout=5.0)
-        if not e and self.opener:   # tercer intento sin teclado: que el sistema abra la dirección en el navegador (barras raras, extensiones de pestaña nueva…)
-            how = "xdg-open"
-            self.log("la dirección no cargó escribiéndola: pruebo con xdg-open")
-            try:
-                await self.opener(url)
-            except Exception as ex:  # noqa: BLE001
-                self.log(f"xdg-open falló: {str(ex)[:60]}")
-            e = await self.probe.wait(i, "ready", timeout=8.0)
         if not e:
             tit = (self.title() or "").strip()
-            det = (f"la página de prueba no cargó en 19 s · el navegador pidió la página {len([h for h in self.probe.hits if h == '/'])} vez/veces y "
+            det = (f"la página de prueba no cargó en 20 s · el navegador pidió la página {len([h for h in self.probe.hits if h == '/'])} vez/veces y "
                    f"mandó {len(self.probe.events)} evento(s) · título de la ventana: «{tit[:60]}»")
             return self.res("cargar página", False, det if ok else "no se pudo escribir la dirección (el teclado no llegó)")
         self.rects = e["d"]["rects"]
-        return self.res("cargar página", True, f"{int(e['d']['w'])}x{int(e['d']['h'])} px CSS, escala {e['d']['dpr']} · abierta con {how}", (e["t"] - t0) * 1000)
+        return self.res("cargar página", True, f"{int(e['d']['iw'])}x{int(e['d']['ih'])} px CSS, escala {e['d']['dpr']} · abierta con {how}", (e["t"] - t0) * 1000)
 
-    async def s_calibrar(self, W: int, H: int) -> bool:
-        pts = [(int(W * 0.30), int(H * 0.55)), (int(W * 0.62), int(H * 0.80))]
+    async def _calib(self, pts: list):
+        """Dos toques en puntos de pantalla conocidos → (escala, desplazamiento) pantalla ← cliente por eje, o un texto con el fallo."""
         got = []
         for (x, y) in pts:
             i = self.probe.mark()
             await self.tap(x, y)
             e = await self.probe.wait(i, "click", timeout=1.5)
             if not e:
-                return self.res("calibrar toques", False, f"el toque en {x},{y} no llegó a la página")
+                return f"el toque en {x},{y} no llegó a la página"
             got.append((x, y, e["d"]["cx"], e["d"]["cy"]))
             await asyncio.sleep(0.5)   # que no cuente como doble toque
         fx, fy = fit_axis(got[0][0], got[1][0], got[0][2], got[1][2]), fit_axis(got[0][1], got[1][1], got[0][3], got[1][3])
         if not fx or not fy:
-            return self.res("calibrar toques", False, f"los dos toques cayeron en el mismo punto de la página: {got}")
-        self.ax, self.ay = fx, fy
-        return self.res("calibrar toques", True, f"escala {fx[0]:.2f}×{fy[0]:.2f} px pantalla por px CSS")
+            return f"los dos toques cayeron en el mismo punto de la página: {got}"
+        return fx, fy
+
+    async def s_calibrar(self, W: int, H: int) -> bool:
+        r = await self._calib([(int(W * 0.30), int(H * 0.55)), (int(W * 0.62), int(H * 0.80))])
+        if isinstance(r, str):
+            return self.res("calibrar toques", False, r)
+        self.ax, self.ay = r
+        return self.res("calibrar toques", True, f"escala {r[0][0]:.2f}×{r[1][0]:.2f} px pantalla por px CSS")
 
     async def s_clic(self) -> None:
         x, y = self.scr("b1")
@@ -311,24 +333,27 @@ class SelfTest:
     async def s_scroll(self) -> None:
         for box, otra in (("box1", "box2"), ("box2", "box1")):
             x, y = self.scr(box)
+            d = self.half(box)
             a0, b0 = await self.top(box), await self.top(otra)
             t = time.monotonic()
-            await self.drag(x, y + 90, x, y - 90, 0.5)   # dedo hacia arriba: la lista baja
+            await self.drag(x, y + d, x, y - d, 0.5)   # dedo hacia arriba: la lista baja
             await asyncio.sleep(1.2)
             a1, b1 = await self.top(box), await self.top(otra)
             self.res(f"desplazar {box} con el dedo", a1 > a0 + 20 and b1 == b0, f"{box}: {a0}→{a1} px; {otra}: {b0}→{b1} px" + ("" if a1 > a0 + 20 else " (no se movió bajo el dedo)") + ("" if b1 == b0 else " (se movió la otra caja)"), (time.monotonic() - t) * 1000)
         x, y = self.scr("box1")
+        d = self.half("box1")
         a0 = await self.top("box1")
-        await self.drag(x, y - 90, x, y + 90, 0.5)   # dedo hacia abajo: la lista sube
+        await self.drag(x, y - d, x, y + d, 0.5)   # dedo hacia abajo: la lista sube
         await asyncio.sleep(1.2)
         a1 = await self.top("box1")
         self.res("sentido del desplazamiento", a1 < a0 - 20, f"dedo hacia abajo: {a0}→{a1} px" + ("" if a1 < a0 - 20 else " (el sentido está al revés o no se movió)"))
 
     async def s_inercia(self) -> None:
         x, y = self.scr("box2")
-        await self.drag(x, y - 110, x, y + 110, 0.4)   # hacia abajo: la lista vuelve arriba y hay recorrido para el latigazo
+        d = self.half("box2")
+        await self.drag(x, y - d, x, y + d, 0.4)   # hacia abajo: la lista vuelve arriba y hay recorrido para el latigazo
         await asyncio.sleep(1.5)
-        await self.drag(x, y + 110, x, y - 110, 0.10)   # un latigazo rápido hacia arriba
+        await self.drag(x, y + d, x, y - d, 0.10)   # un latigazo rápido hacia arriba
         t_up = time.monotonic()
         await asyncio.sleep(0.15)
         a1 = await self.top("box2")
@@ -422,6 +447,244 @@ class SelfTest:
         await asyncio.sleep(0.5)
         await self.keys("Escape", [])
         self.res("tocar un desplegable", bool(e), "llegó la pulsación" if e else "no llegó la pulsación al desplegable")
+
+    # ---- escenas (dev.78): pop-ups, vídeo, música, menús, pantalla completa
+    async def scene(self, name: str) -> bool:
+        i = self.probe.mark()
+        self.probe.cmd = {"n": self.probe.cmd["n"] + 1, "scene": name}
+        e = await self.probe.wait(i, "scene", lambda d: d.get("n") == name, 4.0)
+        if e:
+            self.rects = e["d"]["rects"]
+            await asyncio.sleep(0.25)
+        return bool(e)
+
+    async def new_rects(self, i: int) -> None:
+        e = await self.probe.wait(i, "rects", None, 2.0)
+        if e:
+            self.rects = e["d"]["rects"]
+
+    def last_media(self, id_: str, s_: str = "time", field: str = "t"):
+        for e in reversed(self.probe.events):
+            if e["k"] == "media" and e["d"].get("id") == id_ and e["d"].get("s") == s_:
+                return e["d"].get(field)
+        return None
+
+    async def _popup(self, label: str, abrir: str, pid: str, cerrar: str, espera: float) -> None:
+        i = self.probe.mark()
+        await self.tap(*self.scr(abrir))
+        e = await self.probe.wait(i, "popup", lambda d: d.get("id") == pid and d.get("open") is True, 1.5)
+        if not e:
+            self.res(label, False, "no se abrió el pop-up al tocar su botón")
+            return
+        await asyncio.sleep(espera)
+        j = self.probe.mark()
+        t = await self.tap(*self.scr(cerrar))
+        e2 = await self.probe.wait(j, "popup", lambda d: d.get("id") == pid and d.get("open") is False, 1.5)
+        self.res(label, bool(e2), "se cerró" if e2 else f"el toque en «{cerrar}» no cerró el pop-up", None if not e2 else (e2["t"] - t) * 1000)
+        await asyncio.sleep(0.5)
+
+    async def s_popups(self) -> None:
+        if not await self.scene("popups"):
+            self.res("pop-ups", False, "la página no cambió de escena")
+            return
+        await self._popup("pop-up modal: cerrar con ✕", "pm1", "m1", "m1x", 0.3)
+        await self._popup("aviso de cookies: Rechazar", "pm2", "m2", "m2no", 0.3)
+        await self._popup("anuncio: cerrar con una ✕ pequeña", "pm3", "m3", "m3x", 1.4)
+        i = self.probe.mark()
+        await self.tap(*self.scr("pl"))
+        e = await self.probe.wait(i, "vis", lambda d: d.get("s") == "hidden", 3.0)
+        if not e:
+            self.res("enlace a pestaña nueva y cerrarla", False, "el enlace no abrió una pestaña nueva (¿el navegador lo bloqueó?)")
+            return
+        await asyncio.sleep(0.8)
+        j = self.probe.mark()
+        await self.keys("w", ["ctrl"])
+        e2 = await self.probe.wait(j, "vis", lambda d: d.get("s") == "visible", 2.5)
+        self.res("enlace a pestaña nueva y cerrarla", bool(e2), "se abrió y se cerró con Ctrl+W" if e2 else "la pestaña nueva no se cerró con Ctrl+W")
+        await asyncio.sleep(0.4)
+
+    async def _seek_tap(self, p: str, fx: float) -> float | None:
+        i = self.probe.mark()
+        await self.tap(*self.scr(p + "seek", fx, 0.5))
+        e = await self.probe.wait(i, "media", lambda d: d.get("id") == p and d.get("s") == "seeked", 2.0)
+        if not e or not e["d"].get("d"):
+            return None
+        return e["d"]["t"] / e["d"]["d"]
+
+    async def _player(self, p: str, nombre: str) -> None:
+        """Reproducir, saltar tocando la barra, arrastrar la barra, pausar, volumen tocando y arrastrando."""
+        await asyncio.sleep(0.6)
+        i = self.probe.mark()
+        await self.tap(*self.scr(p + "play"))
+        e = await self.probe.wait(i, "media", lambda d: d.get("id") == p and d.get("s") == "play", 3.0)
+        if not e:
+            err = next((ev["d"] for ev in self.probe.events[i:] if ev["k"] == "media" and ev["d"].get("s") == "error"), None)
+            self.res(f"{nombre}: reproducir", False, "no empezó a reproducirse" + (f" (error de medio {err.get('c')})" if err else ""))
+            return
+        await asyncio.sleep(1.5)
+        t = self.last_media(p) or 0
+        self.res(f"{nombre}: reproducir", t > 0.8, f"avanzó hasta {t:.1f} s" if t > 0.8 else f"no avanza (en {t:.1f} s)")
+        f = await self._seek_tap(p, 0.75)
+        self.res(f"{nombre}: saltar tocando la barra", f is not None and 0.6 <= f <= 0.9, f"fue al {f * 100:.0f} % (pedido: 75 %)" if f is not None else "no llegó el salto")
+        await self._seek_tap(p, 0.10)
+        j = self.probe.mark()
+        await self.drag(*self.scr(p + "seek", 0.15, 0.5), *self.scr(p + "seek", 0.85, 0.5), 0.5)
+        await asyncio.sleep(0.8)
+        f2 = (self.last_media(p) or 0) / max(0.1, self.last_media(p, "time", "d") or 6)
+        dr = next((ev["d"].get("n") for ev in self.probe.events[j:] if ev["k"] == "vdrag" and ev["d"].get("id") == p), None)
+        self.res(f"{nombre}: arrastrar la barra de progreso", f2 > 0.6, f"llegó al {f2 * 100:.0f} %" if f2 > 0.6 else f"llegó solo al {f2 * 100:.0f} %" + (" (el dedo desplazó la página en vez de arrastrar la barra)" if dr is None else f" ({dr} movimientos)"))
+        j = self.probe.mark()
+        await self.tap(*self.scr(p + "play"))
+        e = await self.probe.wait(j, "media", lambda d: d.get("id") == p and d.get("s") == "pause", 2.0)
+        self.res(f"{nombre}: pausar", bool(e), "pausado" if e else "no se pausó")
+        j = self.probe.mark()
+        await self.tap(*self.scr(p + "vol", 0.35, 0.5))
+        e = await self.probe.wait(j, "media", lambda d: d.get("id") == p and d.get("s") == "vol", 1.5)
+        v = e["d"]["vol"] if e else None
+        self.res(f"{nombre}: volumen tocando la barra", v is not None and abs(v - 0.35) < 0.15, f"volumen {v:.2f} (pedido: 0.35)" if v is not None else "no llegó el toque")
+        await asyncio.sleep(0.5)
+        j = self.probe.mark()
+        await self.drag(*self.scr(p + "vol", 0.3, 0.5), *self.scr(p + "vol", 0.95, 0.5), 0.5)
+        await asyncio.sleep(0.5)
+        vols = [ev["d"]["vol"] for ev in self.probe.events[j:] if ev["k"] == "media" and ev["d"].get("id") == p and ev["d"].get("s") == "vol"]
+        ult = vols[-1] if vols else None
+        self.res(f"{nombre}: arrastrar el volumen", ult is not None and ult > 0.75, f"volumen {ult:.2f}" if ult is not None else "el dedo no movió el control (se interpretó como desplazamiento)")
+
+    async def s_video(self) -> None:
+        if not await self.scene("video"):
+            self.res("vídeo", False, "la página no cambió de escena")
+            return
+        await self._player("v", "vídeo")
+        # pantalla completa del vídeo (dos veces: se sale tocando ⛶ y con Esc)
+        for salida in ("⛶", "Esc"):
+            i = self.probe.mark()
+            await self.tap(*self.scr("vfs"))
+            e = await self.probe.wait(i, "fs", lambda d: d.get("on") is True, 3.0)
+            if not e:
+                err = next((ev["d"].get("err") for ev in self.probe.events[i:] if ev["k"] == "fs" and ev["d"].get("err")), None)
+                self.res("vídeo: pantalla completa", False, "no entró en pantalla completa" + (f" ({err})" if err else ""))
+                return
+            if salida == "⛶":
+                self.res("vídeo: pantalla completa", True, f"{int(e['d']['iw'])}x{int(e['d']['ih'])} px CSS")
+            await self.new_rects(i)
+            old = (self.ax, self.ay)
+            cal = await self._calib([(int(self.W * 0.30), int(self.H * 0.35)), (int(self.W * 0.62), int(self.H * 0.60))])   # sobre el vídeo, lejos de los controles
+            if isinstance(cal, str):
+                self.res("vídeo: tocar en pantalla completa", False, cal)
+                await self.keys("Escape", [])
+                self.ax, self.ay = old
+                return
+            self.ax, self.ay = cal
+            if salida == "⛶":
+                j = self.probe.mark()
+                await self.tap(*self.scr("vplay"))
+                e2 = await self.probe.wait(j, "media", lambda d: d.get("id") == "v" and d.get("s") in ("play", "pause"), 1.5)
+                self.res("vídeo: tocar los controles en pantalla completa", bool(e2), "el toque llegó al botón" if e2 else f"el toque no llegó al botón de reproducir (botón en {[round(v) for v in self.rects.get('vplay', [])]} px CSS, calibración {self.ax[0]:.2f}·{self.ax[1]:.0f} / {self.ay[0]:.2f}·{self.ay[1]:.0f})")
+                await asyncio.sleep(0.4)
+            j = self.probe.mark()
+            if salida == "⛶":
+                await self.tap(*self.scr("vfs"))
+            else:
+                await self.keys("Escape", [])
+            e3 = await self.probe.wait(j, "fs", lambda d: d.get("on") is False, 3.0)
+            if not e3:   # que no quede atascado: se prueba el otro camino
+                await self.keys("Escape", [])
+                e3 = await self.probe.wait(j, "fs", lambda d: d.get("on") is False, 2.0)
+                self.res(f"vídeo: salir de pantalla completa con {salida}", False, "no salió" + (" (sí con Esc)" if e3 and salida != "Esc" else ""))
+            else:
+                self.res(f"vídeo: salir de pantalla completa con {salida}", True, "salió")
+            self.ax, self.ay = old
+            if not e3:
+                return
+            await self.new_rects(j)
+            await asyncio.sleep(0.5)
+        await asyncio.sleep(0.2)
+        await self.tap(*self.scr("vplay"))   # deja el vídeo parado
+        await asyncio.sleep(0.4)
+
+    async def s_audio(self) -> None:
+        if not await self.scene("audio"):
+            self.res("música", False, "la página no cambió de escena")
+            return
+        await self._player("a", "música")
+        await self.tap(*self.scr("aplay"))   # que no quede sonando
+        await asyncio.sleep(0.3)
+
+    async def s_menus(self) -> None:
+        if not await self.scene("menu"):
+            self.res("menús", False, "la página no cambió de escena")
+            return
+        # desplegable nativo largo (como los menús del navegador: es una ventana emergente aparte)
+        x, y, w, h = self.rects["sel2"]
+        sx, sy = self.scr("sel2")
+        bottom = round(self.ay[1] + (y + h) * self.ay[0])
+        i = self.probe.mark()
+        await self.tap(sx, sy)
+        e = await self.probe.wait(i, "down", lambda d: d.get("id") == "sel2", 1.5)
+        await asyncio.sleep(0.8)
+        await self.drag(sx, bottom + 220, sx, bottom + 40, 0.5)   # dedo hacia arriba dentro de la lista: baja
+        await asyncio.sleep(1.2)
+        j = self.probe.mark()
+        await self.tap(sx, bottom + 28)   # primera fila visible
+        e2 = await self.probe.wait(j, "change", lambda d: d.get("id") == "sel2", 1.5)
+        if e2:
+            k = e2["d"]["i"]
+            self.res("desplegable largo: desplazar y elegir con el dedo", k >= 3, f"eligió «{e2['d']['v']}»" + ("" if k >= 3 else " (la lista no se desplazó: eligió una de las primeras)"))
+        else:
+            await self.keys("Escape", [])
+            self.res("desplegable largo: desplazar y elegir con el dedo", False, "no se eligió nada" + ("" if e else " (ni siquiera se abrió)"))
+        await asyncio.sleep(0.6)
+        # menú de la página con scroll
+        j = self.probe.mark()
+        await self.tap(*self.scr("hmb"))
+        e = await self.probe.wait(j, "menu", lambda d: d.get("open") is True, 1.5)
+        if not e:
+            self.res("menú de la página: abrir, desplazar y elegir", False, "no se abrió el menú")
+            return
+        await asyncio.sleep(0.4)
+        mx, my = self.scr("hmenu")
+        j = self.probe.mark()
+        await self.drag(mx, my + 90, mx, my - 90, 0.5)
+        await asyncio.sleep(1.0)
+        tops = [ev["d"]["top"] for ev in self.probe.events[j:] if ev["k"] == "mscroll"]
+        tp = max(tops) if tops else 0
+        j = self.probe.mark()
+        await self.tap(mx, my - 80 + 20)   # una fila de las de arriba (tras desplazar)
+        e2 = await self.probe.wait(j, "mitem", None, 1.2)
+        okm = tp > 40 and bool(e2)
+        self.res("menú de la página: abrir, desplazar y elegir", okm, f"desplazó {tp} px y eligió «Elemento {e2['d']['i']}»" if e2 and tp > 40 else (f"desplazó {tp} px pero no llegó el toque a una fila" if tp > 40 else "el dedo no desplazó el menú"))
+        await self.tap(*self.scr("hmb"))
+        await asyncio.sleep(0.4)
+
+    async def s_pantalla_navegador(self) -> None:
+        if not await self.scene("base"):
+            self.res("pantalla completa del navegador", False, "la página no volvió a la escena base")
+            return
+        i = self.probe.mark()
+        await self.keys("F11", [])
+        e = await self.probe.wait(i, "resize", lambda d: d.get("ih", 0) >= d.get("sh", 1e9) - 8 and d.get("iw", 0) >= d.get("sw", 1e9) - 8, 4.0)
+        if not e:
+            self.res("pantalla completa del navegador (F11)", False, "el navegador no pasó a pantalla completa con F11 ({})".format(self.title()[:40] if callable(self.title) else ""))
+            return
+        self.res("pantalla completa del navegador (F11)", True, f"{int(e['d']['iw'])}x{int(e['d']['ih'])} px CSS")
+        await self.new_rects(i)
+        old = (self.ax, self.ay)
+        cal = await self._calib([(int(self.W * 0.30), int(self.H * 0.55)), (int(self.W * 0.62), int(self.H * 0.80))])
+        if isinstance(cal, str):
+            self.res("tocar en pantalla completa del navegador", False, cal)
+        else:
+            self.ax, self.ay = cal
+        j = self.probe.mark()
+        await self.tap(*self.scr("b1"))
+        e2 = await self.probe.wait(j, "click", lambda d: d.get("id") == "b1", 1.2)
+        self.res("tocar en pantalla completa del navegador", bool(e2), "llegó el clic" if e2 else f"el toque no llegó a la página (calibración {self.ax[0]:.2f}·{self.ax[1]:.0f} / {self.ay[0]:.2f}·{self.ay[1]:.0f})")
+        j = self.probe.mark()
+        await self.keys("F11", [])
+        e3 = await self.probe.wait(j, "resize", lambda d: d.get("ih", 0) < d.get("sh", 0) - 40, 4.0)
+        self.res("salir de pantalla completa del navegador (F11)", bool(e3), "salió" if e3 else "sigue en pantalla completa")
+        self.ax, self.ay = old
+        await self.new_rects(j)
+        await asyncio.sleep(0.5)
 
     async def s_pestanas(self) -> None:
         async def vis(want: str, label: str, fn) -> bool:
