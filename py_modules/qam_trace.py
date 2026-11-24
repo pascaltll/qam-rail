@@ -56,6 +56,11 @@ class Trace:
             return
         self.on, self.t0, self.lines, self._prev = True, time.time(), 0, {}
         try:
+            if os.path.getsize(self.path) > 0:   # la grabación anterior se conserva (una sola copia): con la grabación automática no se pierde nada
+                os.replace(self.path, self.path + ".old")
+        except OSError:
+            pass
+        try:
             open(self.path, "w", encoding="utf-8").close()   # cada grabación empieza limpia
         except OSError:
             pass

@@ -249,6 +249,20 @@ class Plugin:
             self._pad_log("táctil: " + (f"en pausa — {why}" if why else tag))
         return res
 
+    async def _vigilante_start(self, app: str) -> None:
+        """Vigilante (dev.100): al abrir una app de escritorio se enciende solo la grabadora de navegación (toques, scroll, ventanas nuevas, parones),
+        que se apaga a los 15 min. Se desactiva creando el archivo `vigilante-off` en la carpeta de ajustes. Nunca anota lo que se escribe."""
+        try:
+            if os.path.exists(_path("vigilante-off")):
+                return
+            t = self._trace_obj()
+            if t is None or t.on:
+                return
+            await self.nav_trace(on=True)
+            t.add("MARCA", t=f"vigilante: se abrió {app}"[:80])
+        except Exception:  # noqa: BLE001 - nunca debe impedir abrir la app
+            pass
+
     async def nav_trace(self, on=None, mark=None) -> dict:
         """Grabadora de navegación (Más › Pruebas y herramientas): `on` la enciende/apaga, `mark` anota «esto fue lento» con la hora. Devuelve el estado."""
         t = self._trace_obj()
@@ -1250,6 +1264,8 @@ class Plugin:
         done: set = set()
         pidcache: dict = {}
         self._tag_log(f"== {key}: ventanas antes {len(before)}, clases conocidas {sorted(known)}" + (f", por PID ({path})" if path else ""))
+        t_open = time.monotonic()
+        first_ms = None
         for i in range(28):
             await asyncio.sleep(0.7)
             wins = await self._x_windows(prefix, display)
@@ -1277,6 +1293,9 @@ class Plugin:
                 if w["id"] in done:
                     continue
                 done.add(w["id"])
+                if first_ms is None:
+                    first_ms = round((time.monotonic() - t_open) * 1000)
+                    self._tl("app.ventana", app=str(key)[:30], ms=first_ms, ventanas=len(wins))
                 claims[w["id"]] = key
                 known.update(c for c in w["classes"] if c)
                 rc, _o, err = await self._x_run(prefix, display, "xprop", "-id", w["id"], "-f", "STEAM_GAME", "32c", "-set", "STEAM_GAME", str(qam_desktop.app_gameid(key)))
@@ -1288,6 +1307,9 @@ class Plugin:
                 await self._base_layer(prefix, display, key, True)
             if done and i % 5 == 4:
                 await self._base_layer(prefix, display, key, True)  # Steam puede reescribir la lista: se vuelve a poner delante
+        if not done:   # vigilante: la app se lanzó pero en ~20 s no apareció ninguna ventana que marcar
+            self._tl("app.sin_ventana", app=str(key)[:30], segundos=round(time.monotonic() - t_open), ventanas=len(wins))
+            self._tag_log(f"  !! {key}: no apareció ninguna ventana en {round(time.monotonic() - t_open)} s")
 
     async def _auto_fs(self, wid, key: str) -> None:
         """Una vez por ventana nueva: espera a que la app cargue y le manda su tecla de pantalla completa (Stremio: F11). Sin verificar en el equipo."""
@@ -1884,6 +1906,7 @@ class Plugin:
             self._tl("app.abrir_fallo", app=str(key)[:30], error=str(pl.get("error"))[:50])
             return pl
         self._tl("app.abrir", app=str(key)[:30])
+        await self._vigilante_start(str(key))
         log = _path("desktop-run.log")
         try:
             open(log, "wb").close()

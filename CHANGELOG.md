@@ -1,5 +1,11 @@
 # Cambios
 
+## dev.100
+- **Vigilante de apps.** Al abrir una app de escritorio se enciende sola la grabadora de navegación (toques con su efecto, scroll, ventanas que aparecen y desaparecen, parones del lector, carga del navegador); se apaga a los 15 min. Se desactiva creando el archivo `vigilante-off` en la carpeta de ajustes. Nunca anota lo que se escribe.
+- **Resultado de abrir una app en el registro de línea de tiempo:** `app.ventana` (cuántos ms tardó en aparecer su ventana) o `app.sin_ventana` (se lanzó pero en ~20 s no apareció ninguna: así se ve qué apps «no abren», como Instagram de Waydroid el 24-nov).
+- La grabadora conserva la grabación anterior (`nav-trace.log.old`) en vez de borrarla al empezar otra.
+- **`informe.sh`** (en la carpeta del plugin): junta en `~/qam-informe.txt` la versión, los avisos del vigilante y las últimas líneas de cada registro, para pasarlo de una vez.
+
 ## dev.99
 - **Vigilante del panel fantasma.** El 24-nov, con VacuumTube abierto, pulsar Steam (menú izquierdo) y luego Steam+A dejó la pantalla de Steam desenfocada sin ningún panel visible y sin respuesta: el registro tenía «panel abre» pero nunca «panel cierra», y el overlay seguía puesto. Ahora, mientras el panel figura abierto, se comprueba cada segundo que su elemento existe, está conectado y tiene tamaño dentro de la ventana; tras 4 fallos seguidos se cierran el panel, los menús de Steam y el overlay del backend. El primer fallo queda en el registro como «vigilante: el panel no se ve (motivo)». Es una red de seguridad: la causa exacta del limbo sigue sin confirmar.
 
