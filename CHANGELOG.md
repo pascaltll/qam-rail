@@ -1,5 +1,9 @@
 # Cambios
 
+## dev.83
+- **Autoprueba en Edge:** antes la página de prueba se abría con `xdg-open` (el navegador predeterminado, Firefox), así que con Edge delante se cargaba en otro navegador. Ahora, si la app de delante es un Chromium/Edge en Flatpak, la página se abre en ELLA (`flatpak run com.microsoft.Edge <url>`, que reenvía a la ventana ya abierta). Firefox sigue igual.
+- **Grabadora para apps sin barra de direcciones (Stremio, VacuumTube):** `toque.efecto` añade `titulo='antes'→'después'` si el título de la ventana cambió tras el toque (al navegar por sus pantallas), además de las ventanas emergentes.
+
 ## dev.82
 - **Grabadora: ¿está pintado el menú que se abre?** Con dev.81 se vio que al tocar, Firefox crea la ventana del menú (aparece en X a los 35–175 ms), pero tú dices que en pantalla no hay nada. Ahora, 0,35 s después de aparecer una ventana emergente, la grabadora lee su contenido y apunta `ventana.contenido pintado=N colores…`: si tiene un solo color (negro), Firefox no llegó a pintarla; si tiene muchos y no la ves, es gamescope el que no la enseña. `ventana.nueva` añade `capa=n/total` (su posición en la pila de ventanas).
 

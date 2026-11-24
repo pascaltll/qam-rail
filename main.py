@@ -342,7 +342,15 @@ class Plugin:
                         pass
                 self._pad_log(f"autoprueba: teclado modo mod={x.mod_mode} símbolos={x.char_mode}" + (" (guardado)" if save else ""))
             wid = self._front_wid(x)
-            test = qam_selftest.SelfTest(pad, keys, typ, log, title=lambda: x.window_title(wid), opener=self._open_url, setmode=setmode, setfs=lambda on: x.set_wm_fullscreen(wid, on))
+            fkey = ""
+            for w_, k_ in self._claims.items():
+                try:
+                    if wid and int(str(w_), 0) == wid and not str(k_).startswith("qam:"):
+                        fkey = str(k_)
+                        break
+                except ValueError:
+                    continue
+            test = qam_selftest.SelfTest(pad, keys, typ, log, title=lambda: x.window_title(wid), opener=lambda u: self._open_url(u, fkey), setmode=setmode, setfs=lambda on: x.set_wm_fullscreen(wid, on))
             res = await asyncio.wait_for(test.run(), 300)
         except asyncio.TimeoutError:
             res = {"ok": False, "error": "la prueba tardó más de 2 minutos y se paró", "steps": []}
@@ -1116,9 +1124,21 @@ class Plugin:
         except (OSError, asyncio.TimeoutError) as e:
             return 127, "", str(e)[:120]
 
-    async def _open_url(self, url: str) -> None:
-        """Abre una dirección con xdg-open como el usuario de la sesión (sin pasar por la barra de direcciones del navegador). No espera a que el navegador acabe."""
+    async def _open_url(self, url: str, key: str = "") -> None:
+        """Abre una dirección como el usuario de la sesión (sin pasar por la barra de direcciones del navegador). No espera a que el navegador acabe.
+        Con xdg-open (el navegador predeterminado); pero si la app de delante es un Chromium/Edge en Flatpak se abre en ELLA (`flatpak run <id> <url>`),
+        porque si no la prueba cargaría la página en otro navegador."""
         prefix, seen = await self._user_session()
+        if key and re.fullmatch(r"[A-Za-z0-9_.-]{3,120}", key) and qam_desktop is not None and qam_desktop.CHROMIUM_RE.search(key):
+            app = await self._desk_find(key)
+            if app and app.get("source") == "flatpak":
+                proc = await asyncio.create_subprocess_exec(*prefix, "flatpak", "run", key, url, env=self._user_env(), stdin=asyncio.subprocess.DEVNULL,
+                                                            stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL, start_new_session=True)
+                try:
+                    await asyncio.wait_for(proc.wait(), 4)
+                except asyncio.TimeoutError:
+                    pass
+                return
         env_extra = [f"DISPLAY={seen.get('DISPLAY') or ':0'}"]
         if seen.get("XAUTHORITY"):
             env_extra.append(f"XAUTHORITY={seen['XAUTHORITY']}")

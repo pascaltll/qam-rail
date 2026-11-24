@@ -1223,9 +1223,11 @@ class PadRunner:
         """Grabadora: ventanas que aparecen y desaparecen (menús y listas emergentes de GTK son ventanas aparte) y, 0,4 s después de cada toque,
         a qué ventana iba el clic y si cambió el número de ventanas. Así, un menú que «no abre» se ve: el toque fue a X pero no apareció ventana."""
         if self._snaps and now >= self._snaps[0][0]:
-            _t, (ch, n0, px, py) = self._snaps.pop(0)
+            _t, (ch, n0, px, py, t0) = self._snaps.pop(0)
             n1 = len(self._x.windows())
-            self._tr("toque.efecto", clic_en=f"{px},{py}", ventana_bajo_el_puntero=hex(ch), ventanas=f"{n0}→{n1}")
+            t1 = self._x.window_title(self._x.focus_window())[:50]
+            extra = {"titulo": f"{t0!r}→{t1!r}"} if t0 != t1 else {}   # en apps sin barra de direcciones (Stremio, VacuumTube) el título cambia al navegar
+            self._tr("toque.efecto", clic_en=f"{px},{py}", ventana_bajo_el_puntero=hex(ch), ventanas=f"{n0}→{n1}", **extra)
         if self._probes and now >= self._probes[0][0]:
             _t, wid, ww, hh = self._probes.pop(0)
             self._tr("ventana.contenido", id=hex(wid), pintado=self._x.window_probe(wid, ww, hh))
@@ -1287,7 +1289,7 @@ class PadRunner:
                 tr = self.trace
                 if tr is not None and tr.on and a[1] == 1:
                     px, py, ch = self._x.pointer_child()
-                    self._snap_pre = (ch, len(self._x.windows()), px, py)
+                    self._snap_pre = (ch, len(self._x.windows()), px, py, self._x.window_title(self._x.focus_window())[:50])
             elif a[0] == "up":
                 self._x.button(a[1], False)
                 self._tr("toque.enviado", desde_el_dedo_ms=(time.monotonic() - t_enq) * 1000)
