@@ -15,6 +15,7 @@ import { BYPASS_MS, decide } from "./pilotLogic";
 import { guardNavigation } from "./navGuard";
 import { markClosed, markCloseReason, markOpenStart } from "./perfLog";
 import { desktopOverlay, qamEvent } from "./qamDesktop";
+import { watchErrors } from "./errorWatch";
 import { dismissKeyboard, inputFocused } from "./keyboard";
 
 export interface PilotHooks {
@@ -35,6 +36,7 @@ const PilotPanel: FC<PanelProps> = ({ closeModal, onClosed, onNative, hooks }) =
     // Con una app de escritorio abierta, la interfaz de Steam (el panel) se dibuja por encima de ella.
     desktopOverlay(true, "panel").catch(() => undefined);
     qamEvent("panel.abre").catch(() => undefined);
+    watchErrors((window as unknown as { __qamRailModalEl?: HTMLElement | null }).__qamRailModalEl?.ownerDocument?.defaultView);
     return () => { desktopOverlay(false, "panel").catch(() => undefined); qamEvent("panel.cierra").catch(() => undefined); };
   }, []);
   useEffect(() => () => {
@@ -73,6 +75,8 @@ const PilotPanel: FC<PanelProps> = ({ closeModal, onClosed, onNative, hooks }) =
 export function startPilot(doc: Document, hooks: PilotHooks): () => void {
   // Misma fuente que usa Panel de Control para saber que juego esta en marcha.
   setRunningAppReader(() => (Router as unknown as { MainRunningApp?: unknown } | undefined)?.MainRunningApp);
+  watchErrors(window);
+  watchErrors(doc.defaultView);
   let modal: { Close(): void } | null = null;
   let openedAt = 0;
   let bypassUntil = 0;

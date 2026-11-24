@@ -1,5 +1,10 @@
 # Cambios
 
+## dev.101
+- **Errores de la interfaz al registro.** Cualquier error de JavaScript o promesa rechazada en la ventana de Steam o del panel queda en `timeline.log` como `ui.js.error` / `ui.js.rechazo` (mensaje corto, archivo y línea; tope de 12 por minuto; nunca datos del usuario).
+- **`informe.sh` más completo:** ahora incluye las ventanas de X (`:0` y `:1`), los átomos de gamescope y de Steam en la raíz, las páginas abiertas de la interfaz de Steam (CEF, puerto 8080), los errores `ui.js.*` y los procesos que más CPU gastan.
+- **Inventario de apps sin duplicados:** «ES-DE», «ES DE.AppImage» y «esde.appimage» son una sola app (se comparan sin mayúsculas, guiones ni «.AppImage»); gana Flatpak, luego la que tiene `.desktop` (icono y grupo) y luego el archivo suelto. Las copias de seguridad (`.OLD`, `_old`, `.bak`) ya no salen como apps.
+
 ## dev.100
 - **Vigilante de apps.** Al abrir una app de escritorio se enciende sola la grabadora de navegación (toques con su efecto, scroll, ventanas que aparecen y desaparecen, parones del lector, carga del navegador); se apaga a los 15 min. Se desactiva creando el archivo `vigilante-off` en la carpeta de ajustes. Nunca anota lo que se escribe.
 - **Resultado de abrir una app en el registro de línea de tiempo:** `app.ventana` (cuántos ms tardó en aparecer su ventana) o `app.sin_ventana` (se lanzó pero en ~20 s no apareció ninguna: así se ve qué apps «no abren», como Instagram de Waydroid el 24-nov).

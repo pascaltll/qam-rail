@@ -64,6 +64,25 @@ def test_scan_end_to_end():
         assert r["omitidas"] == 1 and "sin nombre o con Exec no permitido" in r["motivos"]   # solo la rota se cuenta
         assert [g for _, _, g in names].index(d.OTHER) == len(names) - 1                 # «Otras» al final
 
+def test_scan_dedup_y_copias():
+    """dev.101: «ES-DE», «ES DE.AppImage» y «esde.appimage» son una sola app; las copias .OLD/_old no salen; gana la que tiene .desktop."""
+    with tempfile.TemporaryDirectory() as h:
+        w = lambda rel, txt: (os.makedirs(os.path.dirname(os.path.join(h, rel)), exist_ok=True), open(os.path.join(h, rel), "w").write(txt))
+        a = os.path.join(h, "Applications", "ES-DE.AppImage"); os.makedirs(os.path.dirname(a)); make_appimage(a)
+        b = os.path.join(h, "AppImages", "esde.appimage"); os.makedirs(os.path.dirname(b)); make_appimage(b)
+        for old in ("ES-DE.AppImage_3.4.1.OLD", "rpcs3.AppImage_old"):
+            make_appimage(os.path.join(h, "Applications", old))
+        w(".local/share/applications/esde.desktop", desk(Name="ES-DE AppImage", Exec="/bin/sh " + a, Categories="Game;"))
+        d.APPIMAGE_DIRS, keep = ("~/Applications", "~/AppImages"), d.APPIMAGE_DIRS
+        try:
+            r = d.scan(h, dirs=[d.SYSTEM_DIRS[1]])
+        finally:
+            d.APPIMAGE_DIRS = keep
+        esde = [e for e in r["apps"] if d.norm_name(e["name"]) == "esde"]
+        assert len(esde) == 1 and esde[0]["desktop"], esde                              # una sola, la del .desktop
+        assert not any("old" in e["name"].lower() for e in r["apps"]), [e["name"] for e in r["apps"]]
+
+
 if __name__ == "__main__":
     for k, f in list(globals().items()):
         if k.startswith("test_"):

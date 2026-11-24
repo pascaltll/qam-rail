@@ -137,6 +137,15 @@ def entry_from_desktop(path: str, text: str, home: str | None = None):
             "group": group_of(d.get("Categories", "")), "desktop": path}, None
 
 
+OLD_FILE = re.compile(r"(\.old|_old|\.bak|\.tmp|\.part)$", re.I)
+
+
+def norm_name(name: str) -> str:
+    """Nombre para comparar duplicados: «ES-DE», «ES DE.AppImage» y «esde.appimage» son la misma app."""
+    n = re.sub(r"\.?appimage", "", name.lower())
+    return re.sub(r"[^a-z0-9]", "", n)
+
+
 def entry_from_appimage(path: str):
     """AppImage suelto (sin .desktop): nombre = archivo sin extensión ni versión."""
     name = re.sub(r"[-_.](x86_64|amd64|aarch64|linux)\b.*$", "", os.path.splitext(os.path.basename(path))[0], flags=re.I)
@@ -177,14 +186,18 @@ def scan(home: str, extra_appimage_dirs=(), read=None, listdir=None, isfile=None
     for folder in [ex(p) for p in APPIMAGE_DIRS] + [ex(p) for p in extra_appimage_dirs]:
         for fn in listdir(folder):
             path = os.path.join(folder, fn)
+            if OLD_FILE.search(fn):   # copias de seguridad («esde.appimage_3.4.0.OLD», «rpcs3.AppImage_old»…): no son apps
+                continue
             if isfile(path) and (fn.lower().endswith(".appimage") or is_appimage(path)) and (path,) not in known:
                 add(entry_from_appimage(path)); known.add((path,))
     # Mismo nombre (p. ej. Firefox de Flatpak y el del sistema): se queda el de mayor prioridad.
     rank = {"flatpak": 0, "appimage": 1, "system": 2}
     best = {}
     for e in found.values():
-        k = e["name"].strip().lower()
-        if k not in best or rank[e["source"]] < rank[best[k]["source"]]:
+        k = norm_name(e["name"])
+        # Mismo nombre: gana Flatpak; luego la que viene de un .desktop (tiene icono y grupo) sobre el archivo suelto; luego AppImage > sistema.
+        sc = lambda x: (x["source"] != "flatpak", x.get("desktop") is None, rank[x["source"]])
+        if k not in best or sc(e) < sc(best[k]):
             best[k] = e
     apps = sorted(best.values(), key=lambda e: (e["group"] == OTHER, e["group"], e["name"].lower()))
     return {"apps": apps, "omitidas": omitidas, "motivos": motivos}
