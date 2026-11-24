@@ -1,5 +1,9 @@
 # Cambios
 
+## dev.74
+- **La autoprueba ya no depende de la página que tengas abierta:** abre la página de prueba en una **pestaña nueva** (Ctrl+T), reintenta por Ctrl+L si no carga en ~7 s y al terminar **cierra esa pestaña** (Ctrl+W), así tu navegador queda como estaba (antes volvía con Alt+Izquierda).
+- **Diagnóstico si «cargar página» falla:** el detalle ahora dice cuántas veces pidió la página el navegador, cuántos eventos mandó y el **título de la ventana** (`_NET_WM_NAME`), para distinguir «no escribió la dirección» de «no llegó a 127.0.0.1» de «cargó pero el JS no avisó».
+
 ## dev.73
 - **Autoprueba del navegador** (Más › Pruebas y herramientas › «Autoprueba del navegador» › «Probar navegador»): con Firefox/Edge delante y el panel cerrado, abre una página de prueba en `127.0.0.1` y, **por el mismo camino que el dedo y el teclado de QAM** (eventos de táctil sintéticos → `TouchScroll` → XTest; `desktop_key`), comprueba y mide: cargar la página escribiendo la dirección, tocar un botón (con latencia), tocar 5 veces el mismo botón (el fallo de dev.71), desplazar dos cajas lado a lado con el dedo (que se mueva la de debajo del dedo y no la otra: el fallo de dev.72), el sentido del desplazamiento, la inercia, tocar un desplegable, escribir «hola» con el teclado y pestaña nueva / anterior / siguiente / cerrar (Ctrl+T, Ctrl+Re Pág, Ctrl+Av Pág, Ctrl+W). La página avisa a un servidor local de cada evento, así que cada paso sale ✓/✗ con lo que pasó y lo que tardó. Resultado en `selftest.json`; la tarjeta avisa si es de otra versión. Úsala tras cada actualización para ver de golpe qué se rompió.
 - `scripts/e2e-selftest.py`: la misma autoprueba contra Chrome/Chromium bajo Xvfb (sin consola ni Firefox), para comprobar al desarrollar que `qam_pad.py` no la rompe. Probado quitando a propósito las correcciones de dev.71 y dev.72: la autoprueba falla justo en esos pasos.

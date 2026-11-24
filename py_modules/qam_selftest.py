@@ -41,6 +41,7 @@ class Probe:
 
     def __init__(self):
         self.events: list = []
+        self.hits: list = []   # TODAS las peticiones (también la de la página): distingue «el navegador no pidió nada» de «la página no mandó eventos»
         self.server = None
         self.port = 0
 
@@ -66,6 +67,7 @@ class Probe:
                     break
             path = line.split(" ")[1] if line.count(" ") >= 2 else "/"
             u = urllib.parse.urlparse(path)
+            self.hits.append(u.path)
             if u.path == "/ev":
                 qs = urllib.parse.parse_qs(u.query)
                 try:
@@ -143,10 +145,12 @@ def fit_axis(p1: float, p2: float, c1: float, c2: float):
 
 
 class SelfTest:
-    def __init__(self, runner, keys, typ, log=None):
+    def __init__(self, runner, keys, typ, log=None, title=None):
         """`runner`: el PadRunner en marcha (con su X). `keys(key, mods)` y `typ(text)`: el teclado de QAM (async, devuelven bool)."""
         self.r, self.keys, self.typ = runner, keys, typ
-        self.log = log or (lambda *_: None)
+        self.log = log or (lambda *_, **__: None)
+        self.title = title or (lambda: "")   # título de la ventana del navegador (para el diagnóstico)
+        self.opened = False                  # abrimos una pestaña para la prueba: al acabar se cierra
         self.probe = Probe()
         self.steps: list = []
         self.finger = Finger()
@@ -211,6 +215,12 @@ class SelfTest:
                         self.res(step.__name__[2:], False, f"error: {e!r}"[:120])
         finally:
             try:
+                if self.opened:
+                    await self.keys("w", ["ctrl"])   # cierra la pestaña de la prueba: queda el navegador como estaba
+                    await asyncio.sleep(0.3)
+            except Exception:  # noqa: BLE001
+                pass
+            try:
                 self.r._ts.pop("selftest", None)
                 self.r._pend_run(time.monotonic(), force=True)
             except Exception:  # noqa: BLE001
@@ -220,16 +230,29 @@ class SelfTest:
         return {"ok": not bad and bool(self.steps), "steps": self.steps, "secs": round(time.monotonic() - t_all), "eventos": len(self.probe.events)}
 
     async def s_cargar(self, W: int, H: int) -> bool:
-        i = self.probe.mark()
+        """Abre la página de prueba en una pestaña NUEVA (no toca la página que tuvieras) y espera a que avise."""
         t0 = time.monotonic()
-        ok = await self.keys("l", ["ctrl"])
-        await asyncio.sleep(0.25)
-        ok = await self.typ(f"http://127.0.0.1:{self.probe.port}/") and ok
-        await asyncio.sleep(0.15)
+        i = self.probe.mark()
+        url = f"http://127.0.0.1:{self.probe.port}/"
+        ok = await self.keys("t", ["ctrl"])
+        self.opened = True
+        await asyncio.sleep(0.8)
+        ok = await self.typ(url) and ok
+        await asyncio.sleep(0.2)
         ok = await self.keys("Return", []) and ok
-        e = await self.probe.wait(i, "ready", timeout=12.0)
+        e = await self.probe.wait(i, "ready", timeout=7.0)
+        if not e:   # segundo intento: por la barra de direcciones de la pestaña en la que estemos
+            await self.keys("l", ["ctrl"])
+            await asyncio.sleep(0.4)
+            await self.typ(url)
+            await asyncio.sleep(0.2)
+            await self.keys("Return", [])
+            e = await self.probe.wait(i, "ready", timeout=7.0)
         if not e:
-            return self.res("cargar página", False, "la página de prueba no cargó en 12 s (¿hay un navegador delante y el teclado de QAM llega?)" if ok else "no se pudo escribir la dirección")
+            tit = (self.title() or "").strip()
+            det = (f"la página de prueba no cargó en 14 s · el navegador pidió la página {len([h for h in self.probe.hits if h == '/'])} vez/veces y "
+                   f"mandó {len(self.probe.events)} evento(s) · título de la ventana: «{tit[:60]}»")
+            return self.res("cargar página", False, det if ok else "no se pudo escribir la dirección (el teclado no llegó)")
         self.rects = e["d"]["rects"]
         return self.res("cargar página", True, f"{int(e['d']['w'])}x{int(e['d']['h'])} px CSS, escala {e['d']['dpr']}", (e["t"] - t0) * 1000)
 

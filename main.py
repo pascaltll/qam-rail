@@ -329,9 +329,9 @@ class Plugin:
                     st["phase"] = f"Probando: {kw['name']}"
                     self._pad_log(f"autoprueba: {kw['name']} → {'OK' if kw.get('ok') else 'FALLA'} · {kw.get('detalle', '')}")
 
-            test = qam_selftest.SelfTest(pad, keys, typ, log)
+            wid = self._front_wid(x)
+            test = qam_selftest.SelfTest(pad, keys, typ, log, title=lambda: x.window_title(wid))
             res = await asyncio.wait_for(test.run(), 120)
-            await keys("Left", ["alt"])   # vuelve a la página en la que estabas
         except asyncio.TimeoutError:
             res = {"ok": False, "error": "la prueba tardó más de 2 minutos y se paró", "steps": []}
         except Exception as e:  # noqa: BLE001

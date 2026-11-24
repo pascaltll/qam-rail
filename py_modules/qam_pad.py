@@ -233,6 +233,24 @@ class XOut:
         self.x11.XFree(data)
         return vals
 
+    def window_title(self, wid: int) -> str:
+        """Título de una ventana (_NET_WM_NAME, o WM_NAME): sirve para saber en qué página está un navegador sin mirar la pantalla. '' si no hay."""
+        for name in ("_NET_WM_NAME", "WM_NAME"):
+            atom = self.x11.XInternAtom(self.dpy, name.encode(), 1)
+            if not atom:
+                continue
+            typ, fmt, n, after = ctypes.c_ulong(), ctypes.c_int(), ctypes.c_ulong(), ctypes.c_ulong()
+            data = ctypes.c_void_p()
+            rc = self.x11.XGetWindowProperty(self.dpy, int(wid), atom, 0, 256, 0, 0, ctypes.byref(typ), ctypes.byref(fmt), ctypes.byref(n),
+                                             ctypes.byref(after), ctypes.byref(data))
+            if rc == 0 and data.value and fmt.value == 8 and n.value:
+                raw = ctypes.string_at(data.value, n.value)
+                self.x11.XFree(data)
+                return raw.decode("utf-8", "replace")
+            if data.value:
+                self.x11.XFree(data)
+        return ""
+
     def pointer(self) -> tuple | None:
         """Posición (x, y) del puntero en pantalla, o None si no se pudo leer."""
         try:
