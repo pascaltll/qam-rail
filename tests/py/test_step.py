@@ -91,6 +91,7 @@ assert r._text_at == 11.0
 class FW:
     wm_state, fullscreen = 300, 400
     def __init__(self, msgs): self.msgs = msgs
+    def atom_name(self, a): return f"A{a}"
     def poll(self): m, self.msgs = self.msgs, []; return m
 r, logs, evs = runner()
 r._x.state = {}
@@ -98,7 +99,7 @@ r._x.wm_state = lambda w: ["_NET_WM_STATE_FULLSCREEN"] if r._x.state.get(w) else
 r._x.set_wm_fullscreen = lambda w, on: (r._x.state.__setitem__(w, on), True)[1]
 r._fsw = FW([(7, 300, 1, 400, 0), (8, 300, 1, 999, 0), (7, 300, 2, 400, 0)])   # poner, otro estado (se ignora), alternar (quita)
 r._fs_poll(10.0)
-assert r._x.state == {7: False} and sum("pantalla completa" in l for l in logs) == 2, (r._x.state, logs)
+assert r._x.state == {7: False} and sum("pantalla completa" in l for l in logs) == 3, (r._x.state, logs)
 r2, logs2, _ = runner()    # sin X o sin conexión: no hace nada y no falla
 r2._x = None; r2._fs_poll(10.0)
 print("ok test_step")

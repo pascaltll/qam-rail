@@ -55,6 +55,8 @@ class FsWatch:
         x11.XNextEvent.argtypes = [vp, ctypes.c_char_p]
         x11.XInternAtom.restype, x11.XInternAtom.argtypes = cl, [vp, ctypes.c_char_p, ci]
         x11.XCloseDisplay.argtypes = [vp]
+        x11.XGetAtomName.restype, x11.XGetAtomName.argtypes = ctypes.c_void_p, [vp, cl]
+        x11.XFree.argtypes = [vp]
         self.x11 = x11
         self.dpy = x11.XOpenDisplay(display.encode() if isinstance(display, str) else display)
         if not self.dpy:
@@ -76,6 +78,18 @@ class FsWatch:
             if m is not None:
                 out.append(m)
         return out
+
+    def atom_name(self, atom: int) -> str:
+        """Nombre de un átomo (para anotar qué manda el navegador); «#número» si no se puede leer."""
+        try:
+            p = self.x11.XGetAtomName(self.dpy, int(atom) & 0xFFFFFFFF)
+            if not p:
+                return f"#{atom}"
+            name = ctypes.string_at(p).decode("latin-1")
+            self.x11.XFree(p)
+            return name
+        except Exception:  # noqa: BLE001
+            return f"#{atom}"
 
     def close(self) -> None:
         try:

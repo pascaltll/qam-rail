@@ -1650,6 +1650,9 @@ class PadRunner:
             cur = "_NET_WM_STATE_FULLSCREEN" in self._x.wm_state(win)
             want = qam_fswatch.wants_fullscreen(msg, self._fsw.wm_state, self._fsw.fullscreen, cur)
             if want is None:
+                if self._fs_noted < 40:   # diagnóstico: qué manda el navegador a la raíz si no es la petición esperada
+                    self._fs_noted += 1
+                    self.log(f"pantalla completa: mensaje de {hex(win)}: {self._fsw.atom_name(msg[1])} acción={msg[2]} {self._fsw.atom_name(msg[3])} {self._fsw.atom_name(msg[4]) if msg[4] else ''}")
                 continue
             ok = self._x.set_wm_fullscreen(win, want)
             self._tr("pantalla-completa.peticion", ventana=hex(win), quiere=want, hecho=ok)

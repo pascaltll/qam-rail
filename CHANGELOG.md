@@ -1,5 +1,8 @@
 # Cambios
 
+## dev.92
+- **Pantalla completa: diagnóstico.** En tu equipo dev.91 conectó («escuchando las peticiones de los navegadores») pero no hubo ninguna línea de petición, así que se anotan ahora **todos los mensajes que llegan a la raíz de X** que no sean la petición esperada (`pad.log`: «pantalla completa: mensaje de 0x…: nombre acción=n …», hasta 40). Con eso se ve si Firefox manda otra cosa, o nada.
+
 ## dev.91
 - **Pantalla completa automática en navegadores (F11 y botón ⛶ de los vídeos).** Bajo gamescope el navegador pide la pantalla completa a la raíz de X y nadie lo contesta, por eso en tu Firefox fallaban «vídeo: pantalla completa» y «F11» aunque el toque llegaba. Ahora el mando escucha esas peticiones (`py_modules/qam_fswatch.py`, conexión propia a X, solo mensajes `_NET_WM_STATE`) y le pone a la ventana el estado `_NET_WM_STATE_FULLSCREEN`, que es lo que la autoprueba vio que funciona; al pedir salir o alternar, lo quita. Queda anotado en `pad.log` («pantalla completa: la ventana 0x… la pide → hecho») y en la grabadora (`pantalla-completa.peticion`).
 - Probado con un Xvfb real (un cliente manda la petición a la raíz como un navegador, se recibe y se aplica el estado). Falta verlo en tu equipo: si no aparece la línea «pantalla completa: escuchando…» o el navegador no manda la petición, lo veré en `pad.log`.
