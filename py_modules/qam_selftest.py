@@ -146,11 +146,12 @@ def fit_axis(p1: float, p2: float, c1: float, c2: float):
 
 
 class SelfTest:
-    def __init__(self, runner, keys, typ, log=None, title=None):
+    def __init__(self, runner, keys, typ, log=None, title=None, opener=None):
         """`runner`: el PadRunner en marcha (con su X). `keys(key, mods)` y `typ(text)`: el teclado de QAM (async, devuelven bool)."""
         self.r, self.keys, self.typ = runner, keys, typ
         self.log = log or (lambda *_, **__: None)
         self.title = title or (lambda: "")   # título de la ventana del navegador (para el diagnóstico)
+        self.opener = opener                 # abre una URL en el navegador por el sistema (xdg-open): no depende de la barra de direcciones
         self.opened = False                  # abrimos una pestaña para la prueba: al acabar se cierra
         self.probe = Probe()
         self.steps: list = []
@@ -238,27 +239,40 @@ class SelfTest:
         tit0 = (self.title() or "").strip()
         if re.search(r"restore session|restaurar sesi|session restore", tit0, re.I):
             return self.res("cargar página", False, f"el navegador está en la pantalla de restaurar sesión («{tit0[:50]}»): toca «Start New Session» o «Restore Session» y repite")
+        how = "teclado (Ctrl+T)"
         ok = await self.keys("t", ["ctrl"])
         self.opened = True
         await asyncio.sleep(0.8)
+        self.log(f"título tras Ctrl+T: «{(self.title() or '')[:50]}»")
         ok = await self.typ(url) and ok
         await asyncio.sleep(0.2)
+        self.log(f"título tras escribir: «{(self.title() or '')[:60]}»")
         ok = await self.keys("Return", []) and ok
-        e = await self.probe.wait(i, "ready", timeout=7.0)
+        e = await self.probe.wait(i, "ready", timeout=6.0)
+        self.log(f"título tras Return: «{(self.title() or '')[:50]}»")
         if not e:   # segundo intento: por la barra de direcciones de la pestaña en la que estemos
+            how = "teclado (Ctrl+L)"
             await self.keys("l", ["ctrl"])
             await asyncio.sleep(0.4)
             await self.typ(url)
             await asyncio.sleep(0.2)
             await self.keys("Return", [])
-            e = await self.probe.wait(i, "ready", timeout=7.0)
+            e = await self.probe.wait(i, "ready", timeout=5.0)
+        if not e and self.opener:   # tercer intento sin teclado: que el sistema abra la dirección en el navegador (barras raras, extensiones de pestaña nueva…)
+            how = "xdg-open"
+            self.log("la dirección no cargó escribiéndola: pruebo con xdg-open")
+            try:
+                await self.opener(url)
+            except Exception as ex:  # noqa: BLE001
+                self.log(f"xdg-open falló: {str(ex)[:60]}")
+            e = await self.probe.wait(i, "ready", timeout=8.0)
         if not e:
             tit = (self.title() or "").strip()
-            det = (f"la página de prueba no cargó en 14 s · el navegador pidió la página {len([h for h in self.probe.hits if h == '/'])} vez/veces y "
+            det = (f"la página de prueba no cargó en 19 s · el navegador pidió la página {len([h for h in self.probe.hits if h == '/'])} vez/veces y "
                    f"mandó {len(self.probe.events)} evento(s) · título de la ventana: «{tit[:60]}»")
             return self.res("cargar página", False, det if ok else "no se pudo escribir la dirección (el teclado no llegó)")
         self.rects = e["d"]["rects"]
-        return self.res("cargar página", True, f"{int(e['d']['w'])}x{int(e['d']['h'])} px CSS, escala {e['d']['dpr']}", (e["t"] - t0) * 1000)
+        return self.res("cargar página", True, f"{int(e['d']['w'])}x{int(e['d']['h'])} px CSS, escala {e['d']['dpr']} · abierta con {how}", (e["t"] - t0) * 1000)
 
     async def s_calibrar(self, W: int, H: int) -> bool:
         pts = [(int(W * 0.30), int(H * 0.55)), (int(W * 0.62), int(H * 0.80))]

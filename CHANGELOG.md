@@ -1,5 +1,9 @@
 # Cambios
 
+## dev.76
+- **La autoprueba ya no depende de la barra de direcciones:** si escribir la dirección (Ctrl+T, luego Ctrl+L) no carga la página en ~11 s —como en tu Firefox con barra reducida, pestañas verticales y Perfect Home como pestaña nueva— la abre con `xdg-open` como el usuario de la sesión. El resultado dice con cuál de los tres caminos cargó.
+- Anota en `pad.log` el título de la ventana tras Ctrl+T, tras escribir y tras Return, para ver en qué punto se pierde.
+
 ## dev.75
 - **Teclado de QAM en el navegador: Ctrl y Mayús llegaban tarde (visto en la autoprueba con Firefox):** al escribir la dirección de prueba salió `thttp;//127.0.0.1;45321/…`: Ctrl+T se escribió como la letra «t» y cada «:» como «;». El modificador y la tecla iban en la misma ráfaga y, con gamescope en medio, Firefox procesaba la tecla antes de enterarse del modificador. Ahora hay una pausa de 12 ms entre modificador y tecla (en un hilo, sin parar el mando ni el táctil). Esto afectaba a cualquier mayúscula, símbolo o atajo (Ctrl+A/C/V, pestañas) desde el teclado de QAM.
 - La autoprueba añade el paso «escribir mayúsculas y símbolos» (`Ab:/_9`, tras Ctrl+A) y, si Firefox está en «Restore Session», para con un mensaje claro en vez de escribir a ciegas.

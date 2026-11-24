@@ -330,7 +330,7 @@ class Plugin:
                     self._pad_log(f"autoprueba: {kw['name']} → {'OK' if kw.get('ok') else 'FALLA'} · {kw.get('detalle', '')}")
 
             wid = self._front_wid(x)
-            test = qam_selftest.SelfTest(pad, keys, typ, log, title=lambda: x.window_title(wid))
+            test = qam_selftest.SelfTest(pad, keys, typ, log, title=lambda: x.window_title(wid), opener=self._open_url)
             res = await asyncio.wait_for(test.run(), 120)
         except asyncio.TimeoutError:
             res = {"ok": False, "error": "la prueba tardó más de 2 minutos y se paró", "steps": []}
@@ -1103,6 +1103,19 @@ class Plugin:
             return proc.returncode or 0, out.decode("utf-8", "replace"), err.decode("utf-8", "replace")
         except (OSError, asyncio.TimeoutError) as e:
             return 127, "", str(e)[:120]
+
+    async def _open_url(self, url: str) -> None:
+        """Abre una dirección con xdg-open como el usuario de la sesión (sin pasar por la barra de direcciones del navegador). No espera a que el navegador acabe."""
+        prefix, seen = await self._user_session()
+        env_extra = [f"DISPLAY={seen.get('DISPLAY') or ':0'}"]
+        if seen.get("XAUTHORITY"):
+            env_extra.append(f"XAUTHORITY={seen['XAUTHORITY']}")
+        proc = await asyncio.create_subprocess_exec(*prefix, "env", *env_extra, "xdg-open", url, env=self._user_env(), stdin=asyncio.subprocess.DEVNULL,
+                                                    stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL, start_new_session=True)
+        try:
+            await asyncio.wait_for(proc.wait(), 4)
+        except asyncio.TimeoutError:
+            pass   # el navegador sigue vivo detrás: no es un error
 
     def _tag_log(self, text: str) -> None:
         tr = getattr(self, "_trace_v", None)
