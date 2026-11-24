@@ -5,7 +5,7 @@ autoprueba (toques, scroll, inercia, teclado, pestañas) que corre en el equipo 
 qam_selftest.py no la rompe. Necesita: Xvfb y google-chrome/chromium. Uso: python3 scripts/e2e-selftest.py"""
 import asyncio, os, subprocess, sys, time, ctypes
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "py_modules"))
-import qam_pad as q, qam_selftest as st
+import qam_pad as q, qam_selftest as st, qam_transtest as tt
 
 DISP = ":97"
 xv = subprocess.Popen(["Xvfb", DISP, "-screen", "0", "1920x1080x24"], stderr=subprocess.DEVNULL)
@@ -56,6 +56,26 @@ async def pump():
 
 async def main():
     pt = asyncio.ensure_future(pump())
+    if os.environ.get("TRANS"):   # prueba de transiciones con un QAM simulado: mismos eventos que manda la interfaz, con retrasos
+        sink = []
+        async def act(name):
+            now = time.monotonic
+            async def later(dt, ev, **d):
+                await asyncio.sleep(dt); sink.append((now(), ev, d))
+            if name == "qam_open":
+                asyncio.ensure_future(later(0.12, "ui.panel.abre")); asyncio.ensure_future(later(0.2, "overlay", on=True)); asyncio.ensure_future(later(0.25, "pad", t="táctil: en pausa — el panel"))
+            elif name == "qam_close":
+                asyncio.ensure_future(later(0.05, "ui.panel.cierra")); asyncio.ensure_future(later(0.08, "overlay", on=False)); asyncio.ensure_future(later(0.3, "pad", t="táctil: agarrada event5"))
+            elif name == "kb_open":
+                asyncio.ensure_future(later(0.15, "ui.kb.abre")); asyncio.ensure_future(later(0.2, "overlay", on=True)); asyncio.ensure_future(later(0.25, "pad", t="táctil: en pausa"))
+            elif name == "kb_close":
+                asyncio.ensure_future(later(0.05, "ui.kb.cierra")); asyncio.ensure_future(later(0.08, "overlay", on=False)); asyncio.ensure_future(later(0.3, "pad", t="táctil: agarrada"))
+        t = tt.TransTest(runner, keys, typ, lambda ev, **kw: print("  ", ev, kw), act=act, sink=sink, wid=0)
+        out = await t.run(); pt.cancel()
+        print(out["ok"], out["secs"], "s")
+        for s_ in out["steps"]:
+            print(("OK  " if s_["ok"] else "FALLA"), s_["name"], "|", s_["detail"], "|", s_["ms"])
+        return
     t = st.SelfTest(runner, keys, typ, lambda ev, **kw: print("  ", ev, kw))
     out = await t.run()
     pt.cancel()

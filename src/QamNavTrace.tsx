@@ -11,7 +11,7 @@ export const navTrace = callable<[on?: boolean | null, mark?: string | null], Tr
 export interface SelfStep { name: string; ok: boolean | null; detail: string; ms: number | null }
 export interface SelfResult { ok: boolean | null; steps: SelfStep[]; secs?: number; error?: string; at?: number; version?: string }
 export interface SelfState { ok: boolean; running?: boolean; phase?: string; result?: SelfResult | null; version?: string; error?: string }
-export const navSelftest = callable<[start?: boolean | null, cancel?: boolean | null], SelfState>("nav_selftest");
+export const navSelftest = callable<[start?: boolean | null, cancel?: boolean | null, kind?: string | null], SelfState>("nav_selftest");
 
 /** Resumen de una prueba: «14 de 14 bien» o «2 fallos de 14: …». */
 export function selfSummary(r: SelfResult | null | undefined): string {
@@ -79,7 +79,10 @@ export const SelfTestCard: FC<{ notify: (t: string) => void }> = ({ notify }) =>
       <Row gap={6}>
         {st?.running
           ? <Chip compact onClick={() => void navSelftest(null, true).then(setSt).catch(() => undefined)}>Cancelar</Chip>
-          : <Chip compact onClick={() => void navSelftest(true).then((x) => { setSt(x); notify("Cierra el panel: la prueba empieza sola"); }).catch(() => notify("No se pudo iniciar la prueba"))}>Probar navegador</Chip>}
+          : <>
+            <Chip compact onClick={() => void navSelftest(true).then((x) => { setSt(x); notify("Cierra el panel: la prueba empieza sola"); }).catch(() => notify("No se pudo iniciar la prueba"))}>Probar navegador</Chip>
+            <Chip compact onClick={() => void navSelftest(true, null, "trans").then((x) => { setSt(x); notify("Cierra el panel: la prueba de transiciones empieza sola"); }).catch(() => notify("No se pudo iniciar la prueba"))}>Probar transiciones</Chip>
+          </>}
       </Row>
       {st?.running && <div style={{ fontSize: 13, padding: "0 10px" }}>{st.phase}</div>}
       {r && !st?.running && (

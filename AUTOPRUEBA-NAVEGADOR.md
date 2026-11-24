@@ -21,5 +21,8 @@ Sirve para ver, tras cada actualización, qué se rompió al usar una app de esc
 ## Grabadora (`nav-trace.log`, «Grabar navegación»)
 Eventos: `dedo.*`, `toque.enviado`, `toque.efecto` (ventana bajo el puntero, nº de ventanas antes→después, cambio de título), `ventana.nueva/cierra` (con ms desde el toque y capa), `ventana.contenido`, `scroll.inicio`, `rueda`, `parón.lector`, marcas (`No abrió`, `No respondió`, `Scroll mal`). Úsala pulsando la marca justo al fallar.
 
+## Prueba de transiciones (dev.84)
+Botón «Probar transiciones»: abre/cierra el QAM y el teclado grande con el navegador delante y cronometra (interfaz, overlay, táctil que vuelve, primer toque) más estado final (foco, tamaño, ventanas sueltas). Resultado: `transtest.json`.
+
 ## Pendiente
 Pantalla completa automática; zoom por teclado; toque con menú abierto sobre otro botón (cerrar y reenviar); scroll más fino (la rueda de X va a saltos); Edge, VacuumTube y Stremio con esta batería; transiciones app ↔ QAM.

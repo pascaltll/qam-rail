@@ -53,8 +53,10 @@ except ImportError:
     qam_trace = None
 try:
     import qam_selftest
+    import qam_transtest
 except ImportError:
     qam_selftest = None
+    qam_transtest = None
 try:
     import qam_channel
 except ImportError:
@@ -185,6 +187,9 @@ class Plugin:
         return t
 
     def _pad_log(self, text: str) -> None:
+        sk = getattr(self, "_tsink", None)
+        if sk is not None:
+            sk.append((time.monotonic(), "pad", {"t": text}))
         tr = getattr(self, "_trace_v", None)
         if tr is not None and tr.on:
             tr.add("pad", t=text[:160])
@@ -281,19 +286,19 @@ class Plugin:
             st = self._st = {"running": False, "phase": "", "cancel": False, "result": last if isinstance(last, dict) else None}
         return st
 
-    async def nav_selftest(self, start=None, cancel=None) -> dict:
+    async def nav_selftest(self, start=None, cancel=None, kind=None) -> dict:
         """Autoprueba del navegador: `start` la lanza (hay que cerrar el panel; empieza sola) y `cancel` la para. Devuelve estado y última prueba."""
         st = self._st_state()
         if qam_selftest is None or qam_pad is None:
             return {"ok": False, "error": "no disponible"}
         if start and not st["running"]:
             st.update(running=True, phase="Cierra el panel: la prueba empieza sola", cancel=False)
-            self._spawn(self._selftest_task())
+            self._spawn(self._selftest_task("trans" if kind == "trans" else ""))
         if cancel:
             st["cancel"] = True
         return {"ok": True, "running": st["running"], "phase": st["phase"], "result": st["result"], "version": str(getattr(decky, "DECKY_PLUGIN_VERSION", "") or "")}
 
-    async def _selftest_task(self) -> None:
+    async def _selftest_task(self, kind: str = "") -> None:
         st = self._st_state()
         res = None
         try:
@@ -342,6 +347,19 @@ class Plugin:
                         pass
                 self._pad_log(f"autoprueba: teclado modo mod={x.mod_mode} símbolos={x.char_mode}" + (" (guardado)" if save else ""))
             wid = self._front_wid(x)
+            if kind == "trans" and qam_transtest is not None:
+                sink: list = []
+
+                async def act(name):
+                    await decky.emit("qam_trans", name)
+                self._tsink = sink
+                try:
+                    test = qam_transtest.TransTest(pad, keys, typ, log, title=lambda: x.window_title(wid), opener=lambda u: self._open_url(u, self._front_key(wid)),
+                                                   act=act, sink=sink, wid=wid)
+                    res = await asyncio.wait_for(test.run(), 240)
+                finally:
+                    self._tsink = None
+                return
             fkey = ""
             for w_, k_ in self._claims.items():
                 try:
@@ -363,7 +381,7 @@ class Plugin:
                 st["result"] = res
                 if res.get("steps"):   # solo las pruebas que llegaron a hacer algo pisan la anterior en el disco
                     try:
-                        with open(_path("selftest.json"), "w", encoding="utf-8") as fh:
+                        with open(_path("transtest.json" if res.get("kind") == "trans" else "selftest.json"), "w", encoding="utf-8") as fh:
                             json.dump(res, fh, ensure_ascii=False)
                     except OSError:
                         pass
@@ -1391,6 +1409,16 @@ class Plugin:
             except Exception:  # noqa: BLE001
                 pass
 
+    def _front_key(self, wid) -> str:
+        """Clave de la app (id de Flatpak, etc.) a la que pertenece una ventana nuestra, o ''."""
+        for w_, k_ in self._claims.items():
+            try:
+                if wid and int(str(w_), 0) == wid and not str(k_).startswith("qam:"):
+                    return str(k_)
+            except ValueError:
+                continue
+        return ""
+
     def _front_wid(self, x):
         """Ventana de la app de escritorio que gamescope muestra (la primera de la capa base que es nuestra), o None."""
         by_gid = {}
@@ -1460,6 +1488,9 @@ class Plugin:
     # ---- Caja negra (dev.39): línea de tiempo en timeline.log, vigilante de casos raros y «Reparar» ----
     def _tl(self, ev: str, **data) -> None:
         """Una línea JSON en timeline.log (300 KB; el anillo en memoria da el contexto de las anomalías). Nunca recibe lo que se escribe."""
+        sk = getattr(self, "_tsink", None)
+        if sk is not None:   # prueba de transiciones: cronometra lo que pasa
+            sk.append((time.monotonic(), ev, dict(data)))
         tr = getattr(self, "_trace_v", None)
         if tr is not None and tr.on:
             tr.add("caja." + ev, **{k: v for k, v in data.items() if isinstance(v, (int, float, str, bool))})

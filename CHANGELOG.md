@@ -1,5 +1,9 @@
 # Cambios
 
+## dev.84
+- **«Probar transiciones»** (botón nuevo junto a «Probar navegador», mismo apartado): con el navegador delante abre y cierra solo el QAM de Steam y el teclado grande y **cronometra cada paso**. Por vuelta mide: pedir→se ve la interfaz, →sube el overlay, →el táctil se pausa; y al cerrar: →baja el overlay, →el táctil vuelve a agarrarse, →el primer toque que llega a la página; y comprueba que la app sigue delante, a tamaño de pantalla y sin ventanas emergentes sueltas. Pasos: app→QAM→app ×5, app→teclado→app ×5, abrir y cerrar sin esperar (250 ms) ×5 (nada puede quedar a medias) y QAM→teclado→app ×3. Marca «lento» por encima de 700 ms (abrir), 500 (cerrar), 400 (overlay) o 1500 (primer toque). Resultado en `transtest.json`.
+- La interfaz ejecuta las órdenes (evento `qam_trans`: `Navigation.OpenQuickAccessMenu`/`CloseSideMenus`, abrir/cerrar teclado grande) y el programa cronometra con los eventos de la caja negra y del registro del mando. `scripts/e2e-selftest.py` con `TRANS=1` prueba la lógica con un QAM simulado.
+
 ## dev.83
 - **Autoprueba en Edge:** antes la página de prueba se abría con `xdg-open` (el navegador predeterminado, Firefox), así que con Edge delante se cargaba en otro navegador. Ahora, si la app de delante es un Chromium/Edge en Flatpak, la página se abre en ELLA (`flatpak run com.microsoft.Edge <url>`, que reenvía a la ventana ya abierta). Firefox sigue igual.
 - **Grabadora para apps sin barra de direcciones (Stremio, VacuumTube):** `toque.efecto` añade `titulo='antes'→'después'` si el título de la ventana cambió tras el toque (al navegar por sus pantallas), además de las ventanas emergentes.

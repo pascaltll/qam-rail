@@ -24,8 +24,8 @@ import { currentPalette } from "./appearance";
 import { situation } from "./situation";
 import { addEventListener, definePlugin, removeEventListener, routerHook, toaster } from "@decky/api";
 import { BigKeyboardPage } from "./BigKeyboardPage";
-import { BIG_KEYBOARD_ROUTE, toggleBigKeyboard } from "./bigKeyboard";
-import { staticClasses } from "@decky/ui";
+import { BIG_KEYBOARD_ROUTE, closeBigKeyboard, openBigKeyboard, toggleBigKeyboard } from "./bigKeyboard";
+import { Navigation, staticClasses } from "@decky/ui";
 import { useEffect, useState } from "react";
 import { FaThLarge } from "react-icons/fa";
 
@@ -58,8 +58,19 @@ export default definePlugin(() => {
   let routeOn = false;
   const onKbCombo = (): void => { toggleBigKeyboard(); };   // Steam + Y en el mando (lo avisa el backend)
   let kbListening = false;
+  // Prueba de transiciones (dev.84): el backend pide abrir/cerrar el QAM de Steam y el teclado grande, y mide lo que tarda.
+  const onTrans = (what: string): void => {
+    try {
+      if (what === "qam_open") (Navigation.OpenQuickAccessMenu as () => void)();
+      else if (what === "qam_close") Navigation.CloseSideMenus();
+      else if (what === "kb_open") openBigKeyboard();
+      else if (what === "kb_close") closeBigKeyboard();
+    } catch { /* la prueba lo anota como «no llegó» */ }
+  };
+  let transListening = false;
   whenActive(() => {
     try { addEventListener("qam_kb", onKbCombo); kbListening = true; } catch { /* sin eventos: queda el chip «Teclado» */ }
+    try { addEventListener("qam_trans", onTrans); transListening = true; } catch { /* sin eventos: no hay prueba de transiciones */ }
     try { routerHook.addRoute(BIG_KEYBOARD_ROUTE, BigKeyboardPage, { exact: true }); routeOn = true; } catch { /* sin ruta: el teclado grande no se ofrece */ }
     applyRail();
     if (chan?.notice) toaster.toast({ title: `QAM Rail (${kindName(chan.me)})`, body: chan.notice });
@@ -191,6 +202,7 @@ export default definePlugin(() => {
     icon: <FaThLarge />,
     onDismount() {
       if (kbListening) { try { removeEventListener("qam_kb", onKbCombo); } catch { /* nada */ } }
+      if (transListening) { try { removeEventListener("qam_trans", onTrans); } catch { /* nada */ } }
       if (routeOn) { try { routerHook.removeRoute(BIG_KEYBOARD_ROUTE); } catch { /* nada */ } }
       cancelBoot();
       window.clearTimeout(confirmTimer);
