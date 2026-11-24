@@ -97,7 +97,7 @@ async def t_main():
     kx = type("K", (), {})()
     for n in ("flush", "close"): setattr(kx, n, lambda *a: None)
     kx.cardinals = lambda name, wid=None: [gid, 769] if name == "GAMESCOPECTRL_BASELAYER_APPID" else []
-    kx.focus = lambda w: None; kx.type_char = lambda c: True; kx.key = lambda c: None
+    kx.focus = lambda w: None; kx.type_char = lambda c, **k: True; kx.key = lambda c, **k: None
     p._kx_x = kx
     await p.desktop_key("contraseña-secreta")
     alltxt = open(os.path.join(tmp, "timeline.log"), encoding="utf-8").read() + open(os.path.join(tmp, "desktop-tag.log"), encoding="utf-8").read()

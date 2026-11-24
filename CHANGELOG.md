@@ -1,5 +1,9 @@
 # Cambios
 
+## dev.75
+- **Teclado de QAM en el navegador: Ctrl y Mayús llegaban tarde (visto en la autoprueba con Firefox):** al escribir la dirección de prueba salió `thttp;//127.0.0.1;45321/…`: Ctrl+T se escribió como la letra «t» y cada «:» como «;». El modificador y la tecla iban en la misma ráfaga y, con gamescope en medio, Firefox procesaba la tecla antes de enterarse del modificador. Ahora hay una pausa de 12 ms entre modificador y tecla (en un hilo, sin parar el mando ni el táctil). Esto afectaba a cualquier mayúscula, símbolo o atajo (Ctrl+A/C/V, pestañas) desde el teclado de QAM.
+- La autoprueba añade el paso «escribir mayúsculas y símbolos» (`Ab:/_9`, tras Ctrl+A) y, si Firefox está en «Restore Session», para con un mensaje claro en vez de escribir a ciegas.
+
 ## dev.74
 - **La autoprueba ya no depende de la página que tengas abierta:** abre la página de prueba en una **pestaña nueva** (Ctrl+T), reintenta por Ctrl+L si no carga en ~7 s y al terminar **cierra esa pestaña** (Ctrl+W), así tu navegador queda como estaba (antes volvía con Alt+Izquierda).
 - **Diagnóstico si «cargar página» falla:** el detalle ahora dice cuántas veces pidió la página el navegador, cuántos eventos mandó y el **título de la ventana** (`_NET_WM_NAME`), para distinguir «no escribió la dirección» de «no llegó a 127.0.0.1» de «cargó pero el JS no avisó».

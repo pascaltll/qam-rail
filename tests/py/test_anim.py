@@ -163,8 +163,8 @@ class KX(FakeXo):
         super().__init__(); self.typed, self.keys, self.focused, self.closed = [], [], [], False
     def cardinals(self, name): return [1265881686, 413091, 769] if name == "GAMESCOPECTRL_BASELAYER_APPID" else []
     def focus(self, wid): self.focused.append(wid)
-    def type_char(self, ch): self.typed.append(ch); return ch != "\x07"
-    def key(self, c): self.keys.append(c)
+    def type_char(self, ch, **k): self.typed.append(ch); return ch != "\x07"
+    def key(self, c, **k): self.keys.append(c)
     def close(self): self.closed = True
 
 

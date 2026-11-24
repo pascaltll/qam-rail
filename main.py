@@ -1368,21 +1368,27 @@ class Plugin:
             fw = getattr(x, "focus_window", lambda: 0)()   # solo para el registro: ¿el foco quedó en la ventana de la app (o en una hija suya)?
             ok = True
             mm = [m for m in (mods or []) if m in ("ctrl", "alt", "shift")]
-            if mm:
-                name = qam_pad.NAMED_KEYS.get(str(key)) if key else (str(text) if text and len(str(text)) == 1 and str(text).isascii() and str(text).isalnum() else None)
-                if name:
-                    x.key("+".join([*mm, name]))
-                else:
-                    ok = False
-            elif text:
-                for ch in str(text)[:200]:
-                    ok = x.type_char(ch) and ok
-            elif key:
-                name = qam_pad.NAMED_KEYS.get(str(key))
-                if name:
-                    x.key(name)
-                else:
-                    ok = False
+            GAP = 0.012   # pausa entre modificador y tecla (dev.74: Firefox ignoraba Ctrl y Mayús si iban pegados: «t» en vez de Ctrl+T, «;» en vez de «:»)
+
+            def _run() -> bool:   # en un hilo: las pausas no deben parar el bucle del mando y el táctil
+                good = True
+                if mm:
+                    name = qam_pad.NAMED_KEYS.get(str(key)) if key else (str(text) if text and len(str(text)) == 1 and str(text).isascii() and str(text).isalnum() else None)
+                    if name:
+                        x.key("+".join([*mm, name]), gap=GAP)
+                    else:
+                        good = False
+                elif text:
+                    for ch in str(text)[:200]:
+                        good = x.type_char(ch, gap=GAP) and good
+                elif key:
+                    name = qam_pad.NAMED_KEYS.get(str(key))
+                    if name:
+                        x.key(name, gap=GAP)
+                    else:
+                        good = False
+                return good
+            ok = await asyncio.to_thread(_run)
             x.flush()
             tr = getattr(self, "_trace_v", None)
             if tr is not None and tr.on:

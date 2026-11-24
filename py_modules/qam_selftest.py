@@ -5,6 +5,7 @@ CADA evento que recibe, así que además de «funciona» se mide cuánto tarda. 
 from __future__ import annotations
 
 import asyncio
+import re
 import json
 import time
 import urllib.parse
@@ -234,6 +235,9 @@ class SelfTest:
         t0 = time.monotonic()
         i = self.probe.mark()
         url = f"http://127.0.0.1:{self.probe.port}/"
+        tit0 = (self.title() or "").strip()
+        if re.search(r"restore session|restaurar sesi|session restore", tit0, re.I):
+            return self.res("cargar página", False, f"el navegador está en la pantalla de restaurar sesión («{tit0[:50]}»): toca «Start New Session» o «Restore Session» y repite")
         ok = await self.keys("t", ["ctrl"])
         self.opened = True
         await asyncio.sleep(0.8)
@@ -326,6 +330,14 @@ class SelfTest:
         await self.typ("hola")
         e = await self.probe.wait(j, "input", lambda d: d.get("v") == "hola", 1.5)
         self.res("escribir con el teclado de QAM", bool(e), ("escribió «hola»" if e else "no llegó el texto al campo") + ("" if f else " (el toque no dio foco al campo)"))
+        # Mayúsculas y símbolos (Mayús): una dirección lleva «:» y «/»; en Firefox salía «;» por no llegar la Mayús
+        k = self.probe.mark()
+        want = "Ab:/_9"
+        await self.keys("a", ["ctrl"])
+        await self.typ(want)
+        e2 = await self.probe.wait(k, "input", lambda d: d.get("v") == want, 2.0)
+        got = next((ev["d"].get("v") for ev in reversed(self.probe.events[k:]) if ev["k"] == "input"), None)
+        self.res("escribir mayúsculas y símbolos", bool(e2), f"escribió «{want}»" if e2 else f"se esperaba «{want}» y llegó «{got}» (¿no llega Mayús/AltGr?)")
 
     async def s_select(self) -> None:
         x, y = self.scr("sel")

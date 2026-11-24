@@ -312,7 +312,13 @@ class XOut:
         except Exception:  # noqa: BLE001
             return 0
 
-    def type_char(self, ch: str) -> bool:
+    def _pausa(self, gap: float) -> None:
+        """Vuelca lo pendiente y espera `gap` s: así el modificador llega ANTES que la tecla (con gamescope delante, Firefox ignoraba Ctrl/Mayús si todo iba en una ráfaga)."""
+        if gap > 0:
+            self.x11.XFlush(self.dpy)
+            time.sleep(gap)
+
+    def type_char(self, ch: str, gap: float = 0.0) -> bool:
         """Escribe un carácter con la distribución activa: busca su tecla y el nivel (Mayús, AltGr) y pulsa lo necesario. False si no existe."""
         if not ch or ch == "\n":
             return False
@@ -326,10 +332,15 @@ class XOut:
         mods = [self._code(n) for n in LEVEL_MODS[idx]]
         for m in mods:
             self.xt.XTestFakeKeyEvent(self.dpy, m, 1, 0)
+        if mods:
+            self._pausa(gap)
         self.xt.XTestFakeKeyEvent(self.dpy, code, 1, 0)
         self.xt.XTestFakeKeyEvent(self.dpy, code, 0, 0)
+        if mods:
+            self._pausa(gap)
         for m in reversed(mods):
             self.xt.XTestFakeKeyEvent(self.dpy, m, 0, 0)
+        self._pausa(gap)
         return True
 
     def move(self, dx: int, dy: int) -> None:
@@ -398,7 +409,7 @@ class XOut:
             self._codes[name] = self.x11.XKeysymToKeycode(self.dpy, ks) if ks else 0
         return self._codes[name]
 
-    def key(self, combo: str) -> None:
+    def key(self, combo: str, gap: float = 0.0) -> None:
         """«ctrl+shift+Tab»: modificadores, tecla, y se sueltan en orden inverso."""
         parts = combo.split("+")
         mods = [self._code(self.MODS[p.lower()]) for p in parts[:-1] if p.lower() in self.MODS]
@@ -407,10 +418,15 @@ class XOut:
             return
         for m in mods:
             self.xt.XTestFakeKeyEvent(self.dpy, m, 1, 0)
+        if mods:
+            self._pausa(gap)
         self.xt.XTestFakeKeyEvent(self.dpy, k, 1, 0)
         self.xt.XTestFakeKeyEvent(self.dpy, k, 0, 0)
+        if mods:
+            self._pausa(gap)
         for m in reversed(mods):
             self.xt.XTestFakeKeyEvent(self.dpy, m, 0, 0)
+        self._pausa(gap)
 
     def zoom(self, n: int) -> None:
         """Zoom del navegador: Ctrl + rueda (n > 0 acerca, n < 0 aleja)."""
