@@ -1532,6 +1532,11 @@ class PadRunner:
                         if wv or wh:
                             self._x.wheel(wv, wh)
                         cfg = self.touch_fn()
+                        if cfg is None:
+                            self._rescanned = False
+                        elif not self._tfds and not getattr(self, "_rescanned", False):
+                            self._rescanned = True
+                            scan_at = 0.0   # el panel o el teclado se acaban de cerrar: se busca el táctil ya, sin esperar a la ronda de cada 2 s
                         full = bool(cfg) and bool(cfg.get("full"))
                         for ts in self._ts.values():
                             ts.full = full or getattr(ts, "force_full", False)

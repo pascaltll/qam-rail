@@ -62,7 +62,10 @@ export default definePlugin(() => {
   const onTrans = (what: string): void => {
     try {
       if (what === "qam_open") (Navigation.OpenQuickAccessMenu as () => void)();
-      else if (what === "qam_close") Navigation.CloseSideMenus();
+      else if (what === "qam_close") {   // nuestro panel es un modal: se cierra como al pulsar B; si no hay, el QAM de Steam
+        const w = window as unknown as { __qamRailCloseModal?: () => void };
+        if (w.__qamRailCloseModal) w.__qamRailCloseModal(); else Navigation.CloseSideMenus();
+      }
       else if (what === "kb_open") openBigKeyboard();
       else if (what === "kb_close") closeBigKeyboard();
     } catch { /* la prueba lo anota como «no llegó» */ }

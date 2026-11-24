@@ -1,5 +1,10 @@
 # Cambios
 
+## dev.85
+- **Resultado de dev.84 en tu equipo:** el QAM abre rápido (interfaz 39 ms, overlay 43 ms, táctil se pausa 54 ms) y el teclado grande también (104 / 32 / 120 ms). Dos problemas:
+  1. **El táctil tardaba ~2,3 s en volver tras cerrar el teclado** (y el primer toque llegaba a 2,4 s). Causa: el táctil solo se volvía a buscar en una ronda cada 2 s. Ahora, en cuanto el panel o el teclado se cierran, se busca de inmediato. (Con el mando se notaba menos porque su «activo» lanzaba esa búsqueda; con el dedo, que es lo normal en una tablet, esperaba la ronda.)
+  2. **La prueba no cerraba el QAM** (usaba `CloseSideMenus`, que no cierra nuestro panel; es un modal). Ahora lo cierra como al pulsar B. Por eso salieron «cerrar no llegó», el overlay arriba y la app sin foco en las otras series: eran consecuencia de ese fallo de la prueba.
+
 ## dev.84
 - **«Probar transiciones»** (botón nuevo junto a «Probar navegador», mismo apartado): con el navegador delante abre y cierra solo el QAM de Steam y el teclado grande y **cronometra cada paso**. Por vuelta mide: pedir→se ve la interfaz, →sube el overlay, →el táctil se pausa; y al cerrar: →baja el overlay, →el táctil vuelve a agarrarse, →el primer toque que llega a la página; y comprueba que la app sigue delante, a tamaño de pantalla y sin ventanas emergentes sueltas. Pasos: app→QAM→app ×5, app→teclado→app ×5, abrir y cerrar sin esperar (250 ms) ×5 (nada puede quedar a medias) y QAM→teclado→app ×3. Marca «lento» por encima de 700 ms (abrir), 500 (cerrar), 400 (overlay) o 1500 (primer toque). Resultado en `transtest.json`.
 - La interfaz ejecuta las órdenes (evento `qam_trans`: `Navigation.OpenQuickAccessMenu`/`CloseSideMenus`, abrir/cerrar teclado grande) y el programa cronometra con los eventos de la caja negra y del registro del mando. `scripts/e2e-selftest.py` con `TRANS=1` prueba la lógica con un QAM simulado.
