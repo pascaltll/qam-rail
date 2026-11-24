@@ -1,5 +1,12 @@
 # Cambios
 
+## dev.89
+- **Sin cambios de comportamiento: limpieza del código del mando y del diagnóstico**, con red de tests. `PadRunner._read` (complejidad 42 → 10) y `PadRunner.run` (59 → 5) se trocean en funciones pequeñas (`_key_event`, `_abs_event`, `_step`, `_output_tick`, `_text_check`…); `Plugin._forensics` (46 → 19) deja su análisis puro en `py_modules/qam_forensics.py`.
+- Tests nuevos: `test_read.py`, `test_step.py`, `test_forensics.py`, `test_main_forensics.py` (el primero que carga `main.py` para probar `_forensics`).
+- Medición inicial de calidad: promedio B (6,4), cobertura Python 52 %, 22 funciones con complejidad > 20 (quedan 19), duplicación TS 0,06 %.
+- Un fallo al enviar la acción de Select ahora se anota en el log (antes no se capturaba).
+- Lo de dev.88 sigue pendiente de probar en el aparato (tocar un texto abre el teclado).
+
 ## dev.88
 - **Autoprueba: «tocar un texto abre el teclado grande».** Toca un campo de texto, un cuadro de texto y un botón (con la opción forzada durante la prueba y capturando el aviso, sin abrir el teclado de verdad) y dice cuáles abren el teclado, a los cuántos ms, y **qué cursor ve X bajo el dedo** (`cursor: …`). Si no abre, ese cursor dice por qué (el detector reconoce el cursor de texto por nombre o por forma de I). En Xvfb/Chrome todos los cursores son iguales y no se puede comprobar; en tu equipo dará el dato.
 - Plan de «sensación de tablet» y teclado inspirado en Xbox/Steam en `AUTOPRUEBA-NAVEGADOR.md` (sección nueva).
