@@ -1,5 +1,9 @@
 # Cambios
 
+## dev.96
+- **La autoprueba no se queda sin resultado.** Se paraba a los **300 s** (el aviso decía «2 minutos»): desde que la batería del teclado repite la matriz de modos, la prueba dura más de 5 minutos y al pasarse perdía **todo** el resultado (`selftest.json` quedaba con el de antes; por eso en tu equipo no avanzaba a las 12:12 ni a las 11:55). Ahora el límite es de 15 minutos, y si se pasa se guardan los pasos que ya hizo.
+- **La matriz del teclado es más corta:** si «atajos con Ctrl» ya encontró un modo que funciona, solo se compara cómo salen los símbolos (2 pruebas en vez de 6, ~1 min en vez de ~4).
+
 ## dev.95
 - **La autoprueba se recupera si se abre el teclado grande o el panel durante la prueba.** En tu equipo, a las 11:50 se abrió el teclado de verdad (alguien tocó el campo de texto de la página; el registro lo muestra: «cursor de texto → teclado grande» sin cerrarse después), el táctil quedó en pausa y todos los pasos siguientes fallaron con «el toque no llegó» (también «vídeo: pantalla completa», por eso no se pudo ver si Firefox pide la pantalla completa). Ahora, antes de cada toque o arrastre, si el táctil está en pausa se cierra el teclado (y, si hace falta, el panel) y se sigue; al final aparece un paso «interferencias» que dice cuántas veces pasó. **Durante la prueba no toques la pantalla** (el aviso «no toques la pantalla» ya sale).
 - Pendiente: ver el resultado de «vídeo: pantalla completa» sin interferencias; en `pad.log` se verá «pantalla completa: la ventana 0x… la pide → hecho» si Firefox manda la petición.

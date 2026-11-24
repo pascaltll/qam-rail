@@ -46,4 +46,9 @@ assert t.guardado == [("slow", "remap")], t.guardado
 
 # 4) la diferencia de texto señala dónde falla
 assert "carácter 4" in q.SelfTest._dif("abcdef", "abcxef") and "largo 6 → 5" in q.SelfTest._dif("abcdef", "abcde")
+# 5) si Ctrl ya funciona con un modo (mod_ok), la matriz solo prueba los 2 modos de símbolos de ese Ctrl (no los 6)
+t = make(("lock", "remap"), tabla(lock_remap=11, lock_levels=12, keys_levels=12))
+t.mod_ok = True
+asyncio.run(t.s_teclado())
+assert t.guardado == [("lock", "levels")], t.guardado        # keys+levels (12) ni se mira: no es del Ctrl que funciona
 print("ok test_kbmatrix")

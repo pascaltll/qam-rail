@@ -194,6 +194,7 @@ class SelfTest:
         self.title = title or (lambda: "")   # título de la ventana del navegador (para el diagnóstico)
         self.setfs_cb = setfs
         self.act = act                       # async act(nombre): pide a la interfaz abrir/cerrar el QAM o el teclado grande (sirve para cerrar lo que se abra por fuera)
+        self.mod_ok = False                  # «atajos con Ctrl» encontró un modo que funciona: la matriz ya no repite los de Ctrl
         self.interf = 0                      # veces que el teclado o el panel se abrieron durante la prueba (alguien tocó la pantalla)
         self.setmode = setmode               # setmode(mod=None, ch=None, save=False): cambia/guarda cómo se aplican Ctrl/Mayús en el teclado de QAM
         self.modo = {"mod": "keys", "ch": "levels"}   # último modo aplicado (lo mantiene _sm)
@@ -522,6 +523,7 @@ class SelfTest:
             if good:
                 mod = m
                 break
+        self.mod_ok = mod is not None
         if mod is None:
             self._sm(mod="keys")
             self.res("atajos con Ctrl", False, "ninguna forma de aplicar Ctrl funcionó (" + ", ".join(tried) + ")")
@@ -684,7 +686,8 @@ class SelfTest:
         actual = (self.modo["mod"], self.modo["ch"])
         base_bien = total - len(fallos)
         marcador = []
-        for m in ("keys", "slow", "lock"):
+        mods = (actual[0],) if getattr(self, "mod_ok", False) else ("keys", "slow", "lock")   # si Ctrl ya funciona con un modo, solo se compara cómo salen los símbolos (6 pruebas → 2)
+        for m in mods:
             for c in ("levels", "remap"):
                 self._sm(mod=m, ch=c)
                 r = await self._bateria()

@@ -306,6 +306,7 @@ class Plugin:
     async def _selftest_task(self, kind: str = "") -> None:
         st = self._st_state()
         res = None
+        test = None
         try:
             t0 = time.monotonic()
             quiet = 0.0
@@ -376,9 +377,9 @@ class Plugin:
                 except ValueError:
                     continue
             test = qam_selftest.SelfTest(pad, keys, typ, log, title=lambda: x.window_title(wid), opener=lambda u: self._open_url(u, fkey), setmode=setmode, setfs=lambda on: x.set_wm_fullscreen(wid, on), act=act)
-            res = await asyncio.wait_for(test.run(), 300)
+            res = await asyncio.wait_for(test.run(), 900)
         except asyncio.TimeoutError:
-            res = {"ok": False, "error": "la prueba tardó más de 2 minutos y se paró", "steps": []}
+            res = {"ok": False, "error": "la prueba tardó más de 15 minutos y se paró", "steps": list(getattr(test, "steps", None) or [])}
         except Exception as e:  # noqa: BLE001
             res = {"ok": False, "error": f"error: {e!r}"[:160], "steps": []}
         finally:
