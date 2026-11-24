@@ -24,5 +24,10 @@ Eventos: `dedo.*`, `toque.enviado`, `toque.efecto` (ventana bajo el puntero, nº
 ## Prueba de transiciones (dev.84)
 Botón «Probar transiciones»: abre/cierra el QAM y el teclado grande con el navegador delante y cronometra (interfaz, overlay, táctil que vuelve, primer toque) más estado final (foco, tamaño, ventanas sueltas). Resultado: `transtest.json`.
 
+## Plan: sensación de tablet y teclado tipo Xbox (investigado en dev.88)
+**Teclado (referencias):** el teclado «Gamepad» de Windows 11 usa X = borrar, Y = espacio, Menú = Intro, LT = página de símbolos y números, y teclas alineadas en vertical para moverse con la cruceta. El de Steam deja los botones configurables (L1 borrar, R1 espacio, gatillo izquierdo Mayús en Big Picture) y añade flechas ↑/↓ con Mayús. El nuestro hoy: X borrar, Menú espacio, Start Intro, B cerrar.
+Propuesta: Y = espacio, Menú/Start = Intro, LT = Mayús (mantener), RT = símbolos/números, LB/RB = mover el cursor ← →, L3 = Bloq Mayús; filas alineadas en vertical; teclado más compacto con página de símbolos y números como en el móvil; vista previa del texto arriba.
+**Tablet:** (1) tocar un texto abre el teclado sin depender del modo completo (prueba en dev.88); (2) scroll por píxeles con inercia (hoy la rueda de X va a saltos: valuators XInput2 o muchos clics pequeños); (3) zoom con pellizco más suave; (4) mantener pulsado = clic derecho / menú contextual; (5) doble toque = zoom a texto; (6) arrastrar desde el borde para el QAM o volver; (7) cerrar el teclado al tocar fuera; (8) pantalla completa automática (⛶ y F11 en Firefox).
+
 ## Pendiente
 Pantalla completa automática; zoom por teclado; toque con menú abierto sobre otro botón (cerrar y reenviar); scroll más fino (la rueda de X va a saltos); Edge, VacuumTube y Stremio con esta batería; transiciones app ↔ QAM.

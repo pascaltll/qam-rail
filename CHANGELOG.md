@@ -1,5 +1,9 @@
 # Cambios
 
+## dev.88
+- **Autoprueba: «tocar un texto abre el teclado grande».** Toca un campo de texto, un cuadro de texto y un botón (con la opción forzada durante la prueba y capturando el aviso, sin abrir el teclado de verdad) y dice cuáles abren el teclado, a los cuántos ms, y **qué cursor ve X bajo el dedo** (`cursor: …`). Si no abre, ese cursor dice por qué (el detector reconoce el cursor de texto por nombre o por forma de I). En Xvfb/Chrome todos los cursores son iguales y no se puede comprobar; en tu equipo dará el dato.
+- Plan de «sensación de tablet» y teclado inspirado en Xbox/Steam en `AUTOPRUEBA-NAVEGADOR.md` (sección nueva).
+
 ## dev.87
 - **Zoom con dos dedos (fallaba en Firefox y en Edge):** el zoom es Ctrl + rueda, y la X del mando no conocía la forma de aplicar Ctrl que la autoprueba guarda (`lock`): solo la tenía la X del teclado. Era la causa de que el zoom no cambiara nada aunque el scroll sí funcionara. Ahora la X del mando carga `kbd-mode.json` al conectar y la autoprueba se la actualiza al cambiar de modo.
 - Resultado de dev.86 en tu Edge: 49 de 51 pasos bien. Teclado 12/12, pantalla completa de vídeo y F11, desplegables y menús bien. Solo fallaba el zoom (arreglado arriba). Las transiciones pasan: QAM abre en 38 ms, el táctil vuelve en 171 ms; teclado grande cierra en 445 ms.

@@ -277,7 +277,7 @@ class SelfTest:
         await self.probe.start()
         try:
             if await self.s_cargar(W, H) and await self.s_calibrar(W, H):
-                for step in (self.s_clic, self.s_mismo_sitio, self.s_scroll, self.s_inercia, self.s_texto, self.s_teclado, self.s_select, self.s_popups, self.s_video, self.s_audio,
+                for step in (self.s_clic, self.s_mismo_sitio, self.s_scroll, self.s_inercia, self.s_texto, self.s_texto_teclado, self.s_teclado, self.s_select, self.s_popups, self.s_video, self.s_audio,
                              self.s_menus, self.s_pagina, self.s_pantalla_navegador, self.s_experimentos, self.s_pestanas):
                     try:
                         await step()
@@ -421,6 +421,37 @@ class SelfTest:
         e = await self.probe.wait(j, "input", lambda d: d.get("v") == "hola", 1.5)
         self.res("escribir con el teclado de QAM", bool(e), ("escribió «hola»" if e else "no llegó el texto al campo") + ("" if f else " (el toque no dio foco al campo)"))
         await self.s_modificadores()
+
+    async def s_texto_teclado(self) -> None:
+        """Tocar un campo de texto con el dedo debe abrir el teclado grande (`kb.combo`); y tocar un botón, no. Se fuerza la opción «Tocar un texto abre el teclado»
+        durante la prueba y se captura el aviso en vez de abrir el teclado de verdad. Mide cuánto tarda (el cursor de texto se mira 0,15 · 0,45 · 0,85 s tras el toque)."""
+        r = self.r
+        orig_ev, orig_touch = r.event, r.touch_fn
+        vistos: list = []
+        r.event = lambda ev, **d: vistos.append((time.monotonic(), ev))
+        r.touch_fn = lambda: dict(orig_touch() or {}, text=True, full=True)
+        try:
+            await self.scene("base")
+            res = {}
+            for nombre, id_, espera in (("campo de texto", "inp", True), ("cuadro de texto", "ta", True), ("botón", "b3", False)):
+                n0 = len(vistos)
+                x, y = self.scr(id_)
+                t = await self.tap(x, y)
+                await asyncio.sleep(0.5)
+                try:
+                    cur = r._x.cursor_is_text()[1]   # qué cursor ve X bajo el dedo: sin él no hay forma de saber que es un texto
+                except Exception as e:  # noqa: BLE001
+                    cur = f"error {e!r}"[:40]
+                await asyncio.sleep(1.1)
+                hit = next((tt for tt, ev in vistos[n0:] if ev == "kb.combo"), None)
+                res[nombre] = (hit is not None, None if hit is None else round((hit - t) * 1000), cur)
+            ok = res["campo de texto"][0] and res["cuadro de texto"][0] and not res["botón"][0]
+            det = "; ".join(f"{k}: " + (f"abre el teclado a los {v[1]} ms" if v[0] else "no abre") + f" (cursor: {v[2]})" for k, v in res.items())
+            if not ok:
+                det += " — debería abrirse con los dos campos de texto y no con el botón"
+            self.res("tocar un texto abre el teclado grande", ok, det)
+        finally:
+            r.event, r.touch_fn = orig_ev, orig_touch
 
     async def _vaciar(self) -> None:
         for _ in range(12):
