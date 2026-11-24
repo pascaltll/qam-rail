@@ -304,7 +304,7 @@ class SelfTest:
         await self.probe.start()
         try:
             if await self.s_cargar(W, H) and await self.s_calibrar(W, H):
-                for step in (self.s_clic, self.s_mismo_sitio, self.s_scroll, self.s_inercia, self.s_texto, self.s_texto_teclado, self.s_teclado, self.s_select, self.s_popups, self.s_video, self.s_audio,
+                for step in (self.s_clic, self.s_mismo_sitio, self.s_scroll, self.s_suavidad, self.s_inercia, self.s_texto, self.s_texto_teclado, self.s_teclado, self.s_select, self.s_popups, self.s_video, self.s_audio,
                              self.s_menus, self.s_pagina, self.s_pantalla_navegador, self.s_experimentos, self.s_pestanas):
                     try:
                         await step()
@@ -427,6 +427,26 @@ class SelfTest:
         await asyncio.sleep(1.2)
         a1 = await self.top("box1")
         self.res("sentido del desplazamiento", a1 < a0 - 20, f"dedo hacia abajo: {a0}→{a1} px" + ("" if a1 < a0 - 20 else " (el sentido está al revés o no se movió)"))
+
+    async def s_suavidad(self) -> None:
+        """Mide si el desplazamiento con el dedo es fluido: eventos de scroll por segundo, salto máximo entre dos eventos y parón más largo.
+        Solo mide (no cambia nada): sirve para comparar antes/después de afinar los pasos de la rueda."""
+        x, y = self.scr("box1")
+        d = self.half("box1")
+        await self.drag(x, y - d, x, y + d, 0.4)   # vuelve arriba
+        await asyncio.sleep(1.5)
+        i = self.probe.mark()
+        await self.drag(x, y + d, x, y - d, 1.2)   # arrastre lento y constante hacia arriba
+        e = await self.probe.wait(i, "smooth", lambda q: q.get("id") == "box1", 3.0)
+        if not e:
+            self.res("suavidad del desplazamiento", False, "la página no midió el desplazamiento")
+            return
+        q = e["d"]
+        hz = q["n"] * 1000 / max(q["dur"], 1)
+        ok = q["max"] <= 80 and q["gap"] <= 250 and q["n"] >= 6
+        self.res("suavidad del desplazamiento", ok,
+                 f"{q['n']} eventos en {q['dur']} ms ({hz:.0f}/s), recorrió {q['total']} px; salto máximo {q['max']} px, parón máximo {q['gap']} ms"
+                 + ("" if ok else " (a saltos: pasos grandes o pocos eventos)"))
 
     async def s_inercia(self) -> None:
         x, y = self.scr("box2")

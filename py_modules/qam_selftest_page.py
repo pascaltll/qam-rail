@@ -64,7 +64,7 @@ function show(n){for(const s of ['base','popups','video','audio','pagina','menu'
 let cmdN=0;setInterval(async()=>{try{const r=await fetch('/cmd',{cache:'no-store'});const j=await r.json();if(j.n!==cmdN){cmdN=j.n;show(j.scene)}}catch(e){}},150);
 // --- base
 for(const id of ['box1','box2']){const b=$(id);for(let i=0;i<60;i++){const d=document.createElement('div');d.textContent=id+' fila '+i;b.appendChild(d)}
- let t=0;b.addEventListener('scroll',()=>{const n=performance.now();if(n-t>40){t=n;post('scroll',{id:id,top:Math.round(b.scrollTop)})}})}
+ let t=0,rec=[],tm=0;b.addEventListener('scroll',()=>{const n=performance.now();rec.push([n,b.scrollTop]);clearTimeout(tm);tm=setTimeout(()=>{const r=rec;rec=[];if(r.length<2)return;let mx=0,mg=0,sum=0;for(let k=1;k<r.length;k++){const ds=Math.abs(r[k][1]-r[k-1][1]),dt=r[k][0]-r[k-1][0];if(ds>mx)mx=ds;if(dt>mg)mg=dt;sum+=ds}post('smooth',{id:id,n:r.length,max:Math.round(mx),gap:Math.round(mg),dur:Math.round(r[r.length-1][0]-r[0][0]),total:Math.round(sum)})},300);if(n-t>40){t=n;post('scroll',{id:id,top:Math.round(b.scrollTop)})}})}
 setInterval(()=>{if(scene==='base')for(const id of ['box1','box2'])post('pos',{id:id,top:Math.round($(id).scrollTop)})},250);
 document.addEventListener('mousedown',e=>post('down',{id:e.target.id||e.target.tagName}),true);
 document.addEventListener('click',e=>post('click',{id:e.target.id||e.target.tagName,cx:e.clientX,cy:e.clientY}),true);

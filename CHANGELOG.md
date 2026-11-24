@@ -1,5 +1,8 @@
 # Cambios
 
+## dev.98
+- **Autoprueba: nuevo paso «suavidad del desplazamiento».** La página registra cada evento de scroll de la lista (con su hora) y, 300 ms después de soltar, resume: eventos por segundo, salto máximo entre dos eventos y parón más largo. Solo mide, no cambia el comportamiento: sirve de línea base antes de afinar el scroll (pasos de rueda más finos / inercia).
+
 ## dev.97
 - **La autoprueba apaga «tocar un texto abre el teclado» mientras corre** (solo su paso propio lo fuerza para medirlo). En tu dev.96 el teclado grande se había abierto **32 veces** durante la prueba por los toques en campos de texto de la página; `_libre()` lo cerraba cada vez, pero costaba tiempo y ensuciaba el resultado. «Interferencias» ahora solo salta si de verdad alguien toca la pantalla.
 - Resultado de dev.96 en tu equipo: **pantalla completa automática funciona** (⛶ del vídeo, F11, tocar dentro y salir), zoom, scroll, teclado 12/12 (modo `lock` + `remap`), «tocar un texto abre el teclado» bien. Quedan: desplazar con el dedo en un desplegable largo (Firefox) y el experimento de la lista emergente.
