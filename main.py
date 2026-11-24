@@ -48,6 +48,10 @@ try:
 except ImportError:
     qam_self = None
 try:
+    import qam_trace
+except ImportError:
+    qam_trace = None
+try:
     import qam_channel
 except ImportError:
     qam_channel = None
@@ -129,7 +133,7 @@ class Plugin:
             decky.logger.error(f"canal: {exc}")
         try:  # mando como ratón para las apps de escritorio (0.54 dev.26): duerme sin lanzar nada mientras no haya una app delante
             if qam_pad is not None:
-                self._pad = qam_pad.PadRunner(self._pad_ours, self._pad_env, self._pad_log, self._pad_enabled, event=self._tl_combo, touch=self._touch_cfg)
+                self._pad = qam_pad.PadRunner(self._pad_ours, self._pad_env, self._pad_log, self._pad_enabled, event=self._tl_combo, touch=self._touch_cfg, trace=self._trace_obj())
                 self._spawn(self._pad.run())
             if qam_blackbox is not None and qam_pad is not None:
                 self._spawn(self._wd_loop())
@@ -167,7 +171,19 @@ class Plugin:
         decky.logger.info("QAM Rail descargado")
 
     # ---- Mando como ratón (dev.26) ----
+    def _trace_obj(self):
+        """La grabadora de navegación (qam_trace.Trace), creada una vez."""
+        if qam_trace is None:
+            return None
+        t = getattr(self, "_trace_v", None)
+        if t is None:
+            t = self._trace_v = qam_trace.Trace(_path("nav-trace.log"))
+        return t
+
     def _pad_log(self, text: str) -> None:
+        tr = getattr(self, "_trace_v", None)
+        if tr is not None and tr.on:
+            tr.add("pad", t=text[:160])
         try:
             with open(_path("pad.log"), "a", encoding="utf-8") as fh:
                 fh.write(time.strftime("%H:%M:%S ") + text + "\n")
@@ -218,6 +234,35 @@ class Plugin:
             self._touch_why = tag
             self._pad_log("táctil: " + (f"en pausa — {why}" if why else tag))
         return res
+
+    async def nav_trace(self, on=None, mark=None) -> dict:
+        """Grabadora de navegación (Más › Pruebas y herramientas): `on` la enciende/apaga, `mark` anota «esto fue lento» con la hora. Devuelve el estado."""
+        t = self._trace_obj()
+        if t is None:
+            return {"ok": False, "error": "no disponible"}
+        if on is True and not t.on:
+            t.start()
+            self._spawn(self._trace_loop())
+        elif on is False:
+            t.stop()
+        if mark and t.on:
+            t.add("MARCA", t=str(mark)[:80])
+        t.flush()
+        return {"ok": True, "on": t.on, "lines": t.lines, "secs": int(time.time() - t.t0) if t.on else 0, "path": t.path}
+
+    async def _trace_loop(self) -> None:
+        """Una muestra por segundo (carga y procesos) mientras la grabadora está encendida; a los 15 minutos la apaga."""
+        t = self._trace_obj()
+        while t is not None and t.on:
+            try:
+                await asyncio.get_event_loop().run_in_executor(None, t.sample)
+                if t.expired():
+                    t.stop()
+                    break
+                t.flush()
+            except Exception:  # noqa: BLE001 - la grabadora nunca debe afectar al resto
+                pass
+            await asyncio.sleep(1.0)
 
     async def pad_touch(self, on=None, full=None, text=None) -> dict:
         """Táctil en las apps de escritorio: «on» (scroll con el dedo y gestos de dos dedos) y «full» (toque, mantener y arrastrar los hacemos nosotros)."""
@@ -975,6 +1020,9 @@ class Plugin:
             return 127, "", str(e)[:120]
 
     def _tag_log(self, text: str) -> None:
+        tr = getattr(self, "_trace_v", None)
+        if tr is not None and tr.on:
+            tr.add("app", t=text.strip()[:160])
         try:
             with open(_path("desktop-tag.log"), "a", encoding="utf-8") as fh:
                 fh.write(time.strftime("%H:%M:%S ") + text + "\n")
@@ -1224,6 +1272,7 @@ class Plugin:
         `mods` (ctrl, alt, shift) solo con una tecla suelta: Ctrl+A, Ctrl+C, Ctrl+V… En el registro NUNCA se anota lo escrito."""
         if qam_pad is None or qam_desktop is None:
             return {"ok": False, "error": "no disponible"}
+        t_key = time.perf_counter()
         try:
             x = await self._kx()
             wid = self._front_wid(x)
@@ -1250,6 +1299,9 @@ class Plugin:
                 else:
                     ok = False
             x.flush()
+            tr = getattr(self, "_trace_v", None)
+            if tr is not None and tr.on:
+                tr.add("tecla", n=len(str(text)) if text else 1, ms=(time.perf_counter() - t_key) * 1000, ok=ok)   # nunca lo escrito
             n = getattr(self, "_kx_n", 0)
             if n < 40 or not ok:
                 self._kx_n = n + 1
@@ -1263,6 +1315,9 @@ class Plugin:
     # ---- Caja negra (dev.39): línea de tiempo en timeline.log, vigilante de casos raros y «Reparar» ----
     def _tl(self, ev: str, **data) -> None:
         """Una línea JSON en timeline.log (300 KB; el anillo en memoria da el contexto de las anomalías). Nunca recibe lo que se escribe."""
+        tr = getattr(self, "_trace_v", None)
+        if tr is not None and tr.on:
+            tr.add("caja." + ev, **{k: v for k, v in data.items() if isinstance(v, (int, float, str, bool))})
         if qam_blackbox is None:
             return
         try:

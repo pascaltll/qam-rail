@@ -19,6 +19,7 @@ import { QamAppOptions, QamStore } from "./QamAppsCard";
 import { QamDesktopApps } from "./QamDesktopApps";
 import { OpenAppsStrip } from "./QamOpenApps";
 import { QamChannelCard } from "./QamChannel";
+import { NavTraceCard } from "./QamNavTrace";
 import { QamSelfUpdateCard } from "./QamSelfUpdate";
 import { BluetoothCard, WifiCard } from "./QamNetwork";
 import { DeckyCard, StoreColumn } from "./QamDecky";
@@ -542,6 +543,7 @@ export const QamApp: FC<{ log: (m: string) => void; onNative: (tab?: number) => 
           {/* Lo que se usa poco, plegado: una sola parada de mando en vez de dos. */}
           <Fold label="Pruebas y herramientas" hint={mods.length ? `módulos: ${mods.map((m) => m.name).join(", ")}` : "diagnóstico, prueba de CPU"} icon={MORE_ICON.tests}>
             <Shortcut icon={<ShortIcon d={MORE_ICON.tests} />} label="Pruebas y diagnóstico" hint="probar, aislar, informe" onOpen={() => setDiag(true)} />
+            <NavTraceCard notify={notify} />
             <Shortcut icon={<ShortIcon d={ICONS.bolt} />} label="Prueba de CPU por vatios" onOpen={() => { setBench(true); setSection("energy"); window.setTimeout(() => focusBody(), 90); }} />
           </Fold>
         </>

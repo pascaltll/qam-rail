@@ -1,5 +1,8 @@
 # Cambios
 
+## dev.69
+- **Grabadora de navegación** (Más › Pruebas y herramientas › «Grabar navegación»): al encenderla apunta en `nav-trace.log` (en la carpeta de ajustes), con hora al milisegundo: dedo abajo/arriba (duración, si se movió, si fue arrastre), cada clic enviado y lo que tardó, ruedas por medio segundo, paradas del lector de más de 100 ms, ida y vuelta a X cada segundo (con la ventana que tiene el foco), el cursor visto tras cada toque, carga media y CPU/memoria de Edge/Firefox/steamwebhelper/gamescope/mangoapp, teclas enviadas (cuántas y cuánto tardó, **nunca qué**), líneas de `pad.log`, avisos de la caja negra (overlay, panel, teclado). Con la grabadora encendida salen chips «Fue lento · No respondió · No abrió · Scroll mal» que dejan una `MARCA` con la hora para saber qué momento mirar. Se apaga sola a los 15 min; cada grabación empieza limpia; tope 1,5 MB. Apagada no cuesta nada. Para enviarla: `tail -n 400 ~/homebrew/settings/qam-rail-dev/nav-trace.log`.
+
 ## dev.68
 - **Menús y desplegables del navegador que «a veces no abren» (modo táctil completo):** el toque mandaba mover + pulsar + soltar de golpe; GTK (Firefox, Edge) a veces aún no había visto llegar el puntero cuando ya recibía la pulsación, o la soltaba antes de abrir el menú. Ahora hay 30 ms entre colocar el puntero y pulsar, y 50 ms entre pulsar y soltar (`TAP_GAP_MOVE`/`TAP_GAP_HOLD`). Los arrastres no cambian. [H] causa sin confirmar en el equipo.
 - Recordatorio: el teclado al tocar un texto necesita activar «Tocar un texto abre el teclado» (Apps › Escritorio); en `touch-scroll.json` debe salir `"text": true`.

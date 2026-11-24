@@ -539,6 +539,7 @@ class TouchScroll:
         self.g = None                # gesto de dos dedos: estado
         self.zoom = 0
         self.fling = (0.0, 0.0)
+        self.tr = None   # grabadora: tr(evento, **datos) o None
         self._reset()
 
     def _reset(self) -> None:
@@ -634,11 +635,15 @@ class TouchScroll:
         if on and not self.down:
             self.down = True
             self.suppress = max(abs(self.fling[0]), abs(self.fling[1])) > 80   # un toque que solo frena la inercia no hace clic
+            if self.tr:
+                self.tr("dedo.abajo", inercia=round(max(abs(self.fling[0]), abs(self.fling[1]))), frena=self.suppress)
             self.fling = (0.0, 0.0)   # un dedo nuevo detiene la inercia
             self._reset()
             self.t_down = now
         elif not on and self.down:
             self.down = False
+            if self.tr:
+                self.tr("dedo.arriba", ms=round((now - self.t_down) * 1000), movido=self.moved, arrastre=self.drag, mantenido=self.hold, completo=self.full)
             if self.full and self.start is not None:
                 self.poll(now)
                 if self.drag:
@@ -793,8 +798,12 @@ class PadRunner:
     TAP_GAP_MOVE = 0.03   # s entre colocar el puntero y pulsar (toque en modo completo)
     TAP_GAP_HOLD = 0.05   # s entre pulsar y soltar
 
-    def __init__(self, ours, env, log, enabled, event=None, touch=None):
+    def __init__(self, ours, env, log, enabled, event=None, touch=None, trace=None):
         self.ours_fn, self.env_fn, self.log, self.enabled_fn = ours, env, log, enabled
+        self.trace = trace   # qam_trace.Trace o None: la grabadora de navegación (apagada no cuesta nada)
+        self._tr_wheel = 0
+        self._tr_wheel_at = 0.0
+        self._tr_x_at = 0.0
         # touch() → None (apagado, o el panel/teclado está delante) o {} / {"ay":…} (correspondencia de ejes forzada)
         self.touch_fn = touch or (lambda: None)
         self._tfds: dict = {}       # event → fd de una pantalla táctil
@@ -902,6 +911,7 @@ class PadRunner:
                 continue
             cfg = self.touch_fn() or {}
             self._ts[ev] = TouchScroll(rx, ry, self._x.screen_size(), cfg or None, cfg.get("px"))
+            self._ts[ev].tr = self._tr
             self._tfds[ev] = fd
             loop.add_reader(fd, self._tread, ev)
             self.log(f"táctil: leyendo {ev} «{d['name']}» ejes {rx} × {ry}, pantalla {self._x.screen_size()}")
@@ -948,10 +958,17 @@ class PadRunner:
                     self.log(f"táctil: error al mandar la rueda: {e}")
                     return
 
+    def _tr(self, ev: str, **kv) -> None:
+        t = self.trace
+        if t is not None and t.on:
+            t.add(ev, **kv)
+
     def _touch_apply(self, ts: "TouchScroll") -> None:
         """Lo que el modo completo pide: colocar el puntero, pulsar/soltar botones y anotar (con tope) lo que hizo."""
         prev = None
-        for a in ts.take_actions():
+        t_apply = time.perf_counter()
+        acts = ts.take_actions()
+        for a in acts:
             # Un toque es mover → pulsar → soltar. Mandado todo de golpe, GTK (menús y desplegables de Firefox/Edge) a veces aún no ha visto
             # llegar el puntero cuando ya recibe la pulsación, o la suelta antes de abrir el menú: por eso «a veces no abren». Se deja un respiro.
             if a[0] == "down" and prev == "move":
@@ -976,6 +993,8 @@ class PadRunner:
                 self._tlogged += 1
                 self.log("táctil: " + a[1])
         self._x.flush()
+        if acts and self.trace is not None and self.trace.on:
+            self._tr("toque.enviado", acciones="/".join(str(a[0]) for a in acts if a[0] != "log"), ms=(time.perf_counter() - t_apply) * 1000)
 
     def _grab(self, want: bool) -> None:
         """Modo completo: agarrar (o soltar) la pantalla táctil para que gamescope no mande además su propio clic/arrastre."""
@@ -1165,6 +1184,15 @@ class PadRunner:
                     elif self._tfds:
                         self._close_touch()
                     scan_at = now + 2.0
+                tr = self.trace
+                if tr is not None and tr.on:
+                    if now - last > 0.1 and last:
+                        self._tr("parón.lector", ms=(now - last) * 1000)   # el bucle (60 Hz) tardó más de 100 ms en volver: algo lo frenó
+                    if self._x is not None and now >= self._tr_x_at:
+                        self._tr_x_at = now + 1.0
+                        t1 = time.perf_counter()
+                        fw = self._x.focus_window()
+                        self._tr("x.ida-vuelta", ms=(time.perf_counter() - t1) * 1000, foco=hex(fw))
                 if self._x is not None:
                     acts, dx, dy, wv, wh = self.mapper.tick(now - last, now)
                     try:
@@ -1185,6 +1213,7 @@ class PadRunner:
                             self._text_at = now + (0.3 if tries == 2 else 0.4) if tries > 0 else 0.0
                             if cfg and cfg.get("text"):
                                 is_t, why = self._x.cursor_is_text()
+                                self._tr("cursor.tras-toque", texto=is_t, visto=why)
                                 if is_t:
                                     self._text_at = 0.0
                                     self.log(f"táctil: cursor de texto ({why}) tras el toque → teclado grande")
@@ -1206,8 +1235,16 @@ class PadRunner:
                             if tz:
                                 self._x.zoom(tz)
                                 wv = wv or tz
+                        if wv or wh:
+                            self._tr_wheel += abs(wv) + abs(wh)
+                        if self._tr_wheel and now - self._tr_wheel_at >= 0.5:
+                            self._tr("rueda", clics=self._tr_wheel, en_ms=500)
+                            self._tr_wheel, self._tr_wheel_at = 0, now
                         if acts or dx or dy or wv or wh:
+                            t2 = time.perf_counter()
                             self._x.flush()
+                            if (time.perf_counter() - t2) > 0.02:
+                                self._tr("x.flush-lento", ms=(time.perf_counter() - t2) * 1000)
                     except Exception as e:  # noqa: BLE001
                         self.log(f"mando: error al mover: {e}")
                         self._x.close()
