@@ -9,6 +9,9 @@ import { PanelKeyboard } from "./QamKeyboard";
 import { solid } from "./color";
 import { COLORS } from "./ui";
 
+/** Alto de la barra de ayudas de Steam (MENÚ / ATRÁS) que va por encima de cualquier ruta: sin este margen tapa la fila de la barra espaciadora. */
+export const STEAM_FOOTER = 48;
+
 export const BigKeyboardPage: FC = () => {
   // Si la ruta aparece sin que nosotros la abriéramos (entrada vieja del historial de Steam al cerrar con B: se vio el teclado «sin overlay»), se sale de ella.
   const stale = useRef(!isBigKeyboardOpen()).current;
@@ -31,7 +34,7 @@ export const BigKeyboardPage: FC = () => {
   useEffect(() => { if (stale) return undefined; kbNote("teclado grande: abierto"); qamEvent("kb.abre").catch(() => undefined); return () => { kbNote("teclado grande: cerrado"); qamEvent("kb.cierra").catch(() => undefined); closeBigKeyboard(); }; }, []);
   if (stale) return <div />;
   return (
-    <div ref={ref} style={{ position: "fixed", inset: 0, background: "transparent", display: "flex", flexDirection: "column", justifyContent: "flex-end" }}>
+    <div ref={ref} style={{ position: "fixed", inset: `0 0 ${STEAM_FOOTER}px 0`, background: "transparent", display: "flex", flexDirection: "column", justifyContent: "flex-end" }}>
       <div style={{ padding: "6px 10px 8px", background: solid(COLORS.panel), boxShadow: "0 -6px 18px rgba(0,0,0,0.45)", display: "flex", flexDirection: "column", gap: 3 }}>
         <PanelKeyboard onClose={closeBigKeyboard} />
       </div>

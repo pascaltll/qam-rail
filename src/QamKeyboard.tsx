@@ -84,7 +84,7 @@ export const PanelKeyboard: FC<{ notify?: (t: string) => void; onClose?: () => v
           {err || buf || <span style={{ color: COLORS.muted }}>Lo que escribas aparece aquí y se manda a la app</span>}
           {!err && <span style={{ color: COLORS.muted }}>▏</span>}
         </div>
-        <span style={{ fontSize: 11, color: COLORS.muted, whiteSpace: "nowrap", fontFamily: "inherit" }}>X borrar · Menú espacio · Start Intro · B cerrar</span>
+        <span style={{ fontSize: 13, color: COLORS.muted, whiteSpace: "nowrap", fontFamily: "inherit" }}>X borrar · Menú espacio · Start Intro · B cerrar</span>
         {onClose && <Chip compact grow={false} onClick={onClose}>✕ Cerrar</Chip>}
       </div>
       {row([...ROWS[0].map((k) => ch(k)), rep(2, big("⌫"), "BackSpace")], "r1")}

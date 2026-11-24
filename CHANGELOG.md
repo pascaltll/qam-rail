@@ -1,5 +1,9 @@
 # Cambios
 
+## dev.93
+- **Teclado grande: ya no queda tapado por la barra de Steam.** En tu foto la fila de abajo (Ctrl, AltGr, **barra espaciadora** y flechas) quedaba debajo de la barra de ayudas de Steam («MENÚ / ATRÁS»). Ahora el teclado se apoya 48 px más arriba (`STEAM_FOOTER` en `BigKeyboardPage.tsx`; si ves que sobra o falta, es un solo número). Los consejos de los botones de la cabecera pasan de 11 a 13 px.
+- Pendiente (diseño tipo Xbox): cuadrícula alineada en vertical, página de símbolos/números, Y = espacio, LT/RT = Mayús/símbolos.
+
 ## dev.92
 - **Pantalla completa: diagnóstico.** En tu equipo dev.91 conectó («escuchando las peticiones de los navegadores») pero no hubo ninguna línea de petición, así que se anotan ahora **todos los mensajes que llegan a la raíz de X** que no sean la petición esperada (`pad.log`: «pantalla completa: mensaje de 0x…: nombre acción=n …», hasta 40). Con eso se ve si Firefox manda otra cosa, o nada.
 
