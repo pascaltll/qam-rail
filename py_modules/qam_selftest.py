@@ -194,6 +194,7 @@ class SelfTest:
         self.title = title or (lambda: "")   # título de la ventana del navegador (para el diagnóstico)
         self.setfs_cb = setfs
         self.setmode = setmode               # setmode(mod=None, ch=None, save=False): cambia/guarda cómo se aplican Ctrl/Mayús en el teclado de QAM
+        self.modo = {"mod": "keys", "ch": "levels"}   # último modo aplicado (lo mantiene _sm)
         self.opener = opener                 # abre una URL en el navegador por el sistema (xdg-open): no depende de la barra de direcciones
         self.opened = False                  # abrimos una pestaña para la prueba: al acabar se cierra
         self.probe = Probe()
@@ -492,32 +493,32 @@ class SelfTest:
         tried: list = []
         mod = None
         for m in ("keys", "slow", "lock"):
-            self.setmode(mod=m)
+            self._sm(mod=m)
             good = await self._prueba_ctrl()
             tried.append(f"{m}:{'sí' if good else 'no'}")
             if good:
                 mod = m
                 break
         if mod is None:
-            self.setmode(mod="keys")
+            self._sm(mod="keys")
             self.res("atajos con Ctrl", False, "ninguna forma de aplicar Ctrl funcionó (" + ", ".join(tried) + ")")
-            self.setmode(ch="levels")
+            self._sm(ch="levels")
         else:
             self.res("atajos con Ctrl", True, f"Ctrl llega con el modo «{mod}»" + (f" (probé: {', '.join(tried)})" if len(tried) > 1 else ""))
         chm = None
         for c in ("levels", "remap"):
-            self.setmode(ch=c)
+            self._sm(ch=c)
             good = await self._prueba_simbolos()
             if good:
                 chm = c
                 break
         if chm is None:
-            self.setmode(ch="levels")
+            self._sm(ch="levels")
             self.res("mayúsculas y símbolos", False, "ni con Mayús ni prestando una tecla llegó «Ab:/_9»")
         else:
             self.res("mayúsculas y símbolos", True, f"escribió «Ab:/_9» con el modo «{chm}»")
         if mod is not None and chm is not None:
-            self.setmode(save=True)   # se queda para el uso normal
+            self._sm(save=True)   # se queda para el uso normal
         await self._vaciar()
 
     # ---- batería de teclado (dev.86): todo lo que se escribe con el teclado de QAM, caso por caso, con lo que salió
@@ -624,6 +625,23 @@ class SelfTest:
         await caso("Mayús+flechas (seleccionar)", "inp", seleccion, "abQ")
         return out
 
+    def _sm(self, mod=None, ch=None, save=False):
+        """setmode que además recuerda el modo actual (para volver a él si ninguna otra combinación mejora)."""
+        modo = self.modo
+        if mod:
+            modo["mod"] = mod
+        if ch:
+            modo["ch"] = ch
+        return self.setmode(mod=mod, ch=ch, save=save)
+
+    @staticmethod
+    def _dif(esperado: str, obtenido) -> str:
+        """Dónde empieza la diferencia: «esperado …xyz» / «salió …xwz» con unos caracteres de contexto."""
+        e, o = str(esperado), str(obtenido)
+        i = next((k for k in range(min(len(e), len(o))) if e[k] != o[k]), min(len(e), len(o)))
+        a = max(0, i - 8)
+        return f"difiere en el carácter {i + 1} (esperado «{e[a:i + 12]}», salió «{o[a:i + 12]}»; largo {len(e)} → {len(o)})"
+
     async def s_teclado(self) -> None:
         """Batería completa del teclado de QAM con el modo actual. Si algo falla, prueba todas las combinaciones de modos y deja el mejor (queda guardado)."""
         if not self.rects.get("ta"):
@@ -634,24 +652,33 @@ class SelfTest:
         cps = max((len(b[2]) * 1000 / b[4]) for b in base if b[1] and b[4] > 0) if any(b[1] and b[4] > 0 for b in base) else 0
         det = f"{total - len(fallos)} de {total} casos bien" + (f"; escribe ~{cps:.0f} caracteres/s" if cps else "")
         if fallos:
-            det += " — fallan: " + "; ".join(f"{b[0]} (esperado «{b[2][:24]}», salió «{str(b[3])[:24]}»)" for b in fallos[:6])
+            det += " — fallan: " + "; ".join(f"{b[0]}: {self._dif(b[2], b[3])}" for b in fallos[:6])
         self.res("teclado: batería completa", not fallos, det)
         if not fallos or not self.setmode:
             return
-        # Matriz: cada forma de aplicar Ctrl y de escribir símbolos, con la misma batería; gana la que más casos pasa
+        # Matriz: cada forma de aplicar Ctrl y de escribir símbolos, con la misma batería. Solo se cambia de modo si alguna
+        # combinación mejora CLARAMENTE lo que ya había (antes un empate o un resultado peor podía estropear un modo bueno).
+        actual = (self.modo["mod"], self.modo["ch"])
+        base_bien = total - len(fallos)
         marcador = []
         for m in ("keys", "slow", "lock"):
             for c in ("levels", "remap"):
-                self.setmode(mod=m, ch=c)
+                self._sm(mod=m, ch=c)
                 r = await self._bateria()
                 bien = sum(1 for b in r if b[1])
                 marcador.append((bien, m, c, [b[0] for b in r if not b[1]]))
-        marcador.sort(key=lambda t: (-t[0], 0 if t[1] == "lock" else 1))
+        marcador.sort(key=lambda t: (-t[0], 0 if (t[1], t[2]) == actual else 1, 0 if t[1] == "lock" else 1))
         mejor = marcador[0]
-        self.setmode(mod=mejor[1], ch=mejor[2], save=True)
+        if mejor[0] > base_bien:
+            elegido = mejor
+        else:
+            elegido = (base_bien, actual[0], actual[1], [b[0] for b in fallos])
+        self._sm(mod=elegido[1], ch=elegido[2], save=True)
         tabla = " | ".join(f"{m}+{c}: {b}/{total}" for b, m, c, _ in sorted(marcador, key=lambda t: (t[1], t[2])))
-        self.res("teclado: mejor combinación", mejor[0] >= total - 1,
-                 f"se queda «{mejor[1]}» + «{mejor[2]}» ({mejor[0]}/{total}). Todas: {tabla}" + (f". Sigue fallando: {', '.join(mejor[3])}" if mejor[3] else ""))
+        cambio = "cambia a" if elegido is mejor else "se queda en"
+        self.res("teclado: mejor combinación", elegido[0] >= total - 1,
+                 f"{cambio} «{elegido[1]}» + «{elegido[2]}» ({elegido[0]}/{total}; al empezar {base_bien}/{total} con «{actual[0]}» + «{actual[1]}»). Todas: {tabla}"
+                 + (f". Sigue fallando: {', '.join(elegido[3])}" if elegido[3] else ""))
 
     async def s_select(self) -> None:
         x, y = self.scr("sel")

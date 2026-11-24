@@ -1,5 +1,12 @@
 # Cambios
 
+## dev.90
+- **Teclado: la autoprueba ya no empeora un modo bueno.** En tu equipo la batería empezó con 11/12 (Ctrl «lock» + símbolos «remap»), la matriz dio 10/12 en las dos combinaciones con «lock» (con ruido: cada modo deja el teclado en un estado distinto) y se guardó «lock + levels», peor que lo que había. Ahora la matriz solo cambia de modo si alguna combinación **mejora** el resultado inicial; si empata o es peor, se queda con el modo de antes (y lo dice: «se queda en … (al empezar 11/12)»).
+- **Los fallos del teclado dicen dónde difieren**: «difiere en el carácter 45 (esperado «…», salió «…»; largo 80 → 79)». Antes cortaba a 24 caracteres y «texto largo» parecía igual de bien.
+- Reagarre del táctil más rápido y sin falso «parón.lector» tras estar el mando inactivo (espera 0,3 → 0,1 s).
+- Resultado de dev.88 en tu equipo (Firefox): **«tocar un texto abre el teclado grande» funciona**: campo de texto 225 ms, cuadro de texto 227 ms, el botón no lo abre. Se reconoce el cursor por su nombre (`qam-text`).
+- Sigue fallando en Firefox (pendiente): pantalla completa del vídeo y F11 (el experimento de poner el estado de la ventana sí funciona: falta automatizarlo) y elegir con el dedo en un desplegable largo (la lista no es una ventana de X).
+
 ## dev.89
 - **Sin cambios de comportamiento: limpieza del código del mando y del diagnóstico**, con red de tests. `PadRunner._read` (complejidad 42 → 10) y `PadRunner.run` (59 → 5) se trocean en funciones pequeñas (`_key_event`, `_abs_event`, `_step`, `_output_tick`, `_text_check`…); `Plugin._forensics` (46 → 19) deja su análisis puro en `py_modules/qam_forensics.py`.
 - Tests nuevos: `test_read.py`, `test_step.py`, `test_forensics.py`, `test_main_forensics.py` (el primero que carga `main.py` para probar `_forensics`).
