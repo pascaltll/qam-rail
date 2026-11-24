@@ -1,5 +1,10 @@
 # Cambios
 
+## dev.97
+- **La autoprueba apaga «tocar un texto abre el teclado» mientras corre** (solo su paso propio lo fuerza para medirlo). En tu dev.96 el teclado grande se había abierto **32 veces** durante la prueba por los toques en campos de texto de la página; `_libre()` lo cerraba cada vez, pero costaba tiempo y ensuciaba el resultado. «Interferencias» ahora solo salta si de verdad alguien toca la pantalla.
+- Resultado de dev.96 en tu equipo: **pantalla completa automática funciona** (⛶ del vídeo, F11, tocar dentro y salir), zoom, scroll, teclado 12/12 (modo `lock` + `remap`), «tocar un texto abre el teclado» bien. Quedan: desplazar con el dedo en un desplegable largo (Firefox) y el experimento de la lista emergente.
+- «teclado: mejor combinación» dice «se queda en» cuando la mejor combinación es el modo de antes.
+
 ## dev.96
 - **La autoprueba no se queda sin resultado.** Se paraba a los **300 s** (el aviso decía «2 minutos»): desde que la batería del teclado repite la matriz de modos, la prueba dura más de 5 minutos y al pasarse perdía **todo** el resultado (`selftest.json` quedaba con el de antes; por eso en tu equipo no avanzaba a las 12:12 ni a las 11:55). Ahora el límite es de 15 minutos, y si se pasa se guardan los pasos que ya hizo.
 - **La matriz del teclado es más corta:** si «atajos con Ctrl» ya encontró un modo que funciona, solo se compara cómo salen los símbolos (2 pruebas en vez de 6, ~1 min en vez de ~4).

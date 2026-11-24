@@ -297,6 +297,10 @@ class SelfTest:
         self.ts.full = self.ts.force_full = True
         self.ts.tr = self.r._tr
         self.r._ts["selftest"] = self.ts
+        # «Tocar un texto abre el teclado grande» (si el usuario lo tiene activado) abriría el teclado de verdad con cada toque en un campo de la página
+        # y pondría el táctil en pausa: durante la prueba se apaga (solo `s_texto_teclado` lo fuerza para medirlo y capturar el aviso)
+        touch_orig = self.r.touch_fn
+        self.r.touch_fn = lambda: (lambda c: None if c is None else dict(c, text=False))(touch_orig())
         await self.probe.start()
         try:
             if await self.s_cargar(W, H) and await self.s_calibrar(W, H):
@@ -313,6 +317,7 @@ class SelfTest:
                     await asyncio.sleep(0.3)
             except Exception:  # noqa: BLE001
                 pass
+            self.r.touch_fn = touch_orig
             try:
                 self.r._ts.pop("selftest", None)
                 self.r._pend_run(time.monotonic(), force=True)
