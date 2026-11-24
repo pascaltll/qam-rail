@@ -258,4 +258,29 @@ assert not q.looks_like_ibeam(7, 10, ARROW)
 NS = _rows(["...#...", "..###..", ".#####.", "...#...", "...#...", "...#...", ".#####.", "..###..", "...#..."])
 assert not q.looks_like_ibeam(7, 9, NS)
 assert not q.looks_like_ibeam(3, 3, _rows(["###", ".#.", "###"]))
+# toques encolados (dev.70): el respiro entre mover/pulsar/soltar no duerme el bucle, y al cerrar no queda un botón pulsado
+class FakeX:
+    def __init__(self): self.ev = []
+    def move_abs(self, x, y): self.ev.append(("move", x, y))
+    def button(self, b, d): self.ev.append(("down" if d else "up", b))
+    def flush(self): self.ev.append(("flush",))
+class FakeTS:
+    def __init__(self, acts): self.a = acts
+    def take_actions(self): a, self.a = self.a, []; return a
+import time as _t
+pr = q.PadRunner(lambda: set(), None, lambda t: None, lambda: True)
+pr._x = FakeX()
+t0 = _t.monotonic()
+pr._touch_apply(FakeTS([("move", 5, 6), ("down", 1), ("up", 1), ("log", "x"), ("tap", 5, 6)]))
+assert _t.monotonic() - t0 < 0.01 and [e for e in pr._x.ev if e[0] != "flush"] == [("move", 5, 6)]   # solo el movimiento, sin dormir
+pr._pend_run(_t.monotonic() + 0.025)
+assert ("down", 1) in pr._x.ev and ("up", 1) not in pr._x.ev
+pr._pend_run(_t.monotonic() + 0.2)
+assert ("up", 1) in pr._x.ev and not pr._pend and pr._pend_end == 0.0
+# cierre con un «down» enviado y el «up» aún pendiente: se suelta al instante
+pr._x.ev.clear()
+pr._touch_apply(FakeTS([("move", 1, 1), ("down", 1), ("up", 1)]))
+pr._pend_run(_t.monotonic() + 0.025)
+pr._pend_run(_t.monotonic(), force=True)
+assert [e for e in pr._x.ev if e[0] in ("down", "up")] == [("down", 1), ("up", 1)] and not pr._pend
 print("test_touch OK")

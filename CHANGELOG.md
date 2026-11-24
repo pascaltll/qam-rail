@@ -1,5 +1,9 @@
 # Cambios
 
+## dev.70
+- **Corrección de dev.68 (visto en la grabadora):** el respiro entre mover, pulsar y soltar se hacía con `time.sleep`, y eso paraba el bucle (y la lectura del táctil) ~80 ms por toque: en tu grabación cada toque salía con `toque.enviado ms=80.8`, y de 11 toques seguidos 3 no llegaron a clic —los dedos que caían mientras el bucle dormía se procesaban tarde y con los tiempos aplastados—. Ahora los pasos se encolan con su hora y los ejecuta el bucle sin dormir; el respiro baja a 20 ms (mover→pulsar) y 40 ms (pulsar→soltar). Si el panel o el teclado se abren con un toque a medias, el botón se suelta al instante.
+- Grabadora: cada `dedo.arriba` anota ahora `inicio`, `suprime` y `segundo` (para saber por qué un toque no hizo clic), y `toque.enviado` mide `desde_el_dedo_ms` (de levantar el dedo a soltar el clic).
+
 ## dev.69
 - **Grabadora de navegación** (Más › Pruebas y herramientas › «Grabar navegación»): al encenderla apunta en `nav-trace.log` (en la carpeta de ajustes), con hora al milisegundo: dedo abajo/arriba (duración, si se movió, si fue arrastre), cada clic enviado y lo que tardó, ruedas por medio segundo, paradas del lector de más de 100 ms, ida y vuelta a X cada segundo (con la ventana que tiene el foco), el cursor visto tras cada toque, carga media y CPU/memoria de Edge/Firefox/steamwebhelper/gamescope/mangoapp, teclas enviadas (cuántas y cuánto tardó, **nunca qué**), líneas de `pad.log`, avisos de la caja negra (overlay, panel, teclado). Con la grabadora encendida salen chips «Fue lento · No respondió · No abrió · Scroll mal» que dejan una `MARCA` con la hora para saber qué momento mirar. Se apaga sola a los 15 min; cada grabación empieza limpia; tope 1,5 MB. Apagada no cuesta nada. Para enviarla: `tail -n 400 ~/homebrew/settings/qam-rail-dev/nav-trace.log`.
 

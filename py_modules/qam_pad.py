@@ -643,7 +643,7 @@ class TouchScroll:
         elif not on and self.down:
             self.down = False
             if self.tr:
-                self.tr("dedo.arriba", ms=round((now - self.t_down) * 1000), movido=self.moved, arrastre=self.drag, mantenido=self.hold, completo=self.full)
+                self.tr("dedo.arriba", ms=round((now - self.t_down) * 1000), movido=self.moved, arrastre=self.drag, mantenido=self.hold, completo=self.full, inicio=self.start is not None, suprime=self.suppress, segundo=self.second)
             if self.full and self.start is not None:
                 self.poll(now)
                 if self.drag:
@@ -795,12 +795,14 @@ class PadRunner:
     """Con una app de escritorio delante, lee el mando y manda ratón/teclado. `ours()` da los identificadores de las apps de escritorio abiertas;
     `env()` (async) da (DISPLAY, XAUTHORITY). El primer plano se lee de la propiedad de X con una conexión propia: sin lanzar procesos."""
 
-    TAP_GAP_MOVE = 0.03   # s entre colocar el puntero y pulsar (toque en modo completo)
-    TAP_GAP_HOLD = 0.05   # s entre pulsar y soltar
+    TAP_GAP_MOVE = 0.02   # s entre colocar el puntero y pulsar (toque en modo completo)
+    TAP_GAP_HOLD = 0.04   # s entre pulsar y soltar
 
     def __init__(self, ours, env, log, enabled, event=None, touch=None, trace=None):
         self.ours_fn, self.env_fn, self.log, self.enabled_fn = ours, env, log, enabled
         self.trace = trace   # qam_trace.Trace o None: la grabadora de navegación (apagada no cuesta nada)
+        self._pend: list = []        # pasos de toque pendientes: (cuándo, acción, cuándo se pidió)
+        self._pend_end = 0.0
         self._tr_wheel = 0
         self._tr_wheel_at = 0.0
         self._tr_x_at = 0.0
@@ -964,37 +966,56 @@ class PadRunner:
             t.add(ev, **kv)
 
     def _touch_apply(self, ts: "TouchScroll") -> None:
-        """Lo que el modo completo pide: colocar el puntero, pulsar/soltar botones y anotar (con tope) lo que hizo."""
-        prev = None
-        t_apply = time.perf_counter()
+        """Lo que el modo completo pide: colocar el puntero, pulsar/soltar botones y anotar (con tope) lo que hizo.
+        Un toque es mover → pulsar → soltar con un respiro entre cada paso (GTK, en menús y desplegables de Firefox/Edge, a veces aún no ha visto
+        llegar el puntero cuando ya recibe la pulsación). El respiro NO se duerme (dev.68 lo hacía y paraba el lector 80 ms por toque: los toques
+        siguientes llegaban tarde o se perdían): los pasos se encolan con su hora y los ejecuta el bucle."""
         acts = ts.take_actions()
+        if not acts:
+            return
+        now = time.monotonic()
+        t = max(now, self._pend_end)
+        prev = None
         for a in acts:
-            # Un toque es mover → pulsar → soltar. Mandado todo de golpe, GTK (menús y desplegables de Firefox/Edge) a veces aún no ha visto
-            # llegar el puntero cuando ya recibe la pulsación, o la suelta antes de abrir el menú: por eso «a veces no abren». Se deja un respiro.
             if a[0] == "down" and prev == "move":
-                self._x.flush()
-                time.sleep(self.TAP_GAP_MOVE)
+                t += self.TAP_GAP_MOVE
             elif a[0] == "up" and prev == "down":
-                self._x.flush()
-                time.sleep(self.TAP_GAP_HOLD)
+                t += self.TAP_GAP_HOLD
             prev = a[0]
+            self._pend.append((t, a, now))
+        self._pend_end = t
+        self._pend_run(now)
+
+    def _pend_run(self, now: float, force: bool = False) -> None:
+        """Ejecuta los pasos de toque que ya tocan (todos, si `force`: al cerrar, para no dejar un botón pulsado)."""
+        if not self._pend or self._x is None:
+            if self._x is None:
+                self._pend.clear()
+            return
+        did = False
+        while self._pend and (force or self._pend[0][0] <= now):
+            _t, a, t_enq = self._pend.pop(0)
+            did = True
             if a[0] == "move":
                 self._x.move_abs(a[1], a[2])
             elif a[0] == "down":
                 self._x.button(a[1], True)
             elif a[0] == "up":
                 self._x.button(a[1], False)
+                self._tr("toque.enviado", desde_el_dedo_ms=(time.monotonic() - t_enq) * 1000)
             elif a[0] == "kb":
                 self.log("táctil: dos dedos → teclado grande")
                 self.event("kb.combo")
             elif a[0] == "tap":
-                self._text_at = time.monotonic() + 0.15; self._text_tries = 3   # mirar luego qué cursor hay: si es de texto y está activado, se abre el teclado
+                self._text_at = time.monotonic() + 0.15
+                self._text_tries = 3   # mirar luego qué cursor hay: si es de texto y está activado, se abre el teclado
             elif a[0] == "log" and self._tlogged < 40:
                 self._tlogged += 1
                 self.log("táctil: " + a[1])
-        self._x.flush()
-        if acts and self.trace is not None and self.trace.on:
-            self._tr("toque.enviado", acciones="/".join(str(a[0]) for a in acts if a[0] != "log"), ms=(time.perf_counter() - t_apply) * 1000)
+        if not self._pend:
+            self._pend_end = 0.0
+        if did:
+            self._x.flush()
 
     def _grab(self, want: bool) -> None:
         """Modo completo: agarrar (o soltar) la pantalla táctil para que gamescope no mande además su propio clic/arrastre."""
@@ -1011,6 +1032,10 @@ class PadRunner:
                 self.log(f"táctil: no se pudo {'agarrar' if want else 'soltar'} {ev}: {e}")
 
     def _close_touch(self) -> None:
+        try:
+            self._pend_run(time.monotonic(), force=True)   # que no quede un botón pulsado
+        except Exception:  # noqa: BLE001
+            self._pend.clear()
         loop = asyncio.get_event_loop()
         for ev, fd in list(self._tfds.items()):
             try:
@@ -1193,6 +1218,12 @@ class PadRunner:
                         t1 = time.perf_counter()
                         fw = self._x.focus_window()
                         self._tr("x.ida-vuelta", ms=(time.perf_counter() - t1) * 1000, foco=hex(fw))
+                if self._pend:
+                    try:
+                        self._pend_run(now)
+                    except Exception as e:  # noqa: BLE001
+                        self._pend.clear()
+                        self.log(f"táctil: error al enviar el toque: {e!r}")
                 if self._x is not None:
                     acts, dx, dy, wv, wh = self.mapper.tick(now - last, now)
                     try:
