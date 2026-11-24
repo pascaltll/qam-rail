@@ -148,6 +148,36 @@ class Finger:
         return [(q.EV_ABS, q.ABS_MT_TRACKING_ID, -1), (q.EV_SYN, 0, 0)]
 
 
+class Hands:
+    """Dos dedos (ranuras 0 y 1) para el zoom y el desplazamiento con dos dedos."""
+
+    def __init__(self):
+        self.last = [[None, None], [None, None]]
+        self.tid = 200
+
+    def _slot(self, n: int, x: int, y: int, new: bool) -> list:
+        ev = [(q.EV_ABS, q.ABS_MT_SLOT, n)]
+        if new:
+            self.tid += 1
+            ev.append((q.EV_ABS, q.ABS_MT_TRACKING_ID, self.tid))
+        if new or x != self.last[n][0]:
+            ev.append((q.EV_ABS, q.ABS_MT_POSITION_X, int(x)))
+        if new or y != self.last[n][1]:
+            ev.append((q.EV_ABS, q.ABS_MT_POSITION_Y, int(y)))
+        self.last[n] = [int(x), int(y)]
+        return ev
+
+    def down(self, a: tuple, b: tuple) -> list:
+        return [*self._slot(0, *a, True), *self._slot(1, *b, True), (q.EV_SYN, 0, 0)]
+
+    def move(self, a: tuple, b: tuple) -> list:
+        return [*self._slot(0, *a, False), *self._slot(1, *b, False), (q.EV_SYN, 0, 0)]
+
+    @staticmethod
+    def up() -> list:
+        return [(q.EV_ABS, q.ABS_MT_SLOT, 0), (q.EV_ABS, q.ABS_MT_TRACKING_ID, -1), (q.EV_ABS, q.ABS_MT_SLOT, 1), (q.EV_ABS, q.ABS_MT_TRACKING_ID, -1), (q.EV_SYN, 0, 0)]
+
+
 def fit_axis(p1: float, p2: float, c1: float, c2: float):
     """Correspondencia lineal pantalla → cliente de la página con dos puntos: (escala, desplazamiento) o None si no hay recorrido."""
     if abs(c2 - c1) < 1e-6 or abs(p2 - p1) < 1e-6:
@@ -157,21 +187,24 @@ def fit_axis(p1: float, p2: float, c1: float, c2: float):
 
 
 class SelfTest:
-    def __init__(self, runner, keys, typ, log=None, title=None, opener=None, setmode=None):
+    def __init__(self, runner, keys, typ, log=None, title=None, opener=None, setmode=None, setfs=None):
         """`runner`: el PadRunner en marcha (con su X). `keys(key, mods)` y `typ(text)`: el teclado de QAM (async, devuelven bool)."""
         self.r, self.keys, self.typ = runner, keys, typ
         self.log = log or (lambda *_, **__: None)
         self.title = title or (lambda: "")   # título de la ventana del navegador (para el diagnóstico)
+        self.setfs_cb = setfs
         self.setmode = setmode               # setmode(mod=None, ch=None, save=False): cambia/guarda cómo se aplican Ctrl/Mayús en el teclado de QAM
         self.opener = opener                 # abre una URL en el navegador por el sistema (xdg-open): no depende de la barra de direcciones
         self.opened = False                  # abrimos una pestaña para la prueba: al acabar se cierra
         self.probe = Probe()
         self.steps: list = []
         self.finger = Finger()
+        self.hands = Hands()
         self.ts = None
         self.ax = self.ay = None   # (escala, desplazamiento) pantalla ← cliente
         self.rects: dict = {}
         self.phase = ""
+        self.fs_failed = False   # alguna prueba de pantalla completa falló: se hace el experimento
 
     # ---- ayudas
     def res(self, name: str, ok, detail: str = "", ms=None) -> bool:
@@ -207,6 +240,17 @@ class SelfTest:
         if release:
             await self.feed(self.finger.up())
 
+    async def drag2(self, a0: tuple, b0: tuple, a1: tuple, b1: tuple, dur: float = 0.6) -> None:
+        """Dos dedos que van de (a0, b0) a (a1, b1) a la vez."""
+        await self.feed(self.hands.down(a0, b0))
+        n = max(5, int(dur / 0.016))
+        for i in range(1, n + 1):
+            await asyncio.sleep(dur / n)
+            f = i / n
+            await self.feed(self.hands.move((round(a0[0] + (a1[0] - a0[0]) * f), round(a0[1] + (a1[1] - a0[1]) * f)),
+                                            (round(b0[0] + (b1[0] - b0[0]) * f), round(b0[1] + (b1[1] - b0[1]) * f))))
+        await self.feed(self.hands.up())
+
     async def tap_drag(self, x0: int, y0: int, x1: int, y1: int, dur: float = 0.5) -> None:
         """«Toca y arrastra enseguida» (el gesto de arrastrar de verdad: controles deslizantes, seleccionar): un toque y, sin esperar, otro dedo que se mueve."""
         await self.tap(x0, y0, 0.05)
@@ -234,7 +278,7 @@ class SelfTest:
         try:
             if await self.s_cargar(W, H) and await self.s_calibrar(W, H):
                 for step in (self.s_clic, self.s_mismo_sitio, self.s_scroll, self.s_inercia, self.s_texto, self.s_select, self.s_popups, self.s_video, self.s_audio,
-                             self.s_menus, self.s_pantalla_navegador, self.s_pestanas):
+                             self.s_menus, self.s_pagina, self.s_pantalla_navegador, self.s_experimentos, self.s_pestanas):
                     try:
                         await step()
                     except Exception as e:  # noqa: BLE001 - un paso roto no debe parar los demás
@@ -579,6 +623,7 @@ class SelfTest:
             await self.tap(*self.scr("vfs"))
             e = await self.probe.wait(i, "fs", self._fs(True), 6.0)
             if not e:
+                self.fs_failed = True
                 self.res("vídeo: pantalla completa", False, "no entró en pantalla completa: " + self._fs_info(i))
                 return
             if salida == "⛶":
@@ -728,6 +773,7 @@ class SelfTest:
             if (g1.get("iw"), g1.get("ih")) != (g0.get("iw"), g0.get("ih")):   # algo cambió: se deshace para no dejar el navegador raro
                 await self.keys("F11", [])
                 await asyncio.sleep(1.0)
+            self.fs_failed = True
             self.res("pantalla completa del navegador (F11)", False, f"tamaño de la página {g0.get('iw')}x{g0.get('ih')} → {g1.get('iw')}x{g1.get('ih')} (pantalla {g1.get('sw')}x{g1.get('sh')}): F11 no cambió el tamaño")
             return
         self.res("pantalla completa del navegador (F11)", True, f"{int(g0.get('iw', 0))}x{int(g0.get('ih', 0))} → {int(e['d']['iw'])}x{int(e['d']['ih'])} px CSS")
@@ -752,6 +798,141 @@ class SelfTest:
         self.ax, self.ay = old
         await self.new_rects(j)
         await asyncio.sleep(0.5)
+
+    async def _pscroll(self, i: int):
+        await asyncio.sleep(0.4)
+        e = next((ev for ev in reversed(self.probe.events[i:]) if ev["k"] == "pscroll"), None)
+        return (e["d"]["top"], e["d"]["left"]) if e else (0, 0)
+
+    async def _iw(self, want, why: str, i: int, timeout: float = 2.5):
+        e = await self.probe.wait(i, "resize", want, timeout)
+        return e["d"]["iw"] if e else None
+
+    async def s_pagina(self) -> None:
+        """Desplazar la página en vertical, en horizontal, en diagonal y con dos dedos; zoom con dos dedos (separar = acercar, juntar = alejar)."""
+        if not await self.scene("pagina"):
+            self.res("página grande", False, "la página no cambió de escena")
+            return
+        W, H = self.W, self.H
+        cx, cy = W // 2, H // 2
+        dv, dh = int(H * 0.30), int(W * 0.25)
+        i = self.probe.mark()
+        await self.drag(cx, cy + dv, cx, cy - dv, 0.5)
+        await asyncio.sleep(1.5)
+        top, left = await self._pscroll(i)
+        self.res("scroll vertical de la página", top > 100 and left < 40, f"bajó {top} px (a los lados {left} px)" if top > 100 else f"no bajó (arriba={top}, lado={left})")
+        await self.scene("pagina")   # vuelve a (0, 0)
+        i = self.probe.mark()
+        await self.drag(cx + dh, cy, cx - dh, cy, 0.5)
+        await asyncio.sleep(1.5)
+        top2, left2 = await self._pscroll(i)
+        self.res("scroll horizontal de la página", left2 > 100 and top2 < 40, f"fue {left2} px a la derecha (arriba/abajo {top2} px)" if left2 > 100 else f"no se movió en horizontal (lado={left2})")
+        await self.scene("pagina")
+        i = self.probe.mark()
+        await self.drag(cx + dh // 2, cy + dv // 2, cx - dh // 2, cy - dv // 2, 0.5)
+        await asyncio.sleep(1.5)
+        top3, left3 = await self._pscroll(i)
+        self.res("scroll en diagonal", top3 > 60 and left3 > 60, f"vertical {top3} px y horizontal {left3} px")
+        await self.scene("pagina")
+        i = self.probe.mark()
+        sp = int(W * 0.06)
+        await self.drag2((cx - sp, cy + dv), (cx + sp, cy + dv), (cx - sp, cy - dv), (cx + sp, cy - dv), 0.6)   # dos dedos juntos hacia arriba
+        await asyncio.sleep(1.5)
+        top4, _ = await self._pscroll(i)
+        self.res("scroll con dos dedos", top4 > 60, f"vertical {top4} px" if top4 > 60 else "los dos dedos no desplazaron la página")
+        # zoom: separar los dedos acerca (la página ocupa menos px CSS); juntarlos aleja
+        g = self._last_geo()
+        iw0 = g.get("iw", 0)
+        i = self.probe.mark()
+        await self.drag2((cx - 60, cy), (cx + 60, cy), (cx - 340, cy), (cx + 340, cy), 0.7)
+        iw1 = await self._iw(lambda d: d.get("iw", 1e9) < iw0 - 20, "acerca", i, 2.5)
+        self.res("zoom con dos dedos: separar acerca", iw1 is not None, f"la página pasó de {int(iw0)} a {int(iw1)} px CSS de ancho" if iw1 else f"el zoom no cambió (ancho {int(iw0)} px CSS)")
+        i = self.probe.mark()
+        await self.keys("0", ["ctrl"])   # zoom al 100 %
+        await self._iw(lambda d: abs(d.get("iw", 0) - iw0) < 6, "100", i, 2.5)
+        await asyncio.sleep(0.5)
+        i = self.probe.mark()
+        await self.drag2((cx - 340, cy), (cx + 340, cy), (cx - 60, cy), (cx + 60, cy), 0.7)
+        iw2 = await self._iw(lambda d: d.get("iw", 0) > iw0 + 20, "aleja", i, 2.5)
+        self.res("zoom con dos dedos: juntar aleja", iw2 is not None, f"la página pasó de {int(iw0)} a {int(iw2)} px CSS de ancho" if iw2 else f"el zoom no cambió (ancho {int(iw0)} px CSS)")
+        i = self.probe.mark()
+        await self.keys("0", ["ctrl"])
+        await self._iw(lambda d: abs(d.get("iw", 0) - iw0) < 6, "100", i, 2.5)
+        await asyncio.sleep(0.5)
+
+    async def s_experimentos(self) -> None:
+        """Experimentos para saber QUÉ hace falta cuando algo falla con un navegador concreto: forma de pulsar en listas emergentes y pantalla completa."""
+        # 1) toque en una lista emergente: ¿qué pulsación acepta?
+        if await self.scene("menu"):
+            sx, sy = self.scr("sel2")
+            x, y, w, h = self.rects["sel2"]
+            ty = round(self.ay[1] + (y + h) * self.ay[0]) + 90
+            V = {
+                "A rápida (20 ms antes, 70 ms pulsado)": [("move", 0, 0), ("wait", 0, 0.02), ("btn", 1, 0), ("wait", 0, 0.07), ("btn", 0, 0)],
+                "B con 250 ms de espera antes": [("move", 0, 0), ("wait", 0, 0.25), ("btn", 1, 0), ("wait", 0, 0.07), ("btn", 0, 0)],
+                "C moviendo el puntero dentro de la lista": [("move", 0, -3), ("wait", 0, 0.06), ("move", 0, 0), ("wait", 0, 0.2), ("btn", 1, 0), ("wait", 0, 0.1), ("btn", 0, 0)],
+                "D lenta (500 ms antes, 250 ms pulsado)": [("move", 0, 0), ("wait", 0, 0.5), ("btn", 1, 0), ("wait", 0, 0.25), ("btn", 0, 0)],
+            }
+            res = {}
+            for k, pasos in V.items():
+                res[k] = await self._variante_t(k, pasos, sx, ty)
+            buenas = [k[0] for k, v in res.items() if v]
+            self.res("experimento: pulsar en una lista emergente", bool(buenas), "funcionan las variantes: " + (", ".join(buenas) if buenas else "ninguna") + " — " + "; ".join(f"{k[0]}={'sí' if v else 'no'}" for k, v in res.items()))
+        # 2) pantalla completa «a mano»: ponerle a la ventana el estado que un gestor de ventanas le pondría
+        if self.setfs_cb and self.fs_failed:
+            await self.scene("video")
+            i = self.probe.mark()
+            await self.tap(*self.scr("vfs"))
+            await asyncio.sleep(0.2)
+            self.setfs_cb(True)
+            e = await self.probe.wait(i, "fs", self._fs(True), 4.0)
+            self.res("experimento: pantalla completa del vídeo poniendo el estado de la ventana", bool(e), "funciona: el navegador entró en pantalla completa" if e else "tampoco así entró")
+            if e:
+                j = self.probe.mark()
+                await self.keys("Escape", [])
+                await self.probe.wait(j, "fs", self._fs(False), 3.0)
+            self.setfs_cb(False)
+            await asyncio.sleep(0.8)
+            await self.scene("base")
+            g0 = self._last_geo()
+            i = self.probe.mark()
+            await self.keys("F11", [])
+            await asyncio.sleep(0.2)
+            self.setfs_cb(True)
+            await asyncio.sleep(1.5)
+            g1 = self._last_geo()
+            crecio = g1.get("ih", 0) >= g0.get("ih", 0) + 20
+            self.res("experimento: F11 poniendo el estado de la ventana", crecio, f"{int(g0.get('iw', 0))}x{int(g0.get('ih', 0))} → {int(g1.get('iw', 0))}x{int(g1.get('ih', 0))} px CSS")
+            if crecio:
+                await self.keys("F11", [])
+                await asyncio.sleep(0.4)
+            self.setfs_cb(False)
+            await asyncio.sleep(1.0)
+            await self.scene("base")
+
+    async def _variante_t(self, nombre: str, pasos: list, sx: int, ty: int) -> bool:
+        await self.scene("menu")
+        sx0, sy0 = self.scr("sel2")
+        i = self.probe.mark()
+        await self.tap(sx0, sy0)
+        await self.probe.wait(i, "down", lambda d: d.get("id") == "sel2", 1.5)
+        await asyncio.sleep(0.9)
+        x = self.r._x
+        j = self.probe.mark()
+        for (acc, a, b) in pasos:
+            if acc == "move":
+                x.move_abs(sx + a, ty + b)
+                x.flush()
+            elif acc == "btn":
+                x.button(1, bool(a))
+                x.flush()
+            else:
+                await asyncio.sleep(b)
+        e = await self.probe.wait(j, "change", lambda d: d.get("id") == "sel2", 1.2)
+        if not e:
+            await self.keys("Escape", [])
+            await asyncio.sleep(0.4)
+        return bool(e)
 
     async def s_pestanas(self) -> None:
         async def vis(want: str, label: str, fn) -> bool:

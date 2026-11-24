@@ -241,6 +241,60 @@ class XOut:
         self.x11.XFree(data)
         return vals
 
+    def wm_state(self, wid: int) -> list:
+        """Átomos de _NET_WM_STATE de la ventana (nombres), p. ej. ['_NET_WM_STATE_FULLSCREEN']; [] si no hay."""
+        atom = self.x11.XInternAtom(self.dpy, b"_NET_WM_STATE", 1)
+        if not atom:
+            return []
+        typ, fmt, n, after = ctypes.c_ulong(), ctypes.c_int(), ctypes.c_ulong(), ctypes.c_ulong()
+        data = ctypes.c_void_p()
+        rc = self.x11.XGetWindowProperty(self.dpy, int(wid), atom, 0, 64, 0, 4, ctypes.byref(typ), ctypes.byref(fmt), ctypes.byref(n),
+                                         ctypes.byref(after), ctypes.byref(data))
+        if rc != 0 or not data.value or fmt.value != 32:
+            if data.value:
+                self.x11.XFree(data)
+            return []
+        vals = [int(v) for v in (ctypes.c_ulong * n.value).from_address(data.value)]
+        self.x11.XFree(data)
+        out = []
+        self.x11.XGetAtomName.restype = ctypes.c_void_p
+        self.x11.XGetAtomName.argtypes = [ctypes.c_void_p, ctypes.c_ulong]
+        for a in vals:
+            p = self.x11.XGetAtomName(self.dpy, a)
+            if p:
+                out.append(ctypes.string_at(p).decode("latin-1"))
+                self.x11.XFree(p)
+        return out
+
+    def set_wm_fullscreen(self, wid: int, on: bool) -> bool:
+        """Pone o quita _NET_WM_STATE_FULLSCREEN directamente en la ventana (lo que haría un gestor de ventanas). Experimento: con gamescope el
+        navegador pide la pantalla completa y nadie le contesta, así que ni F11 ni el botón de los vídeos hacen nada."""
+        st = self.x11.XInternAtom(self.dpy, b"_NET_WM_STATE", 0)
+        fs = self.x11.XInternAtom(self.dpy, b"_NET_WM_STATE_FULLSCREEN", 0)
+        if not st or not fs:
+            return False
+        cur = [a for a in self._atoms(wid, st) if a != fs]
+        if on:
+            cur.append(fs)
+        self.x11.XChangeProperty.argtypes = [ctypes.c_void_p, ctypes.c_ulong, ctypes.c_ulong, ctypes.c_ulong, ctypes.c_int, ctypes.c_int, ctypes.c_void_p, ctypes.c_int]
+        arr = (ctypes.c_ulong * max(1, len(cur)))(*cur)
+        self.x11.XChangeProperty(self.dpy, int(wid), st, 4, 32, 0, ctypes.cast(arr, ctypes.c_void_p), len(cur))   # 4 = XA_ATOM, 0 = PropModeReplace
+        self.x11.XFlush(self.dpy)
+        return True
+
+    def _atoms(self, wid: int, prop: int) -> list:
+        typ, fmt, n, after = ctypes.c_ulong(), ctypes.c_int(), ctypes.c_ulong(), ctypes.c_ulong()
+        data = ctypes.c_void_p()
+        rc = self.x11.XGetWindowProperty(self.dpy, int(wid), prop, 0, 64, 0, 4, ctypes.byref(typ), ctypes.byref(fmt), ctypes.byref(n),
+                                         ctypes.byref(after), ctypes.byref(data))
+        if rc != 0 or not data.value or fmt.value != 32:
+            if data.value:
+                self.x11.XFree(data)
+            return []
+        vals = [int(v) for v in (ctypes.c_ulong * n.value).from_address(data.value)]
+        self.x11.XFree(data)
+        return vals
+
     def window_title(self, wid: int) -> str:
         """Título de una ventana (_NET_WM_NAME, o WM_NAME): sirve para saber en qué página está un navegador sin mirar la pantalla. '' si no hay."""
         for name in ("_NET_WM_NAME", "WM_NAME"):

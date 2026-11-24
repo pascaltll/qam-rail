@@ -74,7 +74,7 @@ export const SelfTestCard: FC<{ notify: (t: string) => void }> = ({ notify }) =>
   return (
     <Card title="Autoprueba del navegador">
       <div style={{ fontSize: 12, color: COLORS.muted, padding: "0 10px" }}>
-        Con el navegador abierto delante: pulsa «Probar», cierra el panel y no toques la pantalla (~2 min). Abre una página de prueba y comprueba toques, desplazamiento, teclado, pop-ups, vídeo (con pantalla completa), música (sonará un tono suave unos segundos), menús, F11 y pestañas.
+        Con el navegador abierto delante: pulsa «Probar», cierra el panel y no toques la pantalla (~3 min). Abre una página de prueba y comprueba toques, desplazamiento, teclado, pop-ups, vídeo (con pantalla completa), música (sonará un tono suave unos segundos), menús, F11 y pestañas.
       </div>
       <Row gap={6}>
         {st?.running

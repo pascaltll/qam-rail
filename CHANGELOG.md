@@ -1,5 +1,12 @@
 # Cambios
 
+## dev.80
+- **Autoprueba: zoom y scroll en todas las direcciones** (en una página grande de 2600×2600 px): scroll vertical, horizontal, en diagonal y con dos dedos, y zoom con dos dedos (separar acerca, juntar aleja; mide el ancho de la página en px CSS y vuelve al 100 % con Ctrl+0). La prueba tiene un simulador de dos dedos (`Hands`).
+- **Experimentos que se ejecutan solos cuando algo falla (`experimento: …`):**
+  - Toque en una lista emergente (el desplegable de Firefox, como su menú ☰): en tu Firefox el teclado elegía pero el dedo no. Prueba cuatro formas de pulsar (rápida, con 250 ms de espera, moviendo el puntero dentro de la lista, lenta) y dice cuáles eligen.
+  - Pantalla completa: en tu Firefox el botón ⛶ de un vídeo y F11 pedían la pantalla completa y nadie respondía (gamescope no hace de gestor de ventanas). El experimento le pone a la ventana el estado `_NET_WM_STATE_FULLSCREEN` a mano justo después de pedirla, y dice si así entra (y lo quita después).
+- El desplegable largo se reinicia a la opción 0 antes de cada prueba (si la fila que se tocaba era la ya elegida, no había cambio y parecía un fallo).
+
 ## dev.79
 - **Resultados de tu Firefox con dev.78 (pasan 28 de 34):** pop-ups, enlace a pestaña nueva, reproducir/saltar/pausar vídeo y música, y volumen tocando funcionan. Fallaban: arrastrar el volumen, pantalla completa del vídeo, el desplegable largo y F11.
 - **Arrastrar controles deslizantes:** un arrastre normal con un dedo es desplazamiento (por diseño); arrastrar un control (volumen, barra de progreso, seleccionar) es **«toca y arrastra enseguida»**. La prueba usaba un arrastre normal para el volumen (fallaba) y, para la barra, uno que por casualidad iba justo detrás de un toque (pasaba). Ahora las dos pruebas usan el gesto correcto («toca y arrastra»).

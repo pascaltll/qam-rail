@@ -49,6 +49,8 @@ video{display:block;width:100%;height:290px;background:#223}
 <div class=scene id=s_audio style="display:none"><div id=abox><div style="padding:30px 20px;background:#2a2f55;font-size:26px">♪ Pista de prueba</div><audio id=a src="/a.wav" loop preload=auto></audio>
 <div class=bar><button id=aplay>▶</button><div class=seek id=aseek><div class=fill id=afill></div></div><span class=tm id=atime>0:00</span><input type=range id=avol min=0 max=100 value=20></div></div></div>
 
+<div class=scene id=s_pagina style="display:none;overflow:auto"><div id=big style="width:2600px;height:2600px;background:repeating-linear-gradient(90deg,rgba(255,255,255,.25) 0 3px,transparent 3px 120px),repeating-linear-gradient(0deg,rgba(255,255,255,.25) 0 3px,transparent 3px 120px),linear-gradient(135deg,#223,#356 50%,#532)"><span style="position:absolute;left:30px;top:20px">Página grande: desplázala en vertical, en horizontal y haz zoom</span></div></div>
+
 <div class=scene id=s_menu style="display:none"><div class=row><select id=sel2></select><button id=hmb>☰ Menú</button></div><div id=hmenu></div></div>
 
 <script>
@@ -57,7 +59,7 @@ const $=id=>document.getElementById(id);
 const rects=()=>{const o={};document.querySelectorAll('[id]').forEach(e=>{const r=e.getBoundingClientRect();if(r.width>0&&r.height>0)o[e.id]=[r.left,r.top,r.width,r.height]});return o};
 const geo=()=>({iw:innerWidth,ih:innerHeight,sw:screen.width,sh:screen.height,dpr:window.devicePixelRatio,fe:document.fullscreenEnabled});
 let scene='base';
-function show(n){for(const s of ['base','popups','video','audio','menu'])$('s_'+s).style.display=(s===n?'':'none');scene=n;setTimeout(()=>post('scene',Object.assign({n:n,rects:rects()},geo())),80)}
+function show(n){for(const s of ['base','popups','video','audio','pagina','menu'])$('s_'+s).style.display=(s===n?'':'none');scene=n;if(n==='menu')$('sel2').selectedIndex=0;if(n==='pagina'){$('s_pagina').scrollTop=0;$('s_pagina').scrollLeft=0}setTimeout(()=>post('scene',Object.assign({n:n,rects:rects()},geo())),80)}
 let cmdN=0;setInterval(async()=>{try{const r=await fetch('/cmd',{cache:'no-store'});const j=await r.json();if(j.n!==cmdN){cmdN=j.n;show(j.scene)}}catch(e){}},150);
 // --- base
 for(const id of ['box1','box2']){const b=$(id);for(let i=0;i<60;i++){const d=document.createElement('div');d.textContent=id+' fila '+i;b.appendChild(d)}
@@ -92,6 +94,7 @@ function player(p,m){const seek=$(p+'seek'),fill=$(p+'fill');let drag=false,move
 player('v',$('v'));player('a',$('a'));
 $('vfs').onclick=()=>{if(document.fullscreenElement){document.exitFullscreen()}else{post('fs',{stage:'pedido',on:false,fe:document.fullscreenEnabled});try{const p=$('vbox').requestFullscreen();if(p&&p.catch)p.catch(e=>post('fs',{err:String(e).slice(0,80),on:false}))}catch(e){post('fs',{err:String(e).slice(0,80),on:false})}}};
 document.addEventListener('fullscreenerror',()=>post('fs',{err:'fullscreenerror',on:false}));
+$('s_pagina').addEventListener('scroll',()=>post('pscroll',{top:Math.round($('s_pagina').scrollTop),left:Math.round($('s_pagina').scrollLeft)}));
 // --- menús
 const s2=$('sel2');for(let i=0;i<60;i++){const o=document.createElement('option');o.textContent='Opción '+i;s2.appendChild(o)}
 s2.addEventListener('change',()=>post('change',{id:'sel2',v:s2.value,i:s2.selectedIndex}));s2.addEventListener('mousedown',()=>post('down',{id:'sel2'}));

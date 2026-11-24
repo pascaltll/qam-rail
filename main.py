@@ -342,7 +342,7 @@ class Plugin:
                         pass
                 self._pad_log(f"autoprueba: teclado modo mod={x.mod_mode} símbolos={x.char_mode}" + (" (guardado)" if save else ""))
             wid = self._front_wid(x)
-            test = qam_selftest.SelfTest(pad, keys, typ, log, title=lambda: x.window_title(wid), opener=self._open_url, setmode=setmode)
+            test = qam_selftest.SelfTest(pad, keys, typ, log, title=lambda: x.window_title(wid), opener=self._open_url, setmode=setmode, setfs=lambda on: x.set_wm_fullscreen(wid, on))
             res = await asyncio.wait_for(test.run(), 300)
         except asyncio.TimeoutError:
             res = {"ok": False, "error": "la prueba tardó más de 2 minutos y se paró", "steps": []}
