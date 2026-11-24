@@ -1,5 +1,11 @@
 # Cambios
 
+## dev.86
+- **Teclado: batería completa en «Probar navegador»** (`teclado: batería completa`). Pasa 12 casos y dice, uno a uno, qué esperaba y qué salió: minúsculas y dígitos, MAYÚSCULAS, símbolos (2 grupos), acentos y ñ, letras repetidas, texto largo (80), flechas/Inicio/Fin/Borrar/Supr, Intro en un cuadro de texto, Ctrl+A/C/V, Ctrl+X y pegar, Mayús+flechas; y la velocidad (caracteres/s). La página de prueba tiene ahora un cuadro de texto (`textarea`) para Intro.
+- **Si algo falla, prueba solo todas las combinaciones** (Ctrl: keys/slow/lock × símbolos: levels/remap = 6) con la misma batería y se queda con la que más casos pasa (`teclado: mejor combinación`, con la tabla de todas). Queda guardada. Así, en Edge, una sola ejecución dice qué falla y deja puesto el mejor modo.
+- **Transiciones: ahora miden el tamaño de la ventana** cada 40 ms tras cerrar el panel o el teclado (mínimo, tamaño final y cuándo vuelve a pantalla completa) y el tamaño de la **página** (px CSS) comparado con el inicial. Marca fallo si la ventana no vuelve a pantalla completa o si la página se queda más pequeña (el navegador no se redibujó).
+- **Edge/Chromium encogido en la esquina tras la animación:** el programa encoge y agranda la ventana en pasos de 35 ms; Chromium a veces se queda dibujando al tamaño de un paso intermedio aunque la ventana ya sea de pantalla completa. Al acabar la animación, a ventanas de apps tipo Chromium se les da un cambio de 2 px y vuelta (a los 120 ms) para obligarles a redibujarse. (Ajuste no verificado en tu Edge: la prueba de transiciones dirá si funcionó.)
+
 ## dev.85
 - **Resultado de dev.84 en tu equipo:** el QAM abre rápido (interfaz 39 ms, overlay 43 ms, táctil se pausa 54 ms) y el teclado grande también (104 / 32 / 120 ms). Dos problemas:
   1. **El táctil tardaba ~2,3 s en volver tras cerrar el teclado** (y el primer toque llegaba a 2,4 s). Causa: el táctil solo se volvía a buscar en una ronda cada 2 s. Ahora, en cuanto el panel o el teclado se cierran, se busca de inmediato. (Con el mando se notaba menos porque su «activo» lanzaba esa búsqueda; con el dedo, que es lo normal en una tablet, esperaba la ronda.)

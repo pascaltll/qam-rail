@@ -22,6 +22,7 @@ class TransTest(st.SelfTest):
         self.sink = sink if sink is not None else []   # (t, evento, datos): lo rellena main
         self.wid = wid
         self.base_wins = 0
+        self.base_geo: dict = {}
 
     # ---- ayudas
     def _find(self, i: int, pred):
@@ -57,6 +58,30 @@ class TransTest(st.SelfTest):
         except Exception as e:  # noqa: BLE001
             return {"error": repr(e)}
 
+    async def _muestrea(self, seg: float = 1.6) -> dict:
+        """Tras cerrar el panel: cada 40 ms el tamaño de la ventana de la app, hasta `seg`. Dice si volvió a pantalla completa y cuándo (o si se quedó encogida)."""
+        x = self.r._x
+        t0 = time.monotonic()
+        serie = []
+        while time.monotonic() - t0 < seg:
+            try:
+                w = next((w for w in x.windows() if w[0] == self.wid), None)
+                if w:
+                    serie.append((round((time.monotonic() - t0) * 1000), w[1], w[2], w[3], w[4]))
+            except Exception:  # noqa: BLE001
+                pass
+            await asyncio.sleep(0.04)
+        if not serie:
+            return {}
+        llena = [m for m in serie if m[3] >= self.W - 2 and m[4] >= self.H - 2]
+        ult = serie[-1]
+        t_ok = None
+        for k in range(len(serie)):   # primer instante desde el que ya se queda a pantalla completa
+            if all(m[3] >= self.W - 2 and m[4] >= self.H - 2 for m in serie[k:]):
+                t_ok = serie[k][0]
+                break
+        return {"final": f"{ult[3]}x{ult[4]}@{ult[1]},{ult[2]}", "completa_ms": t_ok, "min": f"{min(m[3] for m in serie)}x{min(m[4] for m in serie)}", "llena": bool(llena)}
+
     async def _toque(self, desde: float, limite: float = 4.0):
         """Toca el botón de la página cada 120 ms hasta que llegue un clic: ms desde `desde` (o None)."""
         x, y = self.scr("b1")
@@ -86,9 +111,13 @@ class TransTest(st.SelfTest):
         t_off = await self._wait(j, lambda e, d: e == "overlay" and d.get("on") is False, 3.0)
         t_gr = await self._wait(j, lambda e, d: e == "pad" and "agarrada" in str(d.get("t", "")), 4.0)
         r.update(cierra_ui=self._ms(t_cui, t1), cierra_overlay=self._ms(t_off, t1), toque_vuelve=self._ms(t_gr, t1))
+        m = asyncio.ensure_future(self._muestrea(1.4))   # a la vez que se espera el primer toque
         r["primer_toque"] = await self._toque(t1)
-        await asyncio.sleep(0.5)
+        r["muestra"] = await m
+        await asyncio.sleep(0.3)
         r["estado"] = self._estado()
+        g = self._last_geo()
+        r["pagina"] = (int(g.get("iw", 0)), int(g.get("ih", 0)))
         return r
 
     def _juzga(self, nombre: str, rs: list) -> None:
@@ -106,6 +135,14 @@ class TransTest(st.SelfTest):
                 malos.append(f"vuelta {k}: la app perdió el foco")
             if e.get("tam") and (e["tam"][0] < self.W - 4 or e["tam"][1] < self.H - 4):
                 malos.append(f"vuelta {k}: la ventana quedó {e['tam'][0]}x{e['tam'][1]} (pantalla {self.W}x{self.H})")
+            m = r.get("muestra") or {}
+            if m and (not m.get("llena") or m.get("completa_ms") is None):
+                malos.append(f"vuelta {k}: la ventana NO volvió a pantalla completa (final {m.get('final')}, mínimo {m.get('min')})")
+            elif m and m.get("completa_ms") and m["completa_ms"] > 700:
+                notas.append(f"vuelta {k}: tardó {m['completa_ms']} ms en volver a pantalla completa (lento)")
+            pg = r.get("pagina")
+            if pg and self.base_geo and (pg[0] < self.base_geo[0] - 4 or pg[1] < self.base_geo[1] - 4):
+                malos.append(f"vuelta {k}: la PÁGINA quedó {pg[0]}x{pg[1]} px CSS (antes {self.base_geo[0]}x{self.base_geo[1]}): el navegador no se redibujó a pantalla completa")
             if self.base_wins and e.get("ventanas", 0) > self.base_wins:
                 malos.append(f"vuelta {k}: quedaron {e['ventanas'] - self.base_wins} ventana(s) suelta(s)")
 
@@ -130,6 +167,8 @@ class TransTest(st.SelfTest):
         try:
             if await self.s_cargar(W, H) and await self.s_calibrar(W, H):
                 self.base_wins = len(self.r._x.windows())
+                g = self._last_geo()
+                self.base_geo = (int(g.get("iw", 0)), int(g.get("ih", 0)))
                 for step in (self.t_qam, self.t_teclado, self.t_rapido, self.t_alterno):
                     try:
                         await step()

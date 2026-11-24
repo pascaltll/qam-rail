@@ -34,7 +34,8 @@ video{display:block;width:100%;height:290px;background:#223}
 <div class=scene id=s_base>
 <div class=row><button id=b1>B1</button><button id=b2>B2</button><button id=b3>B3</button></div>
 <div class=row><div class=box id=box1></div><div class=box id=box2></div></div>
-<div class=row><select id=sel><option>uno<option>dos<option>tres</select><input type=text id=inp autocomplete=off></div></div>
+<div class=row><select id=sel><option>uno<option>dos<option>tres</select><input type=text id=inp autocomplete=off></div>
+<div class=row><textarea id=ta rows=2 style="font-size:20px;width:640px"></textarea></div></div>
 
 <div class=scene id=s_popups style="display:none">
 <div class=row><button id=pm1>Pop-up 1</button><button id=pm2>Pop-up 2</button><button id=pm3>Pop-up 3</button><a class=btn id=pl href="/blank" target=_blank>Pestaña nueva</a></div>
@@ -67,7 +68,9 @@ for(const id of ['box1','box2']){const b=$(id);for(let i=0;i<60;i++){const d=doc
 setInterval(()=>{if(scene==='base')for(const id of ['box1','box2'])post('pos',{id:id,top:Math.round($(id).scrollTop)})},250);
 document.addEventListener('mousedown',e=>post('down',{id:e.target.id||e.target.tagName}),true);
 document.addEventListener('click',e=>post('click',{id:e.target.id||e.target.tagName,cx:e.clientX,cy:e.clientY}),true);
-$('inp').addEventListener('input',e=>post('input',{v:e.target.value}));
+$('inp').addEventListener('input',e=>post('input',{v:e.target.value,id:'inp'}));
+$('ta').addEventListener('input',e=>post('input',{v:e.target.value,id:'ta'}));
+$('ta').addEventListener('focus',()=>post('focus',{id:'ta'}));
 $('inp').addEventListener('focus',()=>post('focus',{id:'inp'}));
 document.addEventListener('visibilitychange',()=>post('vis',{s:document.visibilityState}));
 let rt=0;const rz=()=>{post('resize',geo());clearTimeout(rt);rt=setTimeout(()=>post('rects',{rects:rects()}),300)};

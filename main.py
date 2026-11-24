@@ -1754,6 +1754,28 @@ class Plugin:
         except Exception:  # noqa: BLE001
             pass
 
+    async def _anim_nudge(self, wids, size) -> None:
+        """Chromium/Edge: tras tantos cambios de tamaño seguidos a veces se queda dibujando al tamaño de un paso intermedio (una esquina de la pantalla) aunque la
+        ventana ya sea de pantalla completa. Un cambio de 2 px y vuelta le obliga a redibujarse al tamaño final. Solo a ventanas de apps tipo Chromium."""
+        try:
+            chromium = [wid for wid in wids if qam_desktop is not None and qam_desktop.CHROMIUM_RE.search(self._front_key_of(wid))]
+            if not chromium or getattr(self, "_anim_cancel", False):
+                return
+            x = await self._kx()
+            w, h = size
+            await asyncio.sleep(0.12)
+            for wid in chromium:
+                x.resize(wid, w - 2, h - 2)
+            await asyncio.sleep(0.06)
+            for wid in chromium:
+                x.resize(wid, w, h)
+            self._tag_log(f"  animación: ajuste final a {len(chromium)} ventana(s) tipo Chromium")
+        except Exception as e:  # noqa: BLE001
+            self._tag_log(f"  animación: ajuste final falló ({e})")
+
+    def _front_key_of(self, wid) -> str:
+        return self._front_key(int(str(wid), 0)) if str(wid) else ""
+
     async def _anim_grow(self, st) -> None:
         """Hace crecer las ventanas hasta pantalla completa. Pase lo que pase, la última orden es el tamaño completo."""
         x, wids, (w, h) = st
@@ -1773,6 +1795,7 @@ class Plugin:
             self._anim_busy = False
             self._anim_finish_now(x, wids, (w, h))
             self._tag_log(f"  animación: {len(wids)} ventana(s) {int((time.monotonic() - t0) * 1000)} ms")
+            await self._anim_nudge(wids, (w, h))
 
     async def desktop_overlay(self, on: bool, reason: str = "panel") -> dict:
         """Con el panel abierto y alguna app de escritorio en marcha, sube STEAM_OVERLAY=1 en la ventana de Steam (gamescope dibuja entonces

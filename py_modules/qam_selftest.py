@@ -277,7 +277,7 @@ class SelfTest:
         await self.probe.start()
         try:
             if await self.s_cargar(W, H) and await self.s_calibrar(W, H):
-                for step in (self.s_clic, self.s_mismo_sitio, self.s_scroll, self.s_inercia, self.s_texto, self.s_select, self.s_popups, self.s_video, self.s_audio,
+                for step in (self.s_clic, self.s_mismo_sitio, self.s_scroll, self.s_inercia, self.s_texto, self.s_teclado, self.s_select, self.s_popups, self.s_video, self.s_audio,
                              self.s_menus, self.s_pagina, self.s_pantalla_navegador, self.s_experimentos, self.s_pestanas):
                     try:
                         await step()
@@ -488,6 +488,139 @@ class SelfTest:
         if mod is not None and chm is not None:
             self.setmode(save=True)   # se queda para el uso normal
         await self._vaciar()
+
+    # ---- batería de teclado (dev.86): todo lo que se escribe con el teclado de QAM, caso por caso, con lo que salió
+    async def _campo(self, id_: str) -> None:
+        x, y = self.scr(id_)
+        i = self.probe.mark()
+        await self.tap(x, y)
+        await self.probe.wait(i, "focus", lambda d: d.get("id") == id_, 1.0)
+        await asyncio.sleep(0.1)
+
+    def _valor(self, id_: str):
+        return next((ev["d"].get("v") for ev in reversed(self.probe.events) if ev["k"] == "input" and ev["d"].get("id", "inp") == id_), "")
+
+    async def _espera(self, id_: str, want: str, timeout: float = 1.5) -> tuple:
+        end = time.monotonic() + timeout
+        while time.monotonic() < end:
+            if self._valor(id_) == want:
+                return True, want
+            await asyncio.sleep(0.05)
+        return self._valor(id_) == want, self._valor(id_)
+
+    async def _limpia(self, id_: str) -> None:
+        await self.keys("a", ["ctrl"])
+        await self.keys("BackSpace", [])
+        for _ in range(3):
+            await self.keys("BackSpace", [])
+        if self._valor(id_):
+            for _ in range(len(self._valor(id_)) + 2):
+                await self.keys("BackSpace", [])
+        await asyncio.sleep(0.15)
+
+    CASOS = (
+        ("minúsculas y dígitos", "inp", "the quick brown fox 0123456789"),
+        ("MAYÚSCULAS", "inp", "HOLA Mundo ABC"),
+        ("símbolos 1", "inp", "!@#$%^&*()"),
+        ("símbolos 2", "inp", "-_=+[]{};:'\",.<>/?\\|`~"),
+        ("acentos y ñ", "inp", "áéíóúñüçÁÑ¿¡"),
+        ("letras repetidas", "inp", "aaaaaaaaaaaaaaaa lll"),
+        ("texto largo (80)", "inp", "Lorem ipsum dolor sit amet, consectetur adipiscing elit 1234567890 sed do eius"),
+    )
+
+    async def _bateria(self, completa: bool = True) -> list:
+        """Pasa todos los casos y devuelve [(nombre, ok, esperado, obtenido, ms)]. `completa=False`: solo los de texto (para comparar modos)."""
+        out = []
+        for nombre, campo, texto in self.CASOS:
+            await self._campo(campo)
+            await self._limpia(campo)
+            t = time.monotonic()
+            await self.typ(texto)
+            ok, got = await self._espera(campo, texto, 2.5)
+            out.append((nombre, ok, texto, got, round((time.monotonic() - t) * 1000)))
+        if not completa:
+            return out
+
+        async def caso(nombre, campo, accion, esperado):
+            await self._campo(campo)
+            await self._limpia(campo)
+            t = time.monotonic()
+            await accion()
+            ok, got = await self._espera(campo, esperado, 1.5)
+            out.append((nombre, ok, esperado, got, round((time.monotonic() - t) * 1000)))
+
+        async def edicion():
+            await self.typ("abcd")
+            await self.keys("Left", [])
+            await self.keys("Left", [])
+            await self.typ("X")
+            await self.keys("Home", [])
+            await self.typ("Y")
+            await self.keys("End", [])
+            await self.typ("Z")
+            await self.keys("BackSpace", [])
+            await self.keys("Left", [])
+            await self.keys("Delete", [])
+        await caso("flechas, Inicio, Fin, Borrar, Supr", "inp", edicion, "YabXc")
+
+        async def enter():
+            await self.typ("a")
+            await self.keys("Return", [])
+            await self.typ("b")
+        await caso("Intro en un cuadro de texto", "ta", enter, "a\nb")
+
+        async def copiar():
+            await self.typ("hola")
+            await self.keys("a", ["ctrl"])
+            await self.keys("c", ["ctrl"])
+            await self.keys("Right", [])
+            await self.keys("v", ["ctrl"])
+        await caso("Ctrl+A, Ctrl+C, Ctrl+V", "inp", copiar, "holahola")
+
+        async def cortar():
+            await self.typ("hola")
+            await self.keys("a", ["ctrl"])
+            await self.keys("x", ["ctrl"])
+            await self.keys("v", ["ctrl"])
+            await self.keys("v", ["ctrl"])
+        await caso("Ctrl+X y pegar", "inp", cortar, "holahola")
+
+        async def seleccion():
+            await self.typ("abcd")
+            await self.keys("Left", ["shift"])
+            await self.keys("Left", ["shift"])
+            await self.typ("Q")
+        await caso("Mayús+flechas (seleccionar)", "inp", seleccion, "abQ")
+        return out
+
+    async def s_teclado(self) -> None:
+        """Batería completa del teclado de QAM con el modo actual. Si algo falla, prueba todas las combinaciones de modos y deja el mejor (queda guardado)."""
+        if not self.rects.get("ta"):
+            return
+        base = await self._bateria()
+        fallos = [b for b in base if not b[1]]
+        total = len(base)
+        cps = max((len(b[2]) * 1000 / b[4]) for b in base if b[1] and b[4] > 0) if any(b[1] and b[4] > 0 for b in base) else 0
+        det = f"{total - len(fallos)} de {total} casos bien" + (f"; escribe ~{cps:.0f} caracteres/s" if cps else "")
+        if fallos:
+            det += " — fallan: " + "; ".join(f"{b[0]} (esperado «{b[2][:24]}», salió «{str(b[3])[:24]}»)" for b in fallos[:6])
+        self.res("teclado: batería completa", not fallos, det)
+        if not fallos or not self.setmode:
+            return
+        # Matriz: cada forma de aplicar Ctrl y de escribir símbolos, con la misma batería; gana la que más casos pasa
+        marcador = []
+        for m in ("keys", "slow", "lock"):
+            for c in ("levels", "remap"):
+                self.setmode(mod=m, ch=c)
+                r = await self._bateria()
+                bien = sum(1 for b in r if b[1])
+                marcador.append((bien, m, c, [b[0] for b in r if not b[1]]))
+        marcador.sort(key=lambda t: (-t[0], 0 if t[1] == "lock" else 1))
+        mejor = marcador[0]
+        self.setmode(mod=mejor[1], ch=mejor[2], save=True)
+        tabla = " | ".join(f"{m}+{c}: {b}/{total}" for b, m, c, _ in sorted(marcador, key=lambda t: (t[1], t[2])))
+        self.res("teclado: mejor combinación", mejor[0] >= total - 1,
+                 f"se queda «{mejor[1]}» + «{mejor[2]}» ({mejor[0]}/{total}). Todas: {tabla}" + (f". Sigue fallando: {', '.join(mejor[3])}" if mejor[3] else ""))
 
     async def s_select(self) -> None:
         x, y = self.scr("sel")
