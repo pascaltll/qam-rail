@@ -1,5 +1,9 @@
 # Cambios
 
+## dev.91
+- **Pantalla completa automática en navegadores (F11 y botón ⛶ de los vídeos).** Bajo gamescope el navegador pide la pantalla completa a la raíz de X y nadie lo contesta, por eso en tu Firefox fallaban «vídeo: pantalla completa» y «F11» aunque el toque llegaba. Ahora el mando escucha esas peticiones (`py_modules/qam_fswatch.py`, conexión propia a X, solo mensajes `_NET_WM_STATE`) y le pone a la ventana el estado `_NET_WM_STATE_FULLSCREEN`, que es lo que la autoprueba vio que funciona; al pedir salir o alternar, lo quita. Queda anotado en `pad.log` («pantalla completa: la ventana 0x… la pide → hecho») y en la grabadora (`pantalla-completa.peticion`).
+- Probado con un Xvfb real (un cliente manda la petición a la raíz como un navegador, se recibe y se aplica el estado). Falta verlo en tu equipo: si no aparece la línea «pantalla completa: escuchando…» o el navegador no manda la petición, lo veré en `pad.log`.
+
 ## dev.90
 - **Teclado: la autoprueba ya no empeora un modo bueno.** En tu equipo la batería empezó con 11/12 (Ctrl «lock» + símbolos «remap»), la matriz dio 10/12 en las dos combinaciones con «lock» (con ruido: cada modo deja el teclado en un estado distinto) y se guardó «lock + levels», peor que lo que había. Ahora la matriz solo cambia de modo si alguna combinación **mejora** el resultado inicial; si empata o es peor, se queda con el modo de antes (y lo dice: «se queda en … (al empezar 11/12)»).
 - **Los fallos del teclado dicen dónde difieren**: «difiere en el carácter 45 (esperado «…», salió «…»; largo 80 → 79)». Antes cortaba a 24 caracteres y «texto largo» parecía igual de bien.

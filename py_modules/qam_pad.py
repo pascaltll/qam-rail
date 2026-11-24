@@ -1082,6 +1082,10 @@ class PadRunner:
         self._mode_until = 0.0
         self._sel_down = False      # Select mantenido: con Y abre el teclado; solo (al soltar) hace Esc
         self._sel_used = False
+        self._xdisp = None          # (DISPLAY, XAUTHORITY) de la última conexión a X
+        self._fsw = None            # qam_fswatch.FsWatch: escucha las peticiones de pantalla completa del navegador
+        self._fsw_fail = 0.0
+        self._fs_noted = 0
         self._y_at = 0.0            # última pulsación de Y suelta (Steam avisa de su botón al soltarlo, tras la Y)
 
     def stop(self) -> None:
@@ -1494,6 +1498,7 @@ class PadRunner:
                     if self._x is None and time.monotonic() >= self._xfail:
                         display, xauth = await self.env_fn()
                         self._x = XOut(display, xauth)
+                        self._xdisp = (display, xauth)
                         km = self.kmode_fn() if self.kmode_fn else None   # cómo se aplican Ctrl/símbolos (lo que halló la autoprueba): el zoom con dos dedos es Ctrl + rueda
                         if km:
                             self._x.mod_mode, self._x.char_mode = km
@@ -1512,6 +1517,9 @@ class PadRunner:
             if not ours and self._x is not None and not on:
                 self._x.close()
                 self._x = None
+                if self._fsw is not None:
+                    self._fsw.close()
+                    self._fsw = None
             await asyncio.sleep(0.4 if ours else 1.5)
 
     def _scan_devices(self) -> None:
@@ -1623,12 +1631,43 @@ class PadRunner:
             self._x = None
         return rescan
 
+    def _fs_poll(self, now: float) -> None:
+        """Pantalla completa de navegadores bajo gamescope: nadie contesta su petición (F11, botón ⛶), así que se le pone a la ventana el estado."""
+        if self._fsw is None:
+            if self._x is None or self._xdisp is None or now < self._fsw_fail:
+                return
+            try:
+                import qam_fswatch
+                self._fsw = qam_fswatch.FsWatch(*self._xdisp)
+                self.log("pantalla completa: escuchando las peticiones de los navegadores")
+            except Exception as e:  # noqa: BLE001
+                self._fsw_fail = now + 30
+                self.log(f"pantalla completa: no se pudo escuchar: {e!r}")
+                return
+        import qam_fswatch
+        for msg in self._fsw.poll():
+            win = msg[0]
+            cur = "_NET_WM_STATE_FULLSCREEN" in self._x.wm_state(win)
+            want = qam_fswatch.wants_fullscreen(msg, self._fsw.wm_state, self._fsw.fullscreen, cur)
+            if want is None:
+                continue
+            ok = self._x.set_wm_fullscreen(win, want)
+            self._tr("pantalla-completa.peticion", ventana=hex(win), quiere=want, hecho=ok)
+            if self._fs_noted < 40:
+                self._fs_noted += 1
+                self.log(f"pantalla completa: la ventana {hex(win)} la {'pide' if want else 'deja'} → {'hecho' if ok else 'no se pudo'}")
+
     def _step(self, now: float, last: float, scan_at: float) -> float:
         """Un fotograma con el mando activo; devuelve cuándo toca buscar dispositivos de nuevo."""
         if now >= scan_at:
             self._scan_devices()
             scan_at = now + 2.0
         self._trace_loop(now, last)
+        try:
+            self._fs_poll(now)
+        except Exception as e:  # noqa: BLE001  (la pantalla completa no debe parar el mando)
+            self._fsw, self._fsw_fail = None, now + 30
+            self.log(f"pantalla completa: error: {e!r}")
         if self._pend:
             try:
                 self._pend_run(now)
