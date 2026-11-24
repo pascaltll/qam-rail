@@ -1,5 +1,10 @@
 # Cambios
 
+## dev.81
+- **La grabadora ve ahora lo que pasa en X cuando tocas** («Grabar navegación» → `nav-trace.log`): `ventana.nueva` / `ventana.cierra` (los menús y desplegables de GTK son ventanas aparte; dice cuántos ms después del toque aparecieron), `toque.efecto` (0,4 s después de cada clic: a qué ventana iba el clic y cuántas ventanas había antes→después) y `ventanas.inicio`. Así, un menú que «no abre» se distingue de uno que abre y se cierra solo, o de un clic que fue a otra ventana.
+- **Zoom con dos dedos en Firefox:** el Ctrl falso se ignoraba; ahora se fija con XKB (igual que Ctrl+T) antes de girar la rueda.
+- Experimento nuevo `ventanas al abrir la lista`: qué ventanas aparecen y bajo qué ventana queda el puntero.
+
 ## dev.80
 - **Autoprueba: zoom y scroll en todas las direcciones** (en una página grande de 2600×2600 px): scroll vertical, horizontal, en diagonal y con dos dedos, y zoom con dos dedos (separar acerca, juntar aleja; mide el ancho de la página en px CSS y vuelve al 100 % con Ctrl+0). La prueba tiene un simulador de dos dedos (`Hands`).
 - **Experimentos que se ejecutan solos cuando algo falla (`experimento: …`):**

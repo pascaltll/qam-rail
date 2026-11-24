@@ -874,6 +874,7 @@ class SelfTest:
                 "D lenta (500 ms antes, 250 ms pulsado)": [("move", 0, 0), ("wait", 0, 0.5), ("btn", 1, 0), ("wait", 0, 0.25), ("btn", 0, 0)],
             }
             res = {}
+            await self._diag_popup()
             for k, pasos in V.items():
                 res[k] = await self._variante_t(k, pasos, sx, ty)
             buenas = [k[0] for k, v in res.items() if v]
@@ -909,6 +910,28 @@ class SelfTest:
             self.setfs_cb(False)
             await asyncio.sleep(1.0)
             await self.scene("base")
+
+    async def _diag_popup(self) -> None:
+        """Abre la lista y apunta qué ventanas de X aparecen y a cuál va el puntero sobre la lista: si la lista es una ventana aparte, un clic fuera de ella la cierra."""
+        x = self.r._x
+        if not hasattr(x, "windows"):
+            return
+        sx0, sy0 = self.scr("sel2")
+        antes = {w[0] for w in x.windows()}
+        await self.tap(sx0, sy0)
+        await asyncio.sleep(0.9)
+        nuevas = [w for w in x.windows() if w[0] not in antes]
+        _x0, y0, _w, h = self.rects["sel2"]
+        ty = round(self.ay[1] + (y0 + h) * self.ay[0]) + 90
+        x.move_abs(sx0, ty)
+        x.flush()
+        await asyncio.sleep(0.15)
+        px, py, ch = x.pointer_child()
+        lista = ", ".join(f"{hex(w[0])}@{w[1]},{w[2]} {w[3]}x{w[4]}{' emergente' if w[5] else ''}" for w in nuevas) or "ninguna"
+        dentro = any(w[1] <= px < w[1] + w[3] and w[2] <= py < w[2] + w[4] for w in nuevas)
+        self.res("experimento: ventanas al abrir la lista", True, f"nuevas: {lista}; puntero en {px},{py} sobre {hex(ch)} ({'dentro de una ventana nueva' if dentro else 'fuera de las nuevas'})")
+        await self.keys("Escape", [])
+        await asyncio.sleep(0.4)
 
     async def _variante_t(self, nombre: str, pasos: list, sx: int, ty: int) -> bool:
         await self.scene("menu")

@@ -164,6 +164,16 @@ def _quiet_x_errors(x11) -> None:
 
 
 
+class _XWA(ctypes.Structure):
+    """XWindowAttributes (solo para leer posición, tamaño y si la ventana se ve)."""
+    _fields_ = [("x", ctypes.c_int), ("y", ctypes.c_int), ("width", ctypes.c_int), ("height", ctypes.c_int), ("border_width", ctypes.c_int),
+                ("depth", ctypes.c_int), ("visual", ctypes.c_void_p), ("root", ctypes.c_ulong), ("klass", ctypes.c_int), ("bit_gravity", ctypes.c_int),
+                ("win_gravity", ctypes.c_int), ("backing_store", ctypes.c_int), ("backing_planes", ctypes.c_ulong), ("backing_pixel", ctypes.c_ulong),
+                ("save_under", ctypes.c_int), ("colormap", ctypes.c_ulong), ("map_installed", ctypes.c_int), ("map_state", ctypes.c_int),
+                ("all_event_masks", ctypes.c_long), ("your_event_mask", ctypes.c_long), ("do_not_propagate_mask", ctypes.c_long),
+                ("override_redirect", ctypes.c_int), ("screen", ctypes.c_void_p)]
+
+
 class XOut:
     """Ratón y teclado falsos con XTest sobre la pantalla del usuario. Lanza OSError si no puede abrirla o faltan las bibliotecas."""
 
@@ -240,6 +250,37 @@ class XOut:
         vals = [int(v) for v in (ctypes.c_ulong * n.value).from_address(data.value)]
         self.x11.XFree(data)
         return vals
+
+    def windows(self) -> list:
+        """Ventanas hijas de la raíz que se ven ahora: [(id, x, y, ancho, alto, override_redirect)]. Las listas emergentes y menús de GTK son de ese tipo."""
+        out = []
+        try:
+            x = self.x11
+            root, par = ctypes.c_ulong(), ctypes.c_ulong()
+            kids, n = ctypes.c_void_p(), ctypes.c_uint()
+            if not x.XQueryTree(self.dpy, x.XDefaultRootWindow(self.dpy), ctypes.byref(root), ctypes.byref(par), ctypes.byref(kids), ctypes.byref(n)) or not kids.value:
+                return out
+            ids = [int(v) for v in (ctypes.c_ulong * n.value).from_address(kids.value)]
+            x.XFree(kids)
+            x.XGetWindowAttributes.argtypes = [ctypes.c_void_p, ctypes.c_ulong, ctypes.POINTER(_XWA)]
+            for w in ids:
+                a = _XWA()
+                if x.XGetWindowAttributes(self.dpy, w, ctypes.byref(a)) and a.map_state == 2 and a.width > 1 and a.height > 1:
+                    out.append((w, a.x, a.y, a.width, a.height, bool(a.override_redirect)))
+        except Exception:  # noqa: BLE001
+            pass
+        return out
+
+    def pointer_child(self) -> tuple:
+        """(x, y, ventana hija de la raíz bajo el puntero): para saber a qué ventana cree X que va un clic."""
+        try:
+            r, c = ctypes.c_ulong(), ctypes.c_ulong()
+            rx, ry, wx, wy, m = ctypes.c_int(), ctypes.c_int(), ctypes.c_int(), ctypes.c_int(), ctypes.c_uint()
+            self.x11.XQueryPointer(self.dpy, self.x11.XDefaultRootWindow(self.dpy), ctypes.byref(r), ctypes.byref(c), ctypes.byref(rx), ctypes.byref(ry),
+                                   ctypes.byref(wx), ctypes.byref(wy), ctypes.byref(m))
+            return int(rx.value), int(ry.value), int(c.value)
+        except Exception:  # noqa: BLE001
+            return 0, 0, 0
 
     def wm_state(self, wid: int) -> list:
         """Átomos de _NET_WM_STATE de la ventana (nombres), p. ej. ['_NET_WM_STATE_FULLSCREEN']; [] si no hay."""
@@ -541,14 +582,30 @@ class XOut:
         self._chord(names, k)
 
     def zoom(self, n: int) -> None:
-        """Zoom del navegador: Ctrl + rueda (n > 0 acerca, n < 0 aleja)."""
+        """Zoom del navegador: Ctrl + rueda (n > 0 acerca, n < 0 aleja). Con `mod_mode` «lock» el Ctrl se fija en el servidor (Firefox ignora la tecla Ctrl falsa)."""
+        if not n:
+            return
+        btn = 4 if n > 0 else 5
+        if self.mod_mode == "lock":
+            m = self.MASKS["Control_L"]
+            self._xkb_lock(m, m)
+            self._pausa(self.GAPS["lock"])
+            for _ in range(abs(n)):
+                self.xt.XTestFakeButtonEvent(self.dpy, btn, 1, 0)
+                self.xt.XTestFakeButtonEvent(self.dpy, btn, 0, 0)
+            self._pausa(self.GAPS["lock"])
+            self._xkb_lock(m, 0)
+            self.x11.XFlush(self.dpy)
+            return
         ctrl = self._code("Control_L")
-        if not ctrl or not n:
+        if not ctrl:
             return
         self.xt.XTestFakeKeyEvent(self.dpy, ctrl, 1, 0)
+        self._pausa(self.GAPS.get(self.mod_mode, 0.012))
         for _ in range(abs(n)):
-            self.xt.XTestFakeButtonEvent(self.dpy, 4 if n > 0 else 5, 1, 0)
-            self.xt.XTestFakeButtonEvent(self.dpy, 4 if n > 0 else 5, 0, 0)
+            self.xt.XTestFakeButtonEvent(self.dpy, btn, 1, 0)
+            self.xt.XTestFakeButtonEvent(self.dpy, btn, 0, 0)
+        self._pausa(self.GAPS.get(self.mod_mode, 0.012))
         self.xt.XTestFakeKeyEvent(self.dpy, ctrl, 0, 0)
 
     def wheel(self, v: int, h: int) -> None:
@@ -968,6 +1025,10 @@ class PadRunner:
         self._trw = {"dedo": 0, "inercia": 0, "mando": 0}   # clics de rueda por origen, para la grabadora
         self._tr_wheel_at = 0.0
         self._tr_x_at = 0.0
+        self._tr_win_at = 0.0       # cuándo mirar las ventanas visibles (grabadora)
+        self._tr_wins: dict = {}    # ventanas visibles ya vistas: id → (x, y, w, h, override)
+        self._tr_tap_at = 0.0       # hora del último toque (para decir «la ventana apareció N ms después»)
+        self._snaps: list = []      # (cuándo, ventana bajo el puntero al pulsar, nº de ventanas al pulsar) para anotar el efecto del toque
         # touch() → None (apagado, o el panel/teclado está delante) o {} / {"ay":…} (correspondencia de ejes forzada)
         self.touch_fn = touch or (lambda: None)
         self._tfds: dict = {}       # event → fd de una pantalla táctil
@@ -1132,6 +1193,30 @@ class PadRunner:
         if t is not None and t.on:
             t.add(ev, **kv)
 
+    def _tr_windows(self, now: float) -> None:
+        """Grabadora: ventanas que aparecen y desaparecen (menús y listas emergentes de GTK son ventanas aparte) y, 0,4 s después de cada toque,
+        a qué ventana iba el clic y si cambió el número de ventanas. Así, un menú que «no abre» se ve: el toque fue a X pero no apareció ventana."""
+        if self._snaps and now >= self._snaps[0][0]:
+            _t, (ch, n0, px, py) = self._snaps.pop(0)
+            n1 = len(self._x.windows())
+            self._tr("toque.efecto", clic_en=f"{px},{py}", ventana_bajo_el_puntero=hex(ch), ventanas=f"{n0}→{n1}")
+        if now < self._tr_win_at:
+            return
+        self._tr_win_at = now + 0.2
+        cur = {w[0]: w[1:] for w in self._x.windows()}
+        if not self._tr_wins:
+            self._tr_wins = cur
+            self._tr("ventanas.inicio", n=len(cur), lista=" ".join(f"{hex(i)}@{v[0]},{v[1]} {v[2]}x{v[3]}{'*' if v[4] else ''}" for i, v in list(cur.items())[:8]))
+            return
+        ms = round((now - self._tr_tap_at) * 1000) if self._tr_tap_at else -1
+        for i, v in cur.items():
+            if i not in self._tr_wins:
+                self._tr("ventana.nueva", id=hex(i), pos=f"{v[0]},{v[1]}", tam=f"{v[2]}x{v[3]}", emergente=v[4], desde_el_toque_ms=ms)
+        for i, v in self._tr_wins.items():
+            if i not in cur:
+                self._tr("ventana.cierra", id=hex(i), tam=f"{v[2]}x{v[3]}", emergente=v[4], desde_el_toque_ms=ms)
+        self._tr_wins = cur
+
     def _touch_apply(self, ts: "TouchScroll") -> None:
         """Lo que el modo completo pide: colocar el puntero, pulsar/soltar botones y anotar (con tope) lo que hizo.
         Un toque es mover → pulsar → soltar con un respiro entre cada paso (GTK, en menús y desplegables de Firefox/Edge, a veces aún no ha visto
@@ -1167,9 +1252,19 @@ class PadRunner:
                 self._x.move_abs(a[1], a[2])
             elif a[0] == "down":
                 self._x.button(a[1], True)
+                tr = self.trace
+                if tr is not None and tr.on and a[1] == 1:
+                    px, py, ch = self._x.pointer_child()
+                    self._snap_pre = (ch, len(self._x.windows()), px, py)
             elif a[0] == "up":
                 self._x.button(a[1], False)
                 self._tr("toque.enviado", desde_el_dedo_ms=(time.monotonic() - t_enq) * 1000)
+                tr = self.trace
+                if tr is not None and tr.on and a[1] == 1:
+                    self._tr_tap_at = time.monotonic()
+                    pre = getattr(self, "_snap_pre", None)
+                    if pre:
+                        self._snaps.append((time.monotonic() + 0.4, pre))
             elif a[0] == "kb":
                 self.log("táctil: dos dedos → teclado grande")
                 self.event("kb.combo")
@@ -1385,6 +1480,8 @@ class PadRunner:
                         t1 = time.perf_counter()
                         fw = self._x.focus_window()
                         self._tr("x.ida-vuelta", ms=(time.perf_counter() - t1) * 1000, foco=hex(fw))
+                if tr is not None and tr.on and self._x is not None:
+                    self._tr_windows(now)
                 if self._pend:
                     try:
                         self._pend_run(now)
