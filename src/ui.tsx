@@ -165,7 +165,7 @@ export const Chip: FC<{ children: ReactNode; active?: boolean; onClick: () => vo
         flex: grow ? 1 : undefined,
         minWidth: 0,
         height: stack ? 52 : compact ? 32 : 40,
-        padding: stack ? "4px 2px" : "0 8px",
+        padding: stack ? "4px 2px" : compact ? "0 4px" : "0 8px",
         borderRadius: stack ? 16 : compact ? 16 : 20,
         fontSize: stack ? 11 : 12,
         fontFamily: FONT,
@@ -187,7 +187,7 @@ export const Chip: FC<{ children: ReactNode; active?: boolean; onClick: () => vo
       }}
     >
       {icon && <Icon d={icon} size={stack ? 20 : 16} color={active ? COLORS.onAccent : COLORS.text} />}
-      {icon ? <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: "100%" }}>{children}</span> : children}
+      <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: "100%" }}>{children}</span>
       {!!badge && <span style={{ position: "absolute", top: 3, right: 6, minWidth: 16, height: 16, padding: "0 4px", boxSizing: "border-box", borderRadius: 8, background: "#e5484d", color: "#fff", fontSize: 10, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center" }}>{badge > 99 ? "99+" : badge}</span>}
     </DialogButton>
   );

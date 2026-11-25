@@ -43,7 +43,7 @@ export const HomeModeBar: FC<{ active: HomeModeId; game: boolean; onPick: (id: H
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
       <Segments tall opts={modes.map((m) => ({ value: m.id, label: m.label, icon: MODE_ICON[m.id] }))} value={active} onPick={(id: HomeModeId) => onPick(id)} />
-      <div style={{ ...small, fontSize: 11, padding: "0 6px" }}>{modeDef(active).hint}</div>
+      <div style={{ ...small, fontSize: 11, padding: "6px 6px 0" }}>{modeDef(active).hint}</div>
     </div>
   );
 };
