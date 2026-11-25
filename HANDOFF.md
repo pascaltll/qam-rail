@@ -34,4 +34,4 @@ Estado al pasar el trabajo del chat de claude.ai a Claude Code en la propia Ally
 
 ## Herramientas de agentes (25-nov)
 - `AGENTS.md` es la memoria común; `CLAUDE.md` y `GEMINI.md` lo importan. Skills en `.claude/skills/`. Decisiones cerradas en `docs/decisiones.md`.
-- `scripts/captura.py` (empaquetado desde la próxima versión): PNG de las páginas de la interfaz de Steam por CEF :8080; `--x` intenta la pantalla X. Sin confirmar en la Ally; primera prueba: `python3 ~/homebrew/plugins/qam-rail-dev/captura.py QuickAccess`.
+- `scripts/captura.py` (empaquetado desde la próxima versión): PNG de las páginas de la interfaz de Steam por CEF :8080; `--x` intenta la pantalla X. Probado en la Ally (25-nov): la página «Steam Big Picture Mode» captura panel y barra; QuickAccess/MainMenu están ocultas y agotan el tiempo.

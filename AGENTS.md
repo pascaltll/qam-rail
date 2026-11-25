@@ -18,7 +18,7 @@ Estado actual y pendientes: lee también `HANDOFF.md`. Lo ya decidido y que no s
 - Plugin instalado: `~/homebrew/plugins/qam-rail-dev/`. Ajustes y registros: `~/homebrew/settings/qam-rail-dev/`.
 - Reiniciar el cargador de plugins: `sudo systemctl restart plugin_loader` (la versión instalada está en `ultima-version`).
 - Registros: `pad.log` (mando/táctil/pantalla completa), `timeline.log` (JSON: apertura de apps `app.ventana`/`app.sin_ventana`, panel, errores `ui.js.*`), `desktop-tag.log`, `desktop-run.log`, `keyboard.log`, `nav-trace.log` y `trazas/` (una grabación por app abierta, 15 min cada una; se desactiva creando `vigilante-off`), `selftest.json`.
-- Capturas de la interfaz (para ver el diseño de verdad): `python3 ~/homebrew/plugins/qam-rail-dev/captura.py [filtro] [--x]` → PNG en `~/qam-capturas/` (el skill `diseno` explica cuándo). Sin confirmar en la Ally.
+- Capturas de la interfaz (para ver el diseño de verdad): `python3 ~/homebrew/plugins/qam-rail-dev/captura.py` → PNG de «Steam Big Picture Mode» (incluye panel y barra) en `~/qam-capturas/`; funciona en la Ally. Léelo con Read.
 - Un solo comando para reunir todo: `bash ~/homebrew/plugins/qam-rail-dev/informe.sh` → `~/qam-informe.txt`.
 - CPU por página de la interfaz de Steam (CEF, puerto 8080): `python3 ~/homebrew/plugins/qam-rail-dev/steam-cpu.py 10`.
 - X: pantalla `:0` (XWayland de gamescope). Steam depura por CEF en `127.0.0.1:8080`.

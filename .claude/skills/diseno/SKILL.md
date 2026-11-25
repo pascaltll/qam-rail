@@ -17,5 +17,5 @@ Principios tomados de la guía de interfaz de Apple (claridad, deferencia al con
 7. **Coherencia con los temas.** Usa las variables de color/tema existentes; nada de colores fijos nuevos.
 
 ## Cómo comprobar
-- Mira el resultado de verdad: captura de la interfaz con `python3 ~/homebrew/plugins/qam-rail-dev/captura.py [filtro] [--x]` (guarda PNG en `~/qam-capturas/`; léelos con Read) y revísala antes de dar el cambio por bueno. Si no puedes verlo, dilo: «sin confirmar visualmente».
+- Mira el resultado de verdad: captura de la interfaz con `python3 ~/homebrew/plugins/qam-rail-dev/captura.py` (guarda PNG en `~/qam-capturas/`; léelos con Read) y revísala antes de dar el cambio por bueno. Si no puedes verlo, dilo: «sin confirmar visualmente».
 - Pruebas de lógica en `tests/*.test.ts`; la autoprueba del navegador para los gestos.

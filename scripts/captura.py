@@ -2,7 +2,9 @@
 """Captura lo que se ve de la interfaz de Steam (y, si hay herramienta, de la pantalla X) para poder mirar el diseño de verdad.
 Solo biblioteca estándar. Usa la depuración CEF de Steam (127.0.0.1:8080), igual que steam-cpu.py.
 Uso:  python3 ~/homebrew/plugins/qam-rail-dev/captura.py [filtro] [--x]
-  filtro  texto que debe aparecer en el título de la página (p. ej. QuickAccess). Sin filtro: las páginas con interfaz visible.
+  filtro  texto que debe aparecer en el título de la página. Sin filtro: solo «Steam Big Picture Mode», la ventana principal, que ya
+          incluye el panel de QAM y la barra lateral (comprobado en la Ally). Las demás páginas (QuickAccess, MainMenu…) están ocultas
+          y agotan el tiempo; usa `todas` para intentarlas igualmente.
   --x     además intenta una captura de la pantalla X :0 (ImageMagick `import` o `xwd`, si están instalados; sin confirmar en gamescope).
 Guarda PNG en ~/qam-capturas/ (se conservan las últimas 40) e imprime las rutas. Puede mostrar lo que hay en pantalla: no la envíes fuera sin mirarla.
 No cambia nada en Steam."""
@@ -13,6 +15,7 @@ HOST, PORT = "127.0.0.1", 8080
 OUT = Path.home() / "qam-capturas"
 KEEP = 40
 ESPERA = 12  # segundos por intento
+PRINCIPAL = "Big Picture"
 SIN_INTERFAZ = ("SharedJSContext",)  # contexto sin pantalla: no tiene nada que mostrar
 
 
@@ -29,7 +32,11 @@ def slug(texto: str) -> str:
 
 
 def elegir(paginas: list[dict], filtro: str = "") -> list[dict]:
-    """Páginas con websocket que valen la pena capturar; con filtro, solo las que lo contienen en el título."""
+    """Páginas a capturar: sin filtro, la principal; `todas`, cualquiera con interfaz; otro texto, las que lo contengan en el título."""
+    if not filtro:
+        filtro = PRINCIPAL
+    elif filtro.lower() == "todas":
+        filtro = ""
     out = []
     for p in paginas:
         titulo = p.get("title") or ""

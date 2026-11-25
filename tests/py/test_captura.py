@@ -14,7 +14,8 @@ pags = [{"title": "QuickAccess_uid2", "webSocketDebuggerUrl": "ws://a"},
         {"title": "SharedJSContext", "webSocketDebuggerUrl": "ws://b"},
         {"title": "MainMenu_uid2"},
         {"title": "Steam Big Picture Mode", "webSocketDebuggerUrl": "ws://c"}]
-assert [p["title"] for p in c.elegir(pags)] == ["QuickAccess_uid2", "Steam Big Picture Mode"]
+assert [p["title"] for p in c.elegir(pags)] == ["Steam Big Picture Mode"]
+assert [p["title"] for p in c.elegir(pags, "todas")] == ["QuickAccess_uid2", "Steam Big Picture Mode"]
 assert [p["title"] for p in c.elegir(pags, "quick")] == ["QuickAccess_uid2"]
 assert c.elegir(pags, "nada") == []
 
