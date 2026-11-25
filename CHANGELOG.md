@@ -1,5 +1,9 @@
 # Cambios
 
+## dev.104
+- **`steam-cpu.py`: qué página de la interfaz de Steam gasta CPU.** Usa la depuración CEF (puerto 8080) y mide, por página (QuickAccess, MainMenu, Steam Big Picture Mode, SharedJSContext…), el % de tiempo ocupada, cuánto en JavaScript, maquetación y estilos, y los relayouts por segundo. Uso: `python3 ~/homebrew/plugins/qam-rail-dev/steam-cpu.py 10`. `informe.sh` lo ejecuta 6 s y lo añade.
+- Aviso: en dev.103 las etiquetas de `steamwebhelper` salen como `[zyg]` para los dos procesos de interfaz (Chromium los lanza desde el zygote y comparten línea de órdenes), así que no distinguen cuál es cuál; para eso sirve `steam-cpu.py`.
+
 ## dev.103
 - **La grabadora distingue los procesos de steamwebhelper.** Antes salían todos como `steamwebhelper:48%`; ahora `steamwebhelper[gpu]`, `steamwebhelper[rend#27]` (cada ventana de la interfaz de Steam), `[util]` o `[main]`. Sirve para saber CUÁL se come la CPU cuando se abre el panel (el 25-nov se vieron dos procesos entre 100 % y 270 %).
 
