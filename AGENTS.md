@@ -21,7 +21,7 @@ Estado actual y pendientes: lee también `HANDOFF.md`. Lo ya decidido y que no s
 - Capturas de la interfaz (para ver el diseño de verdad): `python3 ~/homebrew/plugins/qam-rail-dev/captura.py` → PNG de «Steam Big Picture Mode» (incluye panel y barra) en `~/qam-capturas/`; funciona en la Ally. Con `--recorrido [--scroll]` recorre todas las secciones del panel (usa `window.__qamRailUI`; sin confirmar en la Ally). Léelo con Read. Para varias imágenes usa el subagente `revisor-visual` (Haiku, devuelve solo texto) y capturas (por defecto ya son compactas; `--completo` para pantalla entera) y `--secciones=a,b` para gastar menos tokens.
 - Un solo comando para reunir todo: `bash ~/homebrew/plugins/qam-rail-dev/informe.sh` → `~/qam-informe.txt`.
 - CPU por página de la interfaz de Steam (CEF, puerto 8080): `python3 ~/homebrew/plugins/qam-rail-dev/steam-cpu.py 10`.
-- X: pantalla `:0` (XWayland de gamescope). Steam depura por CEF en `127.0.0.1:8080`.
+- X: pantalla `:0` (XWayland de gamescope). Steam depura por CEF en `127.0.0.1:8080`. **Las apps de escritorio (navegadores) viven en la capa X, no en CEF: `bp_nav.py` y `captura.py` no las ven. Antes de probar un navegador lee `docs/capa-x.md`.**
 
 ## Reglas acordadas
 - Antes de refactorizar código de riesgo, escribe pruebas de caracterización. No cambies comportamiento medido sin medir antes y después.
