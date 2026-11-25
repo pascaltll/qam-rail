@@ -105,26 +105,37 @@ def grabar(segundos: float, intervalo: float = 0.15) -> dict:
 
     paradas: dict = {}
     muestras: list = []
-    ultimo, t0, prox = None, time.time(), 0.0
-    print(f"Grabando {int(segundos)} s: recorre el panel con el mando (cruceta, L1/R1 para cambiar de sección)…", flush=True)
-    while time.time() - t0 < segundos:
-        t = time.time() - t0
-        if t >= prox:  # las paradas visibles se refrescan cada 2 s (el scroll y las secciones las cambian)
-            prox = t + 2
-            sec = seccion()
-            datos = _evaluar(principal, JS_PARADAS)
-            if datos is None:
-                sys.exit("El panel no está abierto (no encuentro su contenedor).")
-            for p in json.loads(datos):
-                lista = paradas.setdefault(sec, {})
-                lista[p["id"]] = p
-        foco = _evaluar(principal, JS_FOCO)
-        if foco:
-            f = json.loads(foco)
-            if f["id"] != ultimo:
-                ultimo = f["id"]
-                muestras.append({"t": round(t, 2), "sec": seccion(), **f})
-        time.sleep(intervalo)
+    ultimo, t0, prox, cerrado = None, time.time(), 0.0, False
+    print(f"Grabando {int(segundos)} s: recorre el panel con el mando (cruceta, L1/R1 para cambiar de sección). Ctrl-C para terminar antes…", flush=True)
+    try:
+        while time.time() - t0 < segundos:
+            t = time.time() - t0
+            try:
+                if t >= prox:  # las paradas visibles se refrescan cada 2 s (el scroll y las secciones las cambian)
+                    prox = t + 2
+                    datos = _evaluar(principal, JS_PARADAS)
+                    if datos is None:  # panel cerrado: se espera a que se reabra (lo grabado hasta ahora no se pierde)
+                        if not paradas:
+                            sys.exit("El panel no está abierto (no encuentro su contenedor).")
+                        if not cerrado:
+                            print(f"  (t={int(t)} s: el panel se cerró; espero a que lo abras de nuevo)", flush=True)
+                        cerrado = True
+                    else:
+                        cerrado = False
+                        sec = seccion()
+                        for p in json.loads(datos):
+                            paradas.setdefault(sec, {})[p["id"]] = p
+                foco = None if cerrado else _evaluar(principal, JS_FOCO)
+                if foco:
+                    f = json.loads(foco)
+                    if f["id"] != ultimo:
+                        ultimo = f["id"]
+                        muestras.append({"t": round(t, 2), "sec": seccion(), **f})
+            except OSError as e:  # tiempo agotado o conexión caída: se sigue con lo que hay
+                print(f"  (t={int(t)} s: {e})", flush=True)
+            time.sleep(intervalo)
+    except KeyboardInterrupt:
+        print("  (parado con Ctrl-C)")
     return {"paradas": {s: list(d.values()) for s, d in paradas.items()}, "muestras": muestras}
 
 
