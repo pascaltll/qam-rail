@@ -2,6 +2,7 @@
 
 ## dev.106
 - **Panel: texto de las fichas en una sola línea y más aire bajo las pestañas.** En la captura de la Ally, «Equilibrado 15» se partía en dos líneas y «Equilibrado» se salía de la píldora porque, con la letra con serifa, no cabía en el ancho de la ficha. Ahora el texto de toda ficha va en una línea (con «…» si aún no cupiera) y las fichas compactas usan 4 px de relleno lateral en vez de 8 (`Chip` en `src/ui.tsx`). La frase bajo las pestañas («Sin juego: lo de siempre») tiene 6 px de margen superior (`src/QamHomeModes.tsx`).
+- Primera captura tras instalar: la ficha ya no se partía pero decía «Equilibrado…» y perdía los vatios. Ahora los vatios van aparte (nunca se recortan), el nombre se acorta solo si hace falta y la letra de esa ficha baja a 11 px (`src/QamTdp.tsx`).
 - **La serifa no es de QAM Rail:** viene del tema «Hooandee Luminous Atlas» (`tokens.css`: `--hla-serif`, usada en `qam.css`), que fuerza esa fuente en el QAM. No se ha tocado.
 - Sin confirmar visualmente: falta instalar y recapturar (hay que reiniciar `plugin_loader`).
 
