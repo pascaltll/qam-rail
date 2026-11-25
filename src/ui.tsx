@@ -31,6 +31,10 @@ type DirEvt = { detail?: { button?: number }; stopPropagation?: () => void; prev
 let bodyDir: ((e: DirEvt) => void) | null = null;
 /** El panel registra aquí su manejador de la cruceta (modelo de filas). */
 export const setBodyDir = (f: ((e: DirEvt) => void) | null): void => { bodyDir = f; };
+/** Steam solo mete en su árbol de navegación (y da tabindex) a un Focusable con manejador de activación. Los controles de valor
+ *  (deslizadores, barra de TDP) no lo tenían: el mando no podía enfocarlos y la navegación de Steam los saltaba. Activar (A) no hace nada. */
+export const noActivate = (): void => { /* A no cambia el valor: Izquierda/Derecha sí */ };
+
 /** Controles que usan Izquierda/Derecha para su valor (data-qr-h): Arriba/Abajo siguen yendo al modelo de filas del panel.
  *  Sin confirmar con el mando real: con teclas por CDP estos controles no dejaban salir con Arriba/Abajo. Devuelve true si lo reenvió. */
 export const passVertical = (e: DirEvt): boolean => {
@@ -138,6 +142,7 @@ export const XSlider: FC<{
       data-qr-h="1"
       style={{ ...base, ...focusRing(focused) }}
       noFocusRing
+      onActivate={noActivate}
       onGamepadFocus={() => setFocused(true)}
       onGamepadBlur={() => setFocused(false)}
       onGamepadDirection={(e: DirEvt) => {

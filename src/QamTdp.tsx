@@ -5,7 +5,7 @@ import { useRef, useState, type FC, type ReactNode } from "react";
 import { useTdp, type UseTdp } from "./tdpControl";
 import { tiers } from "./powerTiers";
 import { isActivePreset, type TdpView } from "./tdpModel";
-import { COLORS, Chip, ICONS, Icon, Keep, Row, cardStyle, focusRing, passVertical, useDrag } from "./ui";
+import { COLORS, Chip, ICONS, Icon, Keep, Row, cardStyle, focusRing, noActivate, passVertical, useDrag } from "./ui";
 
 const ERROR = "#ff8d8d";
 const DIR_LEFT = 11;
@@ -42,6 +42,7 @@ export const PowerBar: FC<{
       data-qr="item"
       data-qr-h="1"
       noFocusRing
+      onActivate={noActivate}
       onGamepadFocus={() => setFocused(true)}
       onGamepadBlur={() => setFocused(false)}
       onGamepadDirection={(e: { detail?: { button?: number }; stopPropagation?: () => void; preventDefault?: () => void }) => {
