@@ -5,8 +5,9 @@ Uso:  python3 scripts/bp_nav.py <orden>
   foco               qué elemento tiene el foco del mando (clase .gpfocus de Steam), en CUALQUIER página CEF que lo marque: etiqueta, tamaño, posición,
                      si una persona lo vería (cuadrícula 3×3 con elementFromPoint: visible/parcial/tapado/fuera) y si `document.activeElement` coincide.
   qam estado|abrir|cerrar   abre o cierra el panel de QAM Rail por código y comprueba el resultado (sin confirmar que abra igual que el botón físico).
-  teclas             comprueba si las flechas del teclado, enviadas por CDP, mueven el foco (de ello depende `grafo`).
-  grafo [--pasos=60] [--max-seg=120]  explora el foco con las flechas, construye el grafo (nodo = elemento enfocado, arista = flecha → destino,
+  teclas [--variantes]  comprueba si las flechas del teclado, enviadas por CDP, mueven el foco (de ello depende `grafo`). Con --variantes prueba
+                     varias formas de enviarlas (base, keydown, js, y cada una con +emu = foco emulado) y dice cuál mueve el foco.
+  grafo [--pasos=60] [--max-seg=120] [--variante=keydown+emu]  explora el foco con las flechas, construye el grafo (nodo = elemento enfocado, arista = flecha → destino,
                      con su retraso en ms), y avisa de: nodos sin salida, aristas sin vuelta y retrasos grandes. Guarda JSON en ~/qam-grafo/.
   parar [--motivo=…] | parada | armar   interruptor de parada: `parar` crea ~/.qam-nav-stop y ninguna pulsación ni apertura/cierre sale mientras exista
                      (un archivo ilegible también cuenta como parado). `armar` lo quita: solo lo ejecuta una persona, nunca un agente.
@@ -311,18 +312,59 @@ def conectar_foco(WS):
     return primera or (None, None)
 
 
-def pulsar(ws, nombre: str) -> None:
+VARIANTES = ("base", "keydown", "js")  # cómo se envía la tecla (ver pulsar); `teclas --variantes` busca cuál mueve el foco
+VARIANTE = {"v": "base", "emu": False}  # la que usan `teclas` y `grafo` (opción --variante=keydown+emu)
+
+
+def foco_emulado(ws, activar: bool) -> None:
+    """Hace que la página crea tener el foco del sistema (Emulation.setFocusEmulationEnabled); Steam puede ignorar teclas si no."""
+    ws.call("Emulation.setFocusEmulationEnabled", {"enabled": activar})
+
+
+def pulsar(ws, nombre: str, variante: str | None = None) -> None:
     exigir_activo()  # justo antes de la tecla: nada sale con la parada puesta
     PULSACIONES[0] += 1
+    v = variante or VARIANTE["v"]
     key, code = TECLA[nombre]
+    if v == "js":  # evento DOM sintético, sin pasar por el sistema de entrada del navegador
+        ev = "new KeyboardEvent('%s',{key:'%s',code:'%s',keyCode:%d,which:%d,bubbles:true,cancelable:true})"
+        args = (key, key, code, code)
+        evaluar(ws, "(()=>{const t=document.activeElement||document.body;t.dispatchEvent(" + ev % (("keydown",) + args) + ");t.dispatchEvent(" + ev % (("keyup",) + args) + ")})()")
+        return
     base = {"key": key, "code": key, "windowsVirtualKeyCode": code, "nativeVirtualKeyCode": code}
-    ws.call("Input.dispatchKeyEvent", {"type": "rawKeyDown", **base})
+    if v == "keydown":  # como lo envía Puppeteer: keyDown (no rawKeyDown) con todos los campos
+        base = {**base, "modifiers": 0, "autoRepeat": False, "location": 0, "isKeypad": False}
+        ws.call("Input.dispatchKeyEvent", {"type": "keyDown", **base})
+    else:
+        ws.call("Input.dispatchKeyEvent", {"type": "rawKeyDown", **base})
     ws.call("Input.dispatchKeyEvent", {"type": "keyUp", **base})
 
 
-def mover_y_medir(ws, flecha: str, antes: str | None, limite: float = 1.0):
+def primera_que_mueve(combos, intentar):
+    """Prueba las combinaciones en orden y se detiene en la primera que mueve el foco. intentar(combo) -> [(flecha, movió, ms)].
+    Devuelve (combo que funcionó o None, {combo: resultados})."""
+    vistos = {}
+    for c in combos:
+        vistos[c] = intentar(c)
+        if any(m for _, m, _ in vistos[c]):
+            return c, vistos
+    return None, vistos
+
+
+def nombre_combo(variante: str, emu: bool) -> str:
+    return variante + ("+emu" if emu else "")
+
+
+def leer_combo(txt: str) -> tuple[str, bool]:
+    v, _, emu = txt.partition("+")
+    if v not in VARIANTES or emu not in ("", "emu"):
+        raise ValueError(f"variante desconocida: {txt!r} (usa {', '.join(VARIANTES)}, y opcionalmente +emu)")
+    return v, emu == "emu"
+
+
+def mover_y_medir(ws, flecha: str, antes: str | None, limite: float = 1.0, variante: str | None = None):
     t0 = time.monotonic()
-    pulsar(ws, flecha)
+    pulsar(ws, flecha, variante)
     while time.monotonic() - t0 < limite:
         time.sleep(0.02)
         ahora = firma(foco(ws))
@@ -385,25 +427,40 @@ def cmd_qam(WS, accion: str) -> str:
     return f"{accion}: {'cumplido' if cumplido else 'no cumplido'}"
 
 
-def cmd_teclas(WS) -> str:
+def cmd_teclas(WS, probar: bool = False) -> str:
     ws, titulo = conectar_foco(WS)
     if not ws:
         print("No encuentro «Steam Big Picture Mode».")
         return "sin página"
-    f0 = firma(foco(ws))
-    if f0 is None:
+    if firma(foco(ws)) is None:
         print("No hay ningún elemento con foco (.gpfocus). Mueve el foco con el mando una vez y repite.")
         return "sin foco"
-    movio = []
-    for d in ("Right", "Left", "Down", "Up"):
-        antes = firma(foco(ws))
-        despues, ms = mover_y_medir(ws, d, antes)
-        movio.append((d, despues != antes, ms))
-    print(f"[{titulo}] " + "; ".join(f"{d}: {'movió' if m else 'sin cambio'}" + (f" ({ms} ms)" if m else "") for d, m, ms in movio))
-    ok = any(m for _, m, _ in movio)
-    print("Las flechas del teclado SÍ mueven el foco: `grafo` es utilizable." if ok
-          else "Las flechas por CDP no mueven el foco: habrá que usar un mando virtual (uinput). `grafo` no servirá todavía.")
-    return f"flechas {'mueven' if ok else 'no mueven'} el foco en {titulo}"
+
+    def intentar(combo):
+        v, emu = leer_combo(combo)
+        if emu:
+            foco_emulado(ws, True)
+        try:
+            out = []
+            for d in ("Right", "Left", "Down", "Up"):
+                antes = firma(foco(ws))
+                despues, ms = mover_y_medir(ws, d, antes, variante=v)
+                out.append((d, despues != antes, ms))
+            return out
+        finally:
+            if emu:
+                foco_emulado(ws, False)
+
+    combos = [nombre_combo(v, e) for e in (False, True) for v in VARIANTES] if probar else [nombre_combo(VARIANTE["v"], VARIANTE["emu"])]
+    ganadora, vistos = primera_que_mueve(combos, intentar)
+    for c, res in vistos.items():
+        print(f"[{titulo}] {c}: " + "; ".join(f"{d} {'movió (' + str(ms) + ' ms)' if m else 'sin cambio'}" for d, m, ms in res))
+    if ganadora:
+        print(f"Las flechas por CDP SÍ mueven el foco con «{ganadora}»: `grafo --variante={ganadora}` es utilizable.")
+        return f"{ganadora} mueve el foco en {titulo}"
+    print("Ninguna variante de teclado por CDP mueve el foco: habrá que usar un mando virtual (uinput). `grafo` no servirá todavía."
+          if probar else "Las flechas por CDP no mueven el foco con esta variante. Prueba `teclas --variantes`.")
+    return f"ninguna variante mueve el foco en {titulo}" if probar else f"«{combos[0]}» no mueve el foco en {titulo}"
 
 
 def cmd_grafo(WS, pasos: int, max_seg: float) -> str:
@@ -427,7 +484,13 @@ def cmd_grafo(WS, pasos: int, max_seg: float) -> str:
             leer()
         return despues, ms
 
-    g = explorar(leer, mover, pasos, plazo_s=max_seg, parar=lambda: parada_activa() is not None)
+    if VARIANTE["emu"]:
+        foco_emulado(ws, True)
+    try:
+        g = explorar(leer, mover, pasos, plazo_s=max_seg, parar=lambda: parada_activa() is not None)
+    finally:
+        if VARIANTE["emu"]:
+            foco_emulado(ws, False)
     r = resumen(g)
     SALIDA.mkdir(parents=True, exist_ok=True)
     ruta = SALIDA / f"{time.strftime('%Y%m%d-%H%M%S')}-grafo.json"
@@ -495,8 +558,9 @@ def despachar(a: list[str]):
         return cmd_foco(WS)
     if a[0] == "qam" and len(a) > 1 and a[1] in ("estado", "abrir", "cerrar"):
         return cmd_qam(WS, a[1])
+    VARIANTE["v"], VARIANTE["emu"] = leer_combo(_opcion(a, "variante", "base"))
     if a[0] == "teclas":
-        return cmd_teclas(WS)
+        return cmd_teclas(WS, "--variantes" in a)
     if a[0] == "grafo":
         return cmd_grafo(WS, int(_opcion(a, "pasos", "60")), float(_opcion(a, "max-seg", "120")))
     print(__doc__)
@@ -512,6 +576,9 @@ def main() -> None:
     except Parado as e:
         print(str(e), file=sys.stderr)
         sys.exit(3)
+    except ValueError as e:  # opción mal escrita
+        print(f"Opción no válida: {e}", file=sys.stderr)
+        sys.exit(5)
     except OSError as e:  # Steam apagado, puerto distinto o página que no contesta
         print(f"No puedo hablar con la depuración de Steam ({HOST}:{PORT}): {e}", file=sys.stderr)
         sys.exit(4)

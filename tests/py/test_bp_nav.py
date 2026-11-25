@@ -170,4 +170,46 @@ estorbo = tmp / "archivo"
 estorbo.write_text("no soy una carpeta")
 assert b.registrar("foco", [], lambda: "bien", dir_=estorbo / "dentro", pid=7) == "bien"
 assert len(b.primera_linea("a" * 500)) == 300 and b.primera_linea("\n\n  hola \nadiós") == "hola"
+
+# ───── variantes de teclado ─────
+assert b.leer_combo("base") == ("base", False) and b.leer_combo("keydown+emu") == ("keydown", True) and b.leer_combo("js") == ("js", False)
+for malo in ("raro", "base+x", "+emu"):
+    try:
+        b.leer_combo(malo)
+        raise AssertionError(malo)
+    except ValueError:
+        pass
+assert b.nombre_combo("js", True) == "js+emu" and b.nombre_combo("base", False) == "base"
+probadas = []
+def intentar(c):
+    probadas.append(c)
+    return [("Right", c == "keydown+emu", 12), ("Left", False, 0)]
+gan, vistos = b.primera_que_mueve(["base", "keydown", "base+emu", "keydown+emu", "js+emu"], intentar)
+assert gan == "keydown+emu" and probadas == ["base", "keydown", "base+emu", "keydown+emu"] and len(vistos) == 4
+gan, vistos = b.primera_que_mueve(["base", "js"], lambda c: [("Up", False, 0)])
+assert gan is None and list(vistos) == ["base", "js"]
+
+
+class WsRegistro:
+    def __init__(self):
+        self.msgs = []
+
+    def call(self, metodo, params=None):
+        self.msgs.append((metodo, params))
+        return {}
+
+
+w = WsRegistro()
+b.PARADA = tmp / "no-existe"
+b.pulsar(w, "Left", "keydown")
+assert [m[1]["type"] for m in w.msgs] == ["keyDown", "keyUp"] and w.msgs[0][1]["autoRepeat"] is False
+w = WsRegistro()
+b.pulsar(w, "Left", "base")
+assert [m[1]["type"] for m in w.msgs] == ["rawKeyDown", "keyUp"]
+w = WsRegistro()
+b.pulsar(w, "Down", "js")
+assert w.msgs[0][0] == "Runtime.evaluate" and "ArrowDown" in w.msgs[0][1]["expression"] and "keydown" in w.msgs[0][1]["expression"]
+w = WsRegistro()
+b.foco_emulado(w, True)
+assert w.msgs == [("Emulation.setFocusEmulationEnabled", {"enabled": True})]
 print("OK test_bp_nav")

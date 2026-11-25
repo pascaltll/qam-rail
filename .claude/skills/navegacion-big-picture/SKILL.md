@@ -6,7 +6,7 @@ description: Navegar, ver y probar Steam Big Picture sin tocar la pantalla (CDP 
 # Navegación y pruebas en Big Picture
 
 Herramientas del repo (solo biblioteca estándar, ver `scripts/`):
-- `bp_nav.py paginas | foco | qam estado|abrir|cerrar | teclas | grafo [--pasos=N] [--max-seg=S] | parada`
+- `bp_nav.py paginas | foco | qam estado|abrir|cerrar | teclas [--variantes] | grafo [--pasos=N] [--max-seg=S] | parada`
 - `captura.py [--recorrido] [--completo]` para ver el resultado (compacto por defecto).
 - `steam-cpu.py [s]` para CPU por página; `informe.sh` para reunirlo todo.
 
@@ -34,3 +34,4 @@ Herramientas del repo (solo biblioteca estándar, ver `scripts/`):
 - **`foco` dice si se ve**: «tapado», «parcial» o «fuera» (cuadrícula 3×3 con `elementFromPoint`) es un fallo de diseño aunque el foco esté bien colocado. Si avisa de que `document.activeElement` no coincide, fíate de `.gpfocus`. Si avisa de «contenedor», el foco no está en un control.
 - `foco` busca `.gpfocus` en todas las páginas CEF (en un Steam Deck con SteamOS vivía en la del menú rápido, no en «Big Picture»; en Bazzite sin confirmar).
 - `grafo --max-seg` acota el tiempo (por defecto 120 s) y guarda lo explorado si lo paran.
+- Si `teclas` dice «sin cambio» (así pasó en la Ally el 2026-11-25 con la variante base), prueba `teclas --variantes` antes de pensar en un mando virtual; la que funcione se usa con `grafo --variante=…`.
