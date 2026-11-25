@@ -7,7 +7,8 @@ Uso:  python3 ~/homebrew/plugins/qam-rail-dev/captura.py [filtro] [--x]
           y agotan el tiempo; usa `todas` para intentarlas igualmente.
   --recorrido  con el panel de QAM Rail abierto, pasa por TODAS sus secciones (Inicio, etc.) y captura cada una; al final vuelve a la que estaba.
                Añade --scroll para capturar también lo que queda fuera de la vista en cada sección (hasta 4 trozos). Sin confirmar en la Ally.
-  --compacto   recorta a la mitad derecha (donde están el panel y la barra) y reduce a 0,6: unas 5 veces menos tokens por imagen al leerlas.
+  (por defecto) recorta a la parte derecha (panel y barra) y reduce a 0,6: unas 5 veces menos tokens por imagen al leerlas.
+  --completo   pantalla entera a tamaño real (solo si hace falta ver algo fuera del panel o letra muy pequeña).
   --secciones a,b  en --recorrido, solo esas secciones (p. ej. home,energy).
   --x     además intenta una captura de la pantalla X :0 (ImageMagick `import` o `xwd`, si están instalados; sin confirmar en gamescope).
 Guarda PNG en ~/qam-capturas/ (se conservan las últimas 40) e imprime las rutas. Puede mostrar lo que hay en pantalla: no la envíes fuera sin mirarla.
@@ -189,8 +190,9 @@ def main() -> None:
     paginas = json.load(urllib.request.urlopen(f"http://{HOST}:{PORT}/json/list", timeout=5))
     WS = _ws_class()
     hechas = []
+    compacto = "--completo" not in sys.argv
     if "--recorrido" in sys.argv:
-        recorrer_todo(paginas, WS, marca, "--scroll" in sys.argv, "--compacto" in sys.argv, sys.argv)
+        recorrer_todo(paginas, WS, marca, "--scroll" in sys.argv, "--completo" not in sys.argv, sys.argv)
         return
     for p in elegir(paginas, filtro):
         titulo = p.get("title") or p.get("url", "")[:30]
@@ -199,7 +201,12 @@ def main() -> None:
             try:
                 ws = WS(p["webSocketDebuggerUrl"])
                 ws.s.settimeout(ESPERA)
-                datos = ws.call("Page.captureScreenshot", {"format": "png", **extra}).get("data")
+                clip = None
+                if compacto and p.get("title") and PRINCIPAL.lower() in p["title"].lower():
+                    r0 = ws.call("Runtime.evaluate", {"expression": "JSON.stringify([innerWidth, innerHeight])", "returnByValue": True})
+                    wh = r0.get("result", {}).get("value")
+                    clip = clip_compacto(*json.loads(wh)) if wh else None
+                datos = ws.call("Page.captureScreenshot", {"format": "png", **extra, **({"clip": clip} if clip else {})}).get("data")
                 ws.s.close()
             except OSError as e:  # incluye el tiempo agotado
                 motivo = str(e)
