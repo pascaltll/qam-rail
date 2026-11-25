@@ -86,9 +86,9 @@ describe("ajustes de Steam", () => {
 });
 
 describe("Panel: color, ambito y bateria", () => {
-  it("looks: nativo primero, Aspecto OLED solo si el panel lo ofrece", () => {
+  it("looks: nativo primero, OLED solo si el panel lo ofrece", () => {
     const l = looks({ supported: true, presets: ["native", "cine"], active_preset: "cine", oled_look: {} });
-    expect(l.map((x) => x.label)).toEqual(["Nativo", "Aspecto OLED", "Cine"]);
+    expect(l.map((x) => x.label)).toEqual(["Nativo", "OLED", "Cine"]);
     expect(l.find((x) => x.active)?.key).toBe("cine");
     expect(looks({ supported: true, presets: ["native"], oled_look: null }).map((x) => x.key)).toEqual(["native"]);
     expect(looks({ supported: false })).toEqual([]);

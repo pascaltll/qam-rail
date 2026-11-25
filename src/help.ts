@@ -58,7 +58,7 @@ export const HELP: Record<string, HelpEntry> = {
     "Baja latencia: responde antes al mando; puede costar algo de fluidez.",
   ] },
   color: { title: "Color", text: [
-    "Looks de imagen: Nativo, Aspecto OLED (más contraste), Cine, Vivo, Cómodo.",
+    "Looks de imagen: Nativo, OLED (más contraste), Cine, Vivo, Cómodo.",
     "Modo noche: tonos cálidos para la vista. HDR solo aparece si la pantalla lo admite.",
     "Con un juego abierto, lo que cambies se guarda solo para ese juego.",
   ] },

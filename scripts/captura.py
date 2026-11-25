@@ -10,6 +10,8 @@ Uso:  python3 ~/homebrew/plugins/qam-rail-dev/captura.py [filtro] [--x]
   (por defecto) recorta desde el 44 % hasta la derecha (panel y barra) y reduce a 0,6: unas 5 veces menos tokens por imagen al leerlas.
   --completo   pantalla entera a tamaño real (solo si hace falta ver algo fuera del panel o letra muy pequeña).
   --secciones a,b  en --recorrido, solo esas secciones (p. ej. home,energy).
+  --desborde   (con --recorrido) en cada sección mide en el panel real los controles (fichas, segmentos, botones) y lista los que tienen el texto
+               cortado con «…», partido en más de una línea o menos de 40 px de alto. Solo lectura; imprime etiquetas de controles, nunca lo escrito.
   --x     además intenta una captura de la pantalla X :0 (ImageMagick `import` o `xwd`, si están instalados; sin confirmar en gamescope).
 Guarda PNG en ~/qam-capturas/ (se conservan las últimas 40) e imprime las rutas. Puede mostrar lo que hay en pantalla: no la envíes fuera sin mirarla.
 No cambia nada en Steam."""
@@ -71,6 +73,32 @@ def parse_secciones(args: list[str], todas: list[str]) -> list[str]:
             pedidas = [x.strip() for x in a.split("=", 1)[1].split(",") if x.strip()]
             return [x for x in pedidas if x in todas]
     return todas
+
+
+# Mide controles visibles: texto cortado (scrollWidth > clientWidth), texto partido (alto > 1,7 líneas) y alto táctil < 40 px.
+JS_DESBORDE = """(()=>{const out=[];
+const lineas=(e)=>{const g=document.createRange();g.selectNodeContents(e);return new Set([...g.getClientRects()].filter(x=>x.width>0).map(x=>Math.round(x.top/4))).size};
+for(const c of document.querySelectorAll('.qr-chip,[role=button],[data-qr=item]')){
+ const r=c.getBoundingClientRect(); if(r.width<8||r.height<8) continue;
+ if(c.querySelector('.qr-chip,[role=button],[data-qr=item]')) continue;
+ const txt=(c.textContent||'').trim().replace(/\\s+/g,' '); if(!txt) continue;
+ const p=[]; let cort=false, part=false;
+ for(const e of [c,...c.querySelectorAll('*')]){
+  if(e.scrollWidth>e.clientWidth+1 && e.clientWidth>0 && getComputedStyle(e).overflowX==='hidden') cort=true;
+  if(!e.children.length && e.textContent.trim() && lineas(e)>1) part=true;
+ }
+ if(cort) p.push('cortado'); if(part) p.push('partido'); if(r.height<39) p.push('bajo '+Math.round(r.height)+'px');
+ if(p.length) out.push({t:txt.slice(0,40),p});
+}
+return JSON.stringify(out)})()"""
+
+
+def formatear_desborde(seccion: str, datos: str | None) -> list[str]:
+    """Líneas legibles a partir del JSON de JS_DESBORDE (vacío si no hay problemas)."""
+    try:
+        return [f"  {seccion} — «{d['t']}» — {', '.join(d['p'])}" for d in json.loads(datos or "[]")]
+    except (ValueError, KeyError, TypeError):
+        return [f"  {seccion} — (no se pudo leer la medición)"]
 
 
 def clip_compacto(ancho: int, alto: int) -> dict:
@@ -165,6 +193,9 @@ def recorrer_todo(paginas: list[dict], WS, marca: str, con_scroll: bool, compact
         clip = clip_compacto(*json.loads(wh)) if wh else None
 
     def capturar(nombre: str):
+        if "--desborde" in (args or []):
+            for linea in formatear_desborde(nombre, _evaluar(principal, JS_DESBORDE)):
+                print(linea)
         try:
             datos = principal.call("Page.captureScreenshot", {"format": "png", **({"clip": clip} if clip else {})}).get("data")
         except OSError as e:

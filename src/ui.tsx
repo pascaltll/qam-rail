@@ -147,6 +147,14 @@ export const XSlider: FC<{
   );
 };
 
+/** Texto de un control de altura fija. Regla única: una línea con «…» (y `title` con el texto entero) o, si se pide, hasta 2 líneas centradas. */
+export const Label: FC<{ children: ReactNode; lines?: 1 | 2 }> = ({ children, lines = 1 }) => (
+  <span title={typeof children === "string" ? children : undefined}
+    style={lines === 2
+      ? { textAlign: "center", lineHeight: 1.15, maxWidth: "100%", minWidth: 0, overflow: "hidden" }
+      : { whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: "100%", minWidth: 0 }}>{children}</span>
+);
+
 /** Ficha redonda: perfil de potencia, Bluetooth, etc. */
 export const Chip: FC<{ children: ReactNode; active?: boolean; onClick: () => void; icon?: string; grow?: boolean; compact?: boolean; stack?: boolean; badge?: number; autoFocus?: boolean }> = ({
   children, active, onClick, icon, grow = true, compact, stack, badge, autoFocus,
@@ -164,7 +172,7 @@ export const Chip: FC<{ children: ReactNode; active?: boolean; onClick: () => vo
       style={{
         flex: grow ? 1 : undefined,
         minWidth: 0,
-        height: stack ? 52 : compact ? 32 : 40,
+        height: stack ? 52 : 40, // compact = 40 px como la normal (zona táctil; antes 32). Solo cambia el relleno.
         padding: stack ? "4px 2px" : compact ? "0 4px" : "0 8px",
         borderRadius: stack ? 16 : compact ? 16 : 20,
         fontSize: stack ? 11 : 12,
@@ -187,7 +195,7 @@ export const Chip: FC<{ children: ReactNode; active?: boolean; onClick: () => vo
       }}
     >
       {icon && <Icon d={icon} size={stack ? 20 : 16} color={active ? COLORS.onAccent : COLORS.text} />}
-      <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: "100%" }}>{children}</span>
+      <Label>{children}</Label>
       {!!badge && <span style={{ position: "absolute", top: 3, right: 6, minWidth: 16, height: 16, padding: "0 4px", boxSizing: "border-box", borderRadius: 8, background: "#e5484d", color: "#fff", fontSize: 10, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center" }}>{badge > 99 ? "99+" : badge}</span>}
     </DialogButton>
   );
@@ -421,7 +429,7 @@ export const Segments: FC<{ opts: SegOpt[]; value: number | string | null; onPic
   // A CONFIRMA lo marcado (0.47 pasaba a la siguiente: al confirmar «∞» saltaba a 30, y el color elegido cambiaba).
   const next = useTap(() => flush());
   const cols = perRow ?? opts.length;
-  const h = tall ? 52 : 40;
+  const h = tall ? 52 : 46; // opción de 40 px (normal) o 46 px (tall); antes 34
   return (
     <Focusable data-qr="item" data-qr-h="1" data-qr-seg="1" noFocusRing onActivate={next}
       onGamepadFocus={() => setFocused(true)} onGamepadBlur={() => { setFocused(false); flush(); }}
@@ -441,7 +449,7 @@ export const Segments: FC<{ opts: SegOpt[]; value: number | string | null; onPic
               background: on ? COLORS.accent : "transparent", color: on ? COLORS.onAccent : COLORS.text,
               boxShadow: on ? "0 1px 4px rgba(0,0,0,0.35)" : "none", transition: "background 140ms ease, color 140ms ease" }}>
             {o.icon && <Icon d={o.icon} size={tall ? 20 : 15} color={on ? COLORS.onAccent : COLORS.text} />}
-            {o.icon ? <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: "100%" }}>{o.label}</span> : <span style={{ textAlign: "center", lineHeight: 1.15, maxWidth: "100%", overflow: "hidden" }}>{o.label}</span>}
+            <Label lines={o.icon ? 1 : 2}>{o.label}</Label>
           </div>
         );
       })}

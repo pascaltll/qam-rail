@@ -60,4 +60,8 @@ assert nombres == ["01-audio-1", "01-audio-2", "01-audio-3"]
 assert c.parse_secciones([], ["a", "b"]) == ["a", "b"]
 assert c.parse_secciones(["--secciones=b,x,a"], ["a", "b"]) == ["b", "a"]
 assert c.clip_compacto(1920, 1080) == {"x": 844, "y": 0, "width": 1076, "height": 1080, "scale": 0.6}
+assert c.formatear_desborde("01-home", json.dumps([{"t": "Equilibrado 15", "p": ["cortado"]}, {"t": "OLED", "p": ["partido", "bajo 34px"]}])) == [
+    "  01-home — «Equilibrado 15» — cortado", "  01-home — «OLED» — partido, bajo 34px"]
+assert c.formatear_desborde("x", "[]") == [] and c.formatear_desborde("x", None) == []
+assert "no se pudo" in c.formatear_desborde("x", "{no json")[0]
 print("OK test_captura")

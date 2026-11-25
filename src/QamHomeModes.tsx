@@ -4,7 +4,7 @@ import { useState, type FC } from "react";
 
 import { HOME_MODES, modeDef, type HomeModeId } from "./homeModes";
 import { Card, small } from "./QamSections";
-import { COLORS, Chip, Segments } from "./ui";
+import { COLORS, Chip, Label, Segments } from "./ui";
 
 /**
  * Segmento de la barra de modos. El foco es un anillo INTERIOR fino (antes el anillo exterior era enorme para un
@@ -22,7 +22,7 @@ const ModeChip: FC<{ on: boolean; label: string; icon?: string; onTap: () => voi
         transition: "background 140ms ease, color 140ms ease",
       }}>
       {icon && <span style={{ fontSize: 13, lineHeight: "14px" }}>{icon}</span>}
-      <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{label}</span>
+      <Label>{label}</Label>
     </Focusable>
   );
 };

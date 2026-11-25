@@ -330,7 +330,7 @@ describe("QamApp (humo)", () => {
     await click(byText("Estirar"));
     expect(perf.SetSplitScalingScaler).not.toHaveBeenCalled();
     await click(rail()[2]); // Imagen y sonido: color
-    expect(host.textContent).toContain("Aspecto OLED");
+    expect(host.textContent).toContain("OLED");
     await click(byText("Cine"));
     const { callPanel } = await import("../src/panelBridge");
     expect(callPanel).toHaveBeenCalledWith("apply_color_preset", expect.anything(), ["cine", "global", null, null]);

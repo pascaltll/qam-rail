@@ -1,5 +1,13 @@
 # Cambios
 
+## dev.108
+- **Una sola regla para el texto de los controles de altura fija** (`Label` en `src/ui.tsx`, usada por `Chip`, `Segments` y `ModeChip`): una línea con «…» y `title` con el texto entero; solo las opciones de `Segments` sin icono admiten 2 líneas, centradas. Antes cada componente lo hacía a su manera, y de ahí «Equilibrado 15» partido, «Aspecto OLED» a la izquierda, etc.
+- **Zonas táctiles de 40 px (opción A acordada):** `Chip compact` pasa de 32 a 40 px (queda como la normal; solo cambia el relleno) y las opciones de `Segments` de 34 a 40 px (46 px las `tall`, igual que antes). Sin confirmar en la Ally: cuánto crece el panel y si las secciones largas siguen cabiendo (más scroll).
+- **«Aspecto OLED» → «OLED»** en el selector de color y en la ayuda (decisión de Carlos). Pruebas actualizadas.
+- **`captura.py --recorrido --desborde`:** en cada sección mide los controles reales y lista los que tienen texto cortado con «…», partido en varias líneas (cuenta líneas reales con `Range`) o menos de 39 px de alto. Solo lectura. Probado en la Ally sobre dev.106: confirma «Aspecto OLED» y «ROG Ally mejorado» partidos y los 32/34 px, y encuentra otros objetivos pequeños aún sin tocar: botones «?» de ayuda (22 px), interruptores «Encendido» (28 px), «Todas ›» (20 px), «En línea» (26 px). Los nombres de juegos cortados en Inicio y los nombres de apps en dos líneas en Apps son intencionados.
+- Ignorado a propósito: nombre «LetMeReShade» (cortado en Apps) y «Forgeinator 3000» / «Forgeinator 3000 Dev» (dos entradas: versión de desarrollo y de usuario de un lanzador propio).
+- Sin confirmar visualmente: falta instalar y recapturar.
+
 ## dev.107
 - **Botón «Cerrar columna» de los plugins: zona de toque de 48 px.** Medía 30×30 px (lo detectó el nuevo agente `revisor-navegacion` leyendo `src/PluginColumn.tsx`; comprobado en el código). El círculo se ve igual: la zona de toque es un contenedor de 48 px con margen negativo. Con el mando no hay trampa: B ya cierra la columna.
 - **Segmentos sin icono (p. ej. COLOR en Pantalla): el texto que se parte en dos líneas queda centrado.** «Aspecto OLED» salía en dos líneas pegado a la izquierda mientras Cine/Vivo/Cómodo iban centrados (visto en `03-display`). Ahora va en un `span` centrado (`Segments` en `src/ui.tsx`). Sigue partiéndose en dos líneas porque son 5 columnas iguales.

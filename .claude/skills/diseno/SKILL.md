@@ -15,6 +15,7 @@ Principios tomados de la guía de interfaz de Apple (claridad, deferencia al con
 5. **Dentro del QAM de Steam:** la barra lateral es angosta y vive dentro de la interfaz de Steam (CEF). No uses ventanas del sistema ni alertas del navegador; cierra siempre bien lo que abres (ver `ghostWatch` en `src/pilot.tsx`).
 6. **Respuesta inmediata.** Todo toque o botón da una señal visible (estado pulsado/foco) en menos de un cuadro; lo lento muestra progreso, no se congela.
 7. **Coherencia con los temas.** Usa las variables de color/tema existentes; nada de colores fijos nuevos.
+8. **Texto en controles de altura fija:** una línea con «…» y `title` (componente `Label` de `src/ui.tsx`); lo que importa (cifras, unidades) va aparte y nunca se recorta. Excepción: opciones de `Segments` sin icono, hasta 2 líneas centradas. Zona táctil de 40 px como mínimo (medir en la Ally; `captura.py --recorrido --desborde` lista lo que no cumple).
 
 ## Cómo comprobar
 - Mira el resultado de verdad: captura de la interfaz con `python3 ~/homebrew/plugins/qam-rail-dev/captura.py` (guarda PNG en `~/qam-capturas/`; léelos con Read) y revísala antes de dar el cambio por bueno. Si no puedes verlo, dilo: «sin confirmar visualmente».

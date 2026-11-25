@@ -64,7 +64,7 @@ export const panel = {
 };
 
 // ---- Logica pura (probada en tests/panelExtra.test.ts) ----
-export const LOOK_LABEL: Record<string, string> = { native: "Nativo", cine: "Cine", vivo: "Vivo", comodo: "Cómodo", oled: "Aspecto OLED" };
+export const LOOK_LABEL: Record<string, string> = { native: "Nativo", cine: "Cine", vivo: "Vivo", comodo: "Cómodo", oled: "OLED" };
 export const lookLabel = (k: string) => LOOK_LABEL[k] ?? k.charAt(0).toUpperCase() + k.slice(1);
 
 /**
@@ -82,12 +82,12 @@ export function mergeColor(prev: ColorState | null, next: ColorState | null | un
   return out;
 }
 
-/** Looks a mostrar: los del backend (nativo primero) + «Aspecto OLED» si el panel es LCD y lo ofrece. */
+/** Looks a mostrar: los del backend (nativo primero) + «OLED» si el panel es LCD y lo ofrece. */
 export function looks(c: ColorState | null): Array<{ key: string; label: string; active: boolean }> {
   if (!c?.supported) return [];
   const keys = (c.presets ?? []).filter((k) => typeof k === "string");
   const out = keys.map((k) => ({ key: k, label: lookLabel(k), active: c.active_preset === k }));
-  if (c.oled_look) out.splice(Math.min(1, out.length), 0, { key: "oled", label: "Aspecto OLED", active: c.active_preset === "oled" });
+  if (c.oled_look) out.splice(Math.min(1, out.length), 0, { key: "oled", label: "OLED", active: c.active_preset === "oled" });
   return out;
 }
 
