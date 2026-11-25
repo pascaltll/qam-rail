@@ -39,6 +39,27 @@ def parse_stat(text: str):
         return None
 
 
+def parse_role(cmdline: str) -> str:
+    """Qué hace un proceso de Chromium/CEF según su línea de órdenes: `[gpu]`, `[rend#27]`, `[util]`…; vacío si es el principal o no se sabe."""
+    parts = cmdline.split("\0")
+    kind = next((a[7:] for a in parts if a.startswith("--type=")), "")
+    if not kind:
+        return "[main]" if cmdline else ""
+    short = {"gpu-process": "gpu", "renderer": "rend", "utility": "util", "zygote": "zyg"}.get(kind, kind[:6])
+    cid = next((a.split("=", 1)[1] for a in parts if a.startswith("--renderer-client-id=")), "")
+    return f"[{short}#{cid}]" if cid else f"[{short}]"
+
+
+def role_of(proc: str, pid: str, comm: str) -> str:
+    """Solo para steamwebhelper (varios procesos con el mismo nombre): sirve para ver CUÁL se come la CPU (la GPU, el de la interfaz, el del panel…)."""
+    if comm != "steamwebhelper":
+        return ""
+    try:
+        return parse_role(open(f"{proc}/{pid}/cmdline", encoding="utf-8", errors="replace").read())
+    except OSError:
+        return ""
+
+
 def cpu_pct(prev_ticks: int, ticks: int, dt: float, hz: int = 100) -> float:
     return 0.0 if dt <= 0 else max(0.0, (ticks - prev_ticks) / hz / dt * 100.0)
 
@@ -145,5 +166,5 @@ class Trace:
                 rows.append((pc, comm, pid, rss * 4 // 1024))
         self._prev = seen
         rows.sort(reverse=True)
-        top = " ".join(f"{c}:{pc:.0f}%/{mb}M" for pc, c, _pid, mb in rows[:5] if pc >= 1.0)
+        top = " ".join(f"{c}{role_of(proc, pid, c)}:{pc:.0f}%/{mb}M" for pc, c, pid, mb in rows[:5] if pc >= 1.0)
         self.add("carga", load=load, top=top or "-")

@@ -23,3 +23,13 @@ last = [l for l in open(tr.path, encoding="utf-8").read().splitlines() if " carg
 assert "load=1.50" in last and "msedge:" in last and "bash" not in last, last
 assert t.parse_stat("1 (a b) c) S 1 2 3 4 5 6 7 8 9 10 1 2 0 0 0 0 0 0 0 0 7 0") is None or True
 print("test_trace OK")
+
+
+def test_parse_role():
+    import qam_trace as q
+    assert q.parse_role("/x/steamwebhelper\0--type=gpu-process\0--foo") == "[gpu]"
+    assert q.parse_role("/x/steamwebhelper\0--type=renderer\0--renderer-client-id=27") == "[rend#27]"
+    assert q.parse_role("/x/steamwebhelper\0--no-sandbox") == "[main]" and q.parse_role("") == ""
+    assert q.role_of("/nada", "1", "firefox") == "" and q.role_of("/nada", "1", "steamwebhelper") == ""
+    print("ok parse_role")
+test_parse_role()

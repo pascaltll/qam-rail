@@ -1,5 +1,8 @@
 # Cambios
 
+## dev.103
+- **La grabadora distingue los procesos de steamwebhelper.** Antes salían todos como `steamwebhelper:48%`; ahora `steamwebhelper[gpu]`, `steamwebhelper[rend#27]` (cada ventana de la interfaz de Steam), `[util]` o `[main]`. Sirve para saber CUÁL se come la CPU cuando se abre el panel (el 25-nov se vieron dos procesos entre 100 % y 270 %).
+
 ## dev.102
 - **Una grabación por app abierta.** Antes la grabadora guardaba solo una copia anterior (`nav-trace.log.old`). Ahora cada grabación se archiva en `trazas/AAAAMMDD-HHMMSS-<app>.log` (se conservan las últimas 25 o 12 MB) y la primera línea lleva el nombre de la app. Si abres otra app con la grabadora encendida, queda una marca «se abrió X» en la grabación en curso.
 - `informe.sh` lista las apps abiertas (línea de tiempo) y añade las últimas líneas de las 5 grabaciones más recientes.
