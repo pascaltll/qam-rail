@@ -2,6 +2,8 @@
 
 Plugin de Decky (GPL-3.0) que convierte el QAM de Steam en una barra lateral de iconos con lanzador de apps, panel de teclado/táctil y herramientas para apps de escritorio. Se desarrolla en una ROG Ally con Bazzite (Game Mode, gamescope). Repo: `pascaltll/qam-rail`, rama de trabajo **`dev`**. El usuario (Carlos) habla español: responde en español.
 
+Estado actual y pendientes: lee también `HANDOFF.md`.
+
 ## Estructura
 - `src/` interfaz (TypeScript/React para Decky). `main.py` backend del plugin. `py_modules/` módulos Python (`qam_pad` mando/táctil, `qam_desktop` inventario de apps, `qam_trace` grabadora, `qam_selftest*` autoprueba del navegador, `qam_fswatch`, `qam_forensics`, `qam_blackbox`).
 - `tests/*.test.ts` (vitest) y `tests/py/test_*.py` (se ejecutan como scripts, cada uno por separado).
