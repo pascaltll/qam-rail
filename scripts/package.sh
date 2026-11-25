@@ -25,7 +25,7 @@ PY
   mkdir -p "$OUT/dist-dev" && cp -r dist/. "$OUT/dist-dev/"
   DIST="$OUT/dist-dev"
 fi
-cp -r main.py py_modules README.md LICENSE package.json plugin.json "$OUT/$DIR/"; cp scripts/informe.sh scripts/steam-cpu.py scripts/captura.py "$OUT/$DIR/"; cp -r "$DIST" "$OUT/$DIR/dist"
+cp -r main.py py_modules README.md LICENSE package.json plugin.json "$OUT/$DIR/"; cp scripts/informe.sh scripts/steam-cpu.py scripts/captura.py scripts/navtest.py scripts/foco.py "$OUT/$DIR/"; cp -r "$DIST" "$OUT/$DIR/dist"
 find "$OUT" \( -name '*.map' -o -name '__pycache__' \) -prune -exec rm -rf {} +
 if [[ $DEV == 1 ]]; then
   VER="$VER-dev.$N"

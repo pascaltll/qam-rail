@@ -26,6 +26,8 @@ sec "interfaz de Steam (CEF, puerto 8080): páginas abiertas"
 timeout 5 curl -s http://127.0.0.1:8080/json/list 2>&1 | grep -E '"title"|"url"' | cut -c1-160 | head -n 30 >> "$OUT"
 sec "CPU por página de la interfaz de Steam (6 s)"
 P="$(dirname "$(readlink -f "$0")")/steam-cpu.py"; [ -f "$P" ] && timeout 20 python3 "$P" 6 >> "$OUT" 2>&1
+sec "foco con el mando (foco.jsonl): sin destino y controles solo táctiles"
+F="$(dirname "$(readlink -f "$0")")/foco.py"; [ -f "$F" ] && timeout 10 python3 "$F" >> "$OUT" 2>&1
 sec "errores de la interfaz del plugin (ui.js.*)"
 grep -h "ui.js" "$D/timeline.log" 2>/dev/null | tail -n 40 >> "$OUT"
 sec "procesos que más CPU gastan ahora"

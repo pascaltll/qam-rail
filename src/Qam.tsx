@@ -32,6 +32,7 @@ import { activeHomeMode, homePlugins, loadHomeModes, modeDef, onHomeModesChange,
 import { HomeModeBar, PinEditor } from "./QamHomeModes";
 import { situation } from "./situation";
 import { crumb } from "./crumbs";
+import { DIR, ctrlRef, focusBegin, focusFlush, focusMove, focusSection, focusTap } from "./focusLog";
 import { checkTvAudio } from "./audioTv";
 import { liteCss, menuClosed, menuOpened } from "./menuEfficiency";
 import { BenchView } from "./QamBench";
@@ -77,6 +78,7 @@ export const QamApp: FC<{ log: (m: string) => void; onNative: (tab?: number) => 
   const scrollPos = useRef<Partial<Record<SectionId, number>>>({});
   const setSection = useCallback((id: SectionId) => {
     switchT0.current = performance.now();
+    focusSection(sectionRef.current, id);
     const b = bodyEl.current;
     if (b) scrollPos.current[sectionRef.current] = b.scrollTop;
     setSectionRaw(id);
@@ -289,11 +291,14 @@ export const QamApp: FC<{ log: (m: string) => void; onNative: (tab?: number) => 
       if (cand.length) {
         const best = cand.reduce((a, c) => (Math.abs((b === BTN.DOWN ? rects[c].top - rects[from].bottom : rects[from].top - rects[c].bottom)) < Math.abs((b === BTN.DOWN ? rects[a].top - rects[from].bottom : rects[from].top - rects[a].bottom)) ? c : a), cand[0]);
         crumb(`mando: ${b === BTN.DOWN ? "abajo" : "arriba"} sin destino desde «${(act.textContent ?? "").slice(0, 24)}»: voy a «${(all[best].textContent ?? "").slice(0, 24)}»`);
+        if (DIR[b]) focusMove(sectionRef.current, ctrlRef(act, root, sectionRef.current), DIR[b], ctrlRef(all[best], root, sectionRef.current));
         takeFocus(all[best]);
         return;
       }
       crumb(`mando: ${b === BTN.DOWN ? "abajo" : "arriba"} sin destino desde «${(act.textContent ?? "").slice(0, 24)}» (${all.length} elementos, ${visualRows(rects).length} filas)`);
     }
+    // Registro de foco (solo etiquetas y posiciones): destino, o «sin destino» si la cruceta no tiene a dónde ir.
+    if (DIR[b]) focusMove(sectionRef.current, ctrlRef(act, root, sectionRef.current), DIR[b], to >= 0 && to !== from ? ctrlRef(all[to], root, sectionRef.current) : null);
     if (to < 0 || to === from) return;
     // Recordar donde estabas en la fila que dejas.
     if (b === BTN.UP || b === BTN.DOWN) {
@@ -323,6 +328,15 @@ export const QamApp: FC<{ log: (m: string) => void; onNative: (tab?: number) => 
   const helpRef = useRef<string | null>(null);
   helpRef.current = help;
   useEffect(() => { setHelpSink((id) => setHelp(id)); return () => setHelpSink(null); }, []);
+  // Registro de foco con el mando: una sesión por apertura; se manda al cerrar, al ocultarse la ventana y cada minuto.
+  useEffect(() => {
+    focusBegin();
+    const doc = rootEl.current?.ownerDocument ?? document;
+    const hide = () => { if (doc.visibilityState === "hidden") void focusFlush(); };
+    doc.addEventListener("visibilitychange", hide);
+    const id = window.setInterval(() => void focusFlush(), 60000);
+    return () => { window.clearInterval(id); doc.removeEventListener("visibilitychange", hide); void focusFlush(); };
+  }, []);
   // Al abrir (1,5 s después, para no competir con el primer pintado): si se acaba de conectar una TV, el sonido pasa a ella.
   useEffect(() => {
     const id = window.setTimeout(() => { void checkTvAudio().then((n) => { if (n) notify(`Sonido por ${n}`); }); }, 1500);
@@ -571,7 +585,11 @@ export const QamApp: FC<{ log: (m: string) => void; onNative: (tab?: number) => 
       actionDescriptionMap={{ 4: "¿Qué es esto?", 5: "Sección anterior", 6: "Sección siguiente" } as never}
       // LB/RB: seccion anterior/siguiente desde cualquier sitio. [H] onButtonDown no esta en los tipos de @decky/ui.
       {...({ onButtonDown } as Record<string, unknown>)}
-      onPointerDownCapture={() => { lastPointer.current = Date.now(); lastInput.current = Date.now(); }}
+      onPointerDownCapture={(e: { target: EventTarget | null }) => {
+        lastPointer.current = Date.now(); lastInput.current = Date.now();
+        const c = (e.target as HTMLElement | null)?.closest?.('[data-qr="item"],.qr-chip,[role=button]');
+        if (c && rootEl.current) focusTap(sectionRef.current, ctrlRef(c, rootEl.current, sectionRef.current));
+      }}
       onFocusCapture={(e: { target: EventTarget | null }) => { const t = e.target as HTMLElement | null; if (t && /^(INPUT|TEXTAREA)$/.test(t.tagName)) noteInputFocus(); }}
       // B con una columna abierta (este donde este el foco): cierra la columna, no el panel.
       onCancel={(e: CustomEvent) => { if (helpRef.current) { e.stopPropagation(); setHelp(null); return; } if (hostedRef.current) { e.stopPropagation(); closePlugin(); } }}

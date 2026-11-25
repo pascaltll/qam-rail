@@ -48,6 +48,10 @@ try:
 except ImportError:
     qam_blackbox = None
 try:
+    import qam_focus
+except ImportError:
+    qam_focus = None
+try:
     import qam_self
 except ImportError:
     qam_self = None
@@ -2619,6 +2623,18 @@ class Plugin:
         with open(tmp, "w", encoding="utf-8") as fh:
             json.dump(data, fh, ensure_ascii=False)
         os.replace(tmp, self._session_path())
+
+    async def focus_log(self, sesion=None) -> bool:
+        """Una sesión del registro de foco con el mando (una por apertura del panel). Se valida y se guarda en foco.jsonl; se apaga con el archivo `foco-off`."""
+        if qam_focus is None or os.path.exists(_path("foco-off")):
+            return False
+        return qam_focus.guardar(_path("foco.jsonl"), qam_focus.limpiar(sesion))
+
+    async def focus_summary(self) -> dict:
+        """Resumen del registro de foco (para la herramienta de análisis y el informe)."""
+        if qam_focus is None:
+            return {"sesiones": 0}
+        return qam_focus.resumen(qam_focus.leer(_path("foco.jsonl")))
 
     async def diag_crumb(self, text: str) -> None:
         """Una miga: se escribe ya (max 40) para que sobreviva a un cuelgue de Steam."""
