@@ -12,6 +12,8 @@ Uso:  python3 ~/homebrew/plugins/qam-rail-dev/captura.py [filtro] [--x]
   --secciones a,b  en --recorrido, solo esas secciones (p. ej. home,energy).
   --desborde   (con --recorrido) en cada sección mide en el panel real los controles (fichas, segmentos, botones) y lista los que tienen el texto
                cortado con «…», partido en más de una línea o menos de 40 px de alto. Solo lectura; imprime etiquetas de controles, nunca lo escrito.
+  --alcance    (con --recorrido) en cada sección lista los controles que se pueden tocar (cursor «mano», botones, fichas) pero NO están dentro de un
+               elemento enfocable propio del panel (data-qr=item, ficha o botón; estar dentro de una tarjeta no basta): con la cruceta no se llega a ellos. Solo mira el contenido del panel (no el riel lateral, al que se entra con Derecha). Ignora «?» (Y) y «Cerrar columna» (B).
   --x     además intenta una captura de la pantalla X :0 (ImageMagick `import` o `xwd`, si están instalados; sin confirmar en gamescope).
 Guarda PNG en ~/qam-capturas/ (se conservan las últimas 40) e imprime las rutas. Puede mostrar lo que hay en pantalla: no la envíes fuera sin mirarla.
 No cambia nada en Steam."""
@@ -89,6 +91,19 @@ for(const c of document.querySelectorAll('.qr-chip,[role=button],[data-qr=item]'
  }
  if(cort) p.push('cortado'); if(part) p.push('partido'); if(r.height<39) p.push('bajo '+Math.round(r.height)+'px');
  if(p.length) out.push({t:txt.slice(0,40),p});
+}
+return JSON.stringify(out)})()"""
+
+
+# Controles que se tocan pero que el mando no alcanza. Excepciones de diseño: «?» de ayuda (Y) y «Cerrar columna» (B).
+JS_ALCANCE = """(()=>{const out=[];const vis=e=>{const r=e.getBoundingClientRect();return r.width>=8&&r.height>=8};
+const ok=e=>e.matches('.Focusable,[tabindex]')||e.closest('[data-qr=item],.qr-chip,button,input,select,textarea,a[href]'); // el propio control (o su envoltorio de ficha) debe ser enfocable; estar dentro de una tarjeta Focusable no basta
+const raiz=document.querySelector('[style*="width: 486px"]'); if(!raiz) return JSON.stringify([{t:'(no encuentro el panel: ¿está abierto?)',p:['sin mando']}]);
+for(const c of raiz.querySelectorAll('.qr-chip,[role=button],[data-qr=item],[onclick]')){
+ if(!vis(c)||ok(c)) continue;
+ if(c.title==='Ayuda'||c.getAttribute('aria-label')==='Cerrar columna'||c.hasAttribute('data-qr-close')) continue;
+ const t=(c.textContent||c.getAttribute('aria-label')||'').trim().replace(/\\s+/g,' ').slice(0,40);
+ out.push({t:t||'(sin texto)',p:['sin mando']});
 }
 return JSON.stringify(out)})()"""
 
@@ -193,6 +208,9 @@ def recorrer_todo(paginas: list[dict], WS, marca: str, con_scroll: bool, compact
         clip = clip_compacto(*json.loads(wh)) if wh else None
 
     def capturar(nombre: str):
+        if "--alcance" in (args or []):
+            for linea in formatear_desborde(nombre, _evaluar(principal, JS_ALCANCE)):
+                print(linea)
         if "--desborde" in (args or []):
             for linea in formatear_desborde(nombre, _evaluar(principal, JS_DESBORDE)):
                 print(linea)

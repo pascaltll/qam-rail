@@ -2,6 +2,7 @@
 
 ## dev.109
 - **Zonas táctiles de 40 px en controles pequeños, sin mover el diseño** (hallazgo de `captura.py --desborde` sobre dev.106): el «?» de ayuda de cada tarjeta (22 px; el círculo no cambia, la zona de toque es un contenedor de 40 px con margen negativo), los interruptores «Encendido/Apagado» de Wi‑Fi y Bluetooth (28 px), el enlace «Todas ›» de Inicio (20 px) y el de «Emparejar otro ›»/«Otras redes ›» (hasta 40 px). El selector de estado de Amigos («En línea», 26 px) sí crece visualmente a 40 px de alto, con margen negativo para no empujar a los vecinos.
+- **`captura.py --recorrido --alcance`:** en cada sección lista los controles del panel que se tocan pero no son una parada del mando (ni son un elemento enfocable propio). Calibrada en la Ally (25-nov, sobre dev.108): sin sus excepciones solo salen los «?» de ayuda (el mando usa Y); con ellas, las 7 secciones salen limpias, riel incluido. Límite: comprueba que cada control es una parada de foco, NO que la cruceta llegue hasta ella en el recorrido espacial (eso lo decide Steam), ni cubre menús, hojas, columna de plugin ni teclado grande.
 - Sin confirmar en la Ally: que los márgenes negativos no solapen controles vecinos ni recorten el anillo de foco; falta instalar y repetir `captura.py --recorrido --desborde`.
 
 ## dev.108

@@ -19,5 +19,6 @@ description: Navegación con mando y con el dedo en QAM Rail (foco, botones, ges
 6. **Ventanas X emergentes** (listas desplegables, menús de Firefox) son otra ventana: el puntero cae dentro de ella y la interfaz de Steam no la ve. Es un fallo abierto conocido (ver `HANDOFF.md`).
 
 ## Cómo comprobar
+- En la Ally, con el panel abierto: `python3 scripts/captura.py --recorrido --alcance` lista lo que se toca pero no es parada del mando (solo estructura; no prueba el recorrido espacial de la cruceta). Los «?» (Y) y «Cerrar columna» (B) se ignoran por diseño.
 - `python3 tests/py/test_*.py` (cada uno) y `pnpm test` para la lógica.
 - Autoprueba del navegador en el equipo; el informe (`informe.sh`) la resume. Lo que depende de botones físicos o de Steam se marca «sin confirmar» hasta probarlo en la Ally.
