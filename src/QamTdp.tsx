@@ -129,7 +129,7 @@ const PowerCardInner: FC<{ t: UseTdp; variant?: "full" | "compact"; showDraw?: b
           <Chip compact active={Math.abs(sug.seed - v.watts) < 0.5} onClick={() => t.setWatts(sug.seed as number)}>Sugerido {sug.seed} W</Chip>
         )}
         {presets.map((p) => (
-          <Chip compact key={p.id} active={isActivePreset(p, v.watts)} onClick={() => t.applyPreset(p)}><span style={{ display: "flex", gap: 4, minWidth: 0, maxWidth: "100%", fontSize: 11 }}><span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.label}</span><span style={{ flexShrink: 0 }}>{p.watts}</span></span></Chip>
+          <Chip compact key={p.id} active={isActivePreset(p, v.watts)} onClick={() => t.applyPreset(p)}><span style={{ display: "flex", gap: 4, minWidth: 0, maxWidth: "100%", fontSize: 11 }}><span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.label}</span>{" "}<span style={{ flexShrink: 0 }}>{p.watts}</span></span></Chip>
         ))}
       </Row>
       {/* Siempre con su hueco: cuando llegaba «En uso … W» empujaba lo de abajo (saltos medidos en Inicio). */}

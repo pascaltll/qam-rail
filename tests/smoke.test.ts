@@ -710,7 +710,8 @@ describe("QamApp (humo)", () => {
     const { rpc } = await import("../src/panelBridge");
     (rpc.applyPreset as ReturnType<typeof vi.fn>).mockImplementationOnce(async () => { panel = state({ global_watts: 7, watts: 7, applied_w: 7 }); return { ok: true }; });
     await click(rail()[0]);
-    await click(byText("Eco 7"));
+    // la ficha lleva el nombre y los vatios en dos spans (los vatios nunca se recortan): se busca la ficha entera
+    await click([...host.querySelectorAll("[data-qr=item]")].find((e) => e.textContent === "Eco 7"));
     await act(async () => { vi.advanceTimersByTime(400); });
     await flush();
     await act(async () => { vi.advanceTimersByTime(300); });
