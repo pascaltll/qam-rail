@@ -176,14 +176,19 @@ export const Label: FC<{ children: ReactNode; lines?: 1 | 2 }> = ({ children, li
 );
 
 /** Ficha redonda: perfil de potencia, Bluetooth, etc. */
-export const Chip: FC<{ children: ReactNode; active?: boolean; onClick: () => void; icon?: string; grow?: boolean; compact?: boolean; stack?: boolean; badge?: number; autoFocus?: boolean }> = ({
-  children, active, onClick, icon, grow = true, compact, stack, badge, autoFocus,
+/** `toggle`: la ficha es un interruptor, no una acción. Encendido = aro de acento y ✓ sobre el fondo normal (el relleno de acento queda para acciones y elecciones);
+ *  así el estado no depende solo del color. Va por las mismas variables --qr-* y el acento del tema/Panel de Control: sin colores nuevos. */
+export const Chip: FC<{ children: ReactNode; active?: boolean; onClick: () => void; icon?: string; grow?: boolean; compact?: boolean; stack?: boolean; badge?: number; autoFocus?: boolean; toggle?: boolean }> = ({
+  children, active, onClick, icon, grow = true, compact, stack, badge, autoFocus, toggle,
 }) => {
+  const fill = active && !toggle; // relleno de acento: elecciones y acciones; los interruptores encendidos usan aro + ✓
+  const glyph = toggle && active && !icon ? ICONS2.check : icon;
   const [focused, setFocused] = useState(false);
   return (
     <DialogButton
       data-qr="item"
       className="qr-chip"
+      {...(toggle ? ({ "aria-pressed": !!active } as object) : {})}
       {...(autoFocus ? ({ autoFocus: true } as object) : {})}
       ref={(el: HTMLElement | null) => { if (el?.ownerDocument) ensureCss(el.ownerDocument); }}
       onClick={(e: unknown) => { pressFx(e); onClick(); }}
@@ -205,16 +210,16 @@ export const Chip: FC<{ children: ReactNode; active?: boolean; onClick: () => vo
         gap: stack ? 2 : 6,
         // Inactiva: color de pista. Activa: color de acento, texto en negrita y un marco claro, para que se note
         // aunque el acento del tema sea oscuro. Va por variables + clase con !important (ver fx.ts).
-        ["--qr-bg" as string]: active ? COLORS.accent : COLORS.track,
-        ["--qr-fg" as string]: active ? COLORS.onAccent : COLORS.text,
-        ["--qr-sh" as string]: active ? `inset 0 0 0 1.5px ${COLORS.onAccent}55, 0 0 0 1.5px ${COLORS.accent}` : "none",
-        background: active ? COLORS.accent : COLORS.track,
-        color: active ? COLORS.onAccent : COLORS.text,
+        ["--qr-bg" as string]: fill ? COLORS.accent : COLORS.track,
+        ["--qr-fg" as string]: fill ? COLORS.onAccent : COLORS.text,
+        ["--qr-sh" as string]: fill ? `inset 0 0 0 1.5px ${COLORS.onAccent}55, 0 0 0 1.5px ${COLORS.accent}` : toggle && active ? `inset 0 0 0 2px ${COLORS.accent}` : "none",
+        background: fill ? COLORS.accent : COLORS.track,
+        color: fill ? COLORS.onAccent : COLORS.text,
         fontWeight: active ? 800 : 600,
         ...focusRing(focused),
       }}
     >
-      {icon && <Icon d={icon} size={stack ? 20 : 16} color={active ? COLORS.onAccent : COLORS.text} />}
+      {glyph && <Icon d={glyph} size={stack ? 20 : 16} color={fill ? COLORS.onAccent : toggle && active ? COLORS.accent : COLORS.text} />}
       <Label>{children}</Label>
       {!!badge && <span style={{ position: "absolute", top: 3, right: 6, minWidth: 16, height: 16, padding: "0 4px", boxSizing: "border-box", borderRadius: 8, background: "#e5484d", color: "#fff", fontSize: 10, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center" }}>{badge > 99 ? "99+" : badge}</span>}
     </DialogButton>
@@ -318,6 +323,7 @@ export function dockRight(el: HTMLElement | null, top = 44, right = 10): void {
 }
 
 export const ICONS2 = {
+  check: "M5 12.5l4.5 4.5L19 7.5",
   home: "M3 11l9-8 9 8v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z",
   wifi: "M2 9a15 15 0 0 1 20 0M5 13a10 10 0 0 1 14 0M8.5 16.5a5 5 0 0 1 7 0M12 20h.01",
   chart: "M4 20V10M10 20V4M16 20v-8M22 20H2",
