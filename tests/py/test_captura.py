@@ -57,4 +57,7 @@ h = Falso(alto=json.dumps([2000, 800]))
 nombres = []
 c.recorrido(h, ["audio"], True, lambda n: nombres.append(n) or n, dormir=lambda s: None)
 assert nombres == ["01-audio-1", "01-audio-2", "01-audio-3"]
+assert c.parse_secciones([], ["a", "b"]) == ["a", "b"]
+assert c.parse_secciones(["--secciones=b,x,a"], ["a", "b"]) == ["b", "a"]
+assert c.clip_compacto(1920, 1080) == {"x": 1056, "y": 0, "width": 864, "height": 1080, "scale": 0.6}
 print("OK test_captura")

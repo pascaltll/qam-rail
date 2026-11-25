@@ -7,6 +7,8 @@ Uso:  python3 ~/homebrew/plugins/qam-rail-dev/captura.py [filtro] [--x]
           y agotan el tiempo; usa `todas` para intentarlas igualmente.
   --recorrido  con el panel de QAM Rail abierto, pasa por TODAS sus secciones (Inicio, etc.) y captura cada una; al final vuelve a la que estaba.
                Añade --scroll para capturar también lo que queda fuera de la vista en cada sección (hasta 4 trozos). Sin confirmar en la Ally.
+  --compacto   recorta a la mitad derecha (donde están el panel y la barra) y reduce a 0,6: unas 5 veces menos tokens por imagen al leerlas.
+  --secciones a,b  en --recorrido, solo esas secciones (p. ej. home,energy).
   --x     además intenta una captura de la pantalla X :0 (ImageMagick `import` o `xwd`, si están instalados; sin confirmar en gamescope).
 Guarda PNG en ~/qam-capturas/ (se conservan las últimas 40) e imprime las rutas. Puede mostrar lo que hay en pantalla: no la envíes fuera sin mirarla.
 No cambia nada en Steam."""
@@ -59,6 +61,21 @@ def plan_scroll(alto_total: int, alto_visible: int, max_pasos: int = 4) -> list[
         y = min(y + alto_visible - 40, alto_total - alto_visible)  # 40 px de solape para no perder filas
         pos.append(y)
     return pos
+
+
+def parse_secciones(args: list[str], todas: list[str]) -> list[str]:
+    """Valor de --secciones a,b (en el orden pedido, solo las que existen); sin la opción, todas."""
+    for a in args:
+        if a.startswith("--secciones="):
+            pedidas = [x.strip() for x in a.split("=", 1)[1].split(",") if x.strip()]
+            return [x for x in pedidas if x in todas]
+    return todas
+
+
+def clip_compacto(ancho: int, alto: int) -> dict:
+    """Región de captura: el 45 % derecho de la pantalla, a escala 0,6."""
+    x = int(ancho * 0.55)
+    return {"x": x, "y": 0, "width": ancho - x, "height": alto, "scale": 0.6}
 
 
 def _evaluar(ws, expr: str):
@@ -121,7 +138,7 @@ def captura_x(destino: Path) -> str | None:
     return None
 
 
-def recorrer_todo(paginas: list[dict], WS, marca: str, con_scroll: bool) -> None:
+def recorrer_todo(paginas: list[dict], WS, marca: str, con_scroll: bool, compacto: bool = False, args: list[str] | None = None) -> None:
     host = principal = None
     for p in paginas:
         if not p.get("webSocketDebuggerUrl"):
@@ -140,11 +157,15 @@ def recorrer_todo(paginas: list[dict], WS, marca: str, con_scroll: bool) -> None
         print("Abre el panel de QAM Rail (con el panel cerrado no existe __qamRailUI) y repite." if not host else "No encuentro «Steam Big Picture Mode».")
         return
     principal.s.settimeout(ESPERA)
-    secciones = json.loads(_evaluar(host, "JSON.stringify(window.__qamRailUI.sections)") or "[]")
+    secciones = parse_secciones(args or [], json.loads(_evaluar(host, "JSON.stringify(window.__qamRailUI.sections)") or "[]"))
+    clip = None
+    if compacto:
+        wh = _evaluar(principal, "JSON.stringify([innerWidth, innerHeight])")
+        clip = clip_compacto(*json.loads(wh)) if wh else None
 
     def capturar(nombre: str):
         try:
-            datos = principal.call("Page.captureScreenshot", {"format": "png"}).get("data")
+            datos = principal.call("Page.captureScreenshot", {"format": "png", **({"clip": clip} if clip else {})}).get("data")
         except OSError as e:
             print(f"(sin imagen de {nombre}: {e})")
             return None
@@ -169,7 +190,7 @@ def main() -> None:
     WS = _ws_class()
     hechas = []
     if "--recorrido" in sys.argv:
-        recorrer_todo(paginas, WS, marca, "--scroll" in sys.argv)
+        recorrer_todo(paginas, WS, marca, "--scroll" in sys.argv, "--compacto" in sys.argv, sys.argv)
         return
     for p in elegir(paginas, filtro):
         titulo = p.get("title") or p.get("url", "")[:30]
