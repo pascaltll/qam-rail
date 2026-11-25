@@ -12,6 +12,7 @@ from pathlib import Path
 HOST, PORT = "127.0.0.1", 8080
 OUT = Path.home() / "qam-capturas"
 KEEP = 40
+ESPERA = 12  # segundos por intento
 SIN_INTERFAZ = ("SharedJSContext",)  # contexto sin pantalla: no tiene nada que mostrar
 
 
@@ -76,19 +77,23 @@ def main() -> None:
     hechas = []
     for p in elegir(paginas, filtro):
         titulo = p.get("title") or p.get("url", "")[:30]
-        try:
-            ws = WS(p["webSocketDebuggerUrl"])
-            r = ws.call("Page.captureScreenshot", {"format": "png"})
-            ws.s.close()
-            datos = r.get("data")
-            if not datos:
-                print(f"(sin imagen de {titulo!r})")
-                continue
-            ruta = OUT / f"{marca}-{slug(titulo)}.png"
-            ruta.write_bytes(base64.b64decode(datos))
-            hechas.append(str(ruta))
-        except OSError as e:
-            print(f"(no se pudo capturar {titulo!r}: {e})")
+        datos, motivo = None, ""
+        for extra in ({}, {"fromSurface": False}):  # 2.º intento: otro modo, por si la página está oculta
+            try:
+                ws = WS(p["webSocketDebuggerUrl"])
+                ws.s.settimeout(ESPERA)
+                datos = ws.call("Page.captureScreenshot", {"format": "png", **extra}).get("data")
+                ws.s.close()
+            except OSError as e:  # incluye el tiempo agotado
+                motivo = str(e)
+            if datos:
+                break
+        if not datos:
+            print(f"(sin imagen de {titulo!r}: {motivo or 'respuesta vacía'}; si el panel está cerrado, ábrelo y repite)")
+            continue
+        ruta = OUT / f"{marca}-{slug(titulo)}.png"
+        ruta.write_bytes(base64.b64decode(datos))
+        hechas.append(str(ruta))
     if "--x" in sys.argv:
         ruta = captura_x(OUT / f"{marca}-pantalla-X.png")
         if ruta:
