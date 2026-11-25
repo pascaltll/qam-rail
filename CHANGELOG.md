@@ -1,5 +1,9 @@
 # Cambios
 
+## dev.109
+- **Zonas táctiles de 40 px en controles pequeños, sin mover el diseño** (hallazgo de `captura.py --desborde` sobre dev.106): el «?» de ayuda de cada tarjeta (22 px; el círculo no cambia, la zona de toque es un contenedor de 40 px con margen negativo), los interruptores «Encendido/Apagado» de Wi‑Fi y Bluetooth (28 px), el enlace «Todas ›» de Inicio (20 px) y el de «Emparejar otro ›»/«Otras redes ›» (hasta 40 px). El selector de estado de Amigos («En línea», 26 px) sí crece visualmente a 40 px de alto, con margen negativo para no empujar a los vecinos.
+- Sin confirmar en la Ally: que los márgenes negativos no solapen controles vecinos ni recorten el anillo de foco; falta instalar y repetir `captura.py --recorrido --desborde`.
+
 ## dev.108
 - **Una sola regla para el texto de los controles de altura fija** (`Label` en `src/ui.tsx`, usada por `Chip`, `Segments` y `ModeChip`): una línea con «…» y `title` con el texto entero; solo las opciones de `Segments` sin icono admiten 2 líneas, centradas. Antes cada componente lo hacía a su manera, y de ahí «Equilibrado 15» partido, «Aspecto OLED» a la izquierda, etc.
 - **Zonas táctiles de 40 px (opción A acordada):** `Chip compact` pasa de 32 a 40 px (queda como la normal; solo cambia el relleno) y las opciones de `Segments` de 34 a 40 px (46 px las `tall`, igual que antes). Sin confirmar en la Ally: cuánto crece el panel y si las secciones largas siguen cabiendo (más scroll).

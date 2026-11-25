@@ -76,7 +76,7 @@ const HeadSwitch: FC<{ on: boolean; label: string; onToggle: () => void }> = ({ 
   const tap = useTap(onToggle);
   return (
     <Focusable data-qr="item" noFocusRing role="switch" aria-checked={on} title={label} onActivate={tap} onClick={tap} onGamepadFocus={() => setF(true)} onGamepadBlur={() => setF(false)}
-      style={{ display: "flex", alignItems: "center", gap: 8, padding: "2px 2px 2px 8px", borderRadius: 16, ...focusRing(f) }}>
+      style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 2px 8px 8px", margin: "-6px 0", borderRadius: 16, ...focusRing(f) }}>
       <span style={{ fontSize: 12, fontWeight: 700, color: on ? COLORS.text : COLORS.muted }}>{on ? "Encendido" : "Apagado"}</span>
       <span style={{ width: 40, height: 24, borderRadius: 12, background: on ? COLORS.accent : COLORS.track, position: "relative", flexShrink: 0 }}>
         <span style={{ position: "absolute", top: 3, left: on ? 19 : 3, width: 18, height: 18, borderRadius: 9, background: on ? COLORS.onAccent : COLORS.muted, transition: "left 120ms ease" }} />
@@ -175,7 +175,7 @@ const SmallLink: FC<{ label: string; onTap: () => void }> = ({ label, onTap }) =
   const tap = useTap(onTap);
   return (
     <Focusable data-qr="item" noFocusRing onActivate={tap} onClick={tap} onGamepadFocus={() => setF(true)} onGamepadBlur={() => setF(false)}
-      style={{ alignSelf: "flex-start", fontSize: 12, fontWeight: 700, color: COLORS.accent, padding: "6px 8px", margin: "0 -8px", borderRadius: 10, minHeight: 28, display: "flex", alignItems: "center", ...focusRing(f) }}>
+      style={{ alignSelf: "flex-start", fontSize: 12, fontWeight: 700, color: COLORS.accent, padding: "6px 8px", margin: "-6px -8px", borderRadius: 10, minHeight: 40, boxSizing: "border-box", display: "flex", alignItems: "center", ...focusRing(f) }}>
       {label} ›
     </Focusable>
   );

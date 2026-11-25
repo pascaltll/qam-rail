@@ -60,7 +60,10 @@ export const Card: FC<{ title?: string; right?: ReactNode; children: ReactNode; 
 /** El «?» del título (para el dedo; con mando es Y). No es parada de la cruceta. */
 const HelpDot: FC<{ id: string }> = ({ id }) => (
   <span role="button" title="Ayuda" onClick={(e) => { e.stopPropagation(); showHelp(id); }}
-    style={{ width: 22, height: 22, margin: "-6px -4px -6px 0", borderRadius: 11, display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 700, color: COLORS.muted, background: COLORS.track, flexShrink: 0 }}>?</span>
+    // zona de toque de 40 px; el margen negativo deja el círculo de 22 px donde estaba (misma huella en la maqueta)
+    style={{ width: 40, height: 40, margin: "-15px -13px -15px -9px", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+    <span style={{ width: 22, height: 22, borderRadius: 11, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 700, color: COLORS.muted, background: COLORS.track }}>?</span>
+  </span>
 );
 // Quien pinta la ayuda (Qam) se apunta aquí.
 let helpSink: ((id: string) => void) | null = null;
@@ -203,7 +206,7 @@ const SmallLink: FC<{ onOpen: () => void; children: ReactNode }> = ({ onOpen, ch
   const [f, setF] = useState(false);
   return (
     <Focusable data-qr="item" noFocusRing onActivate={tap} onClick={tap} onGamepadFocus={() => setF(true)} onGamepadBlur={() => setF(false)}
-      style={{ fontSize: 12, color: COLORS.muted, padding: "2px 6px", borderRadius: 10, ...focusRing(f) }}>{children}</Focusable>
+      style={{ fontSize: 12, color: COLORS.muted, padding: "12px 6px", margin: "-10px 0", borderRadius: 10, ...focusRing(f) }}>{children}</Focusable>
   );
 };
 

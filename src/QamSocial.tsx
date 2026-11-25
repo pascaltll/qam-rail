@@ -118,7 +118,7 @@ const StatusPicker: FC<{ value: Persona; open: boolean; onToggle: () => void }> 
   return (
     <Focusable data-qr="item" noFocusRing onActivate={tap} onClick={tap} onGamepadFocus={() => setF(true)} onGamepadBlur={() => setF(false)}
       onOKActionDescription={open ? "Cerrar" : "Cambiar estado"}
-      style={{ display: "flex", alignItems: "center", gap: 6, padding: "5px 10px", borderRadius: 16, background: COLORS.track, flexShrink: 0, ...focusRing(f) }}>
+      style={{ display: "flex", alignItems: "center", gap: 6, padding: "5px 10px", minHeight: 40, boxSizing: "border-box", margin: "-7px 0", borderRadius: 16, background: COLORS.track, flexShrink: 0, ...focusRing(f) }}>
       <StatusDot color={cur.color} />
       <span style={{ fontSize: 12, fontWeight: 700 }}>{cur.label}</span>
       <Icon d={open ? "M6 15l6-6 6 6" : "M6 9l6 6 6-6"} size={14} color={COLORS.muted} />
