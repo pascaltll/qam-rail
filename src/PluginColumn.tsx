@@ -66,9 +66,12 @@ export const SideColumn: FC<{
           {subtitle && <div style={{ fontSize: 12, color: COLORS.muted, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{subtitle}</div>}
         </div>
         <div style={{ fontSize: 11, color: COLORS.muted, whiteSpace: "nowrap" }}>B cierra</div>
+        {/* zona de toque de 48 px (regla del skill diseno); el margen negativo deja el círculo de 30 px donde estaba */}
         <div role="button" data-qr-close="1" aria-label="Cerrar columna" onClick={onClose}
-          style={{ width: 30, height: 30, borderRadius: 15, background: COLORS.card, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0 }}>
-          <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke={COLORS.text} strokeWidth={2.4} strokeLinecap="round"><path d="M6 6l12 12M18 6L6 18" /></svg>
+          style={{ width: 48, height: 48, margin: -9, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0 }}>
+          <div style={{ width: 30, height: 30, borderRadius: 15, background: COLORS.card, display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke={COLORS.text} strokeWidth={2.4} strokeLinecap="round"><path d="M6 6l12 12M18 6L6 18" /></svg>
+          </div>
         </div>
       </div>
       <div style={{ flexGrow: 1, minHeight: 0, overflowY: "auto", overflowX: "hidden", ...bodyStyle }}>
