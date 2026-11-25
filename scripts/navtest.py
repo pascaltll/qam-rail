@@ -6,6 +6,7 @@ Uso (con el panel de QAM Rail abierto):
 Mientras corre, recorre el panel TÚ con el mando (cruceta, L1/R1 para cambiar de sección). Al terminar imprime un informe corto:
   - por sección, cuántas paradas de foco visitaste y cuáles no
   - saltos de foco raros (de un control a otro lejano dentro de la misma sección)
+  - foco que se queda fuera de la vista del panel (el scroll no lo siguió) o sobre un elemento oculto (sin posición)
 Guarda la traza en ~/qam-capturas/nav-AAAAMMDD-HHMMSS.json (solo etiquetas de controles y posiciones; nunca lo que escribes).
 Límite: no prueba que el foco SALGA de cada control en cada dirección (eso necesita saber qué pulsaste); sí prueba que se llegó a cada uno."""
 import importlib.util, json, sys, time, urllib.request
@@ -21,11 +22,24 @@ def clave(label: str, ruta: str) -> str:
     return f"{label}|{ruta}"
 
 
+RIEL_X = 800  # px CSS: el riel de iconos está a la derecha del contenido (el panel mide 486 px y empieza hacia x=406 + riel a ~839)
+
+
+def _sec(m: dict) -> str:
+    return "riel" if m["x"] >= RIEL_X else m["sec"]
+
+
 def analizar(paradas: dict, muestras: list) -> dict:
     """paradas: {sección: [{id,label,x,y}]}; muestras: cambios de foco [{t,sec,id,label,x,y}] en orden. Devuelve visitadas y saltos."""
+    # el riel se separa de cada sección (si no, sus 7 iconos salían «sin visitar» en todas)
+    agrupadas: dict[str, list] = {}
+    for sec, lista in paradas.items():
+        for p in lista:
+            agrupadas.setdefault("riel" if p["x"] >= RIEL_X else sec, []).append(p)
+    paradas = agrupadas
     vistas: dict[str, set] = {s: set() for s in paradas}
     for m in muestras:
-        vistas.setdefault(m["sec"], set()).add(m["id"])
+        vistas.setdefault(_sec(m), set()).add(m["id"])
     secciones = {}
     for sec, lista in paradas.items():
         ids = {p["id"] for p in lista}
@@ -33,12 +47,20 @@ def analizar(paradas: dict, muestras: list) -> dict:
         secciones[sec] = {"total": len(ids), "visitadas": len(visit), "no_visitadas": [p["label"] for p in lista if p["id"] not in visit]}
     saltos = []
     for a, b in zip(muestras, muestras[1:]):
-        if a["sec"] != b["sec"] or a["id"] == b["id"]:
+        if _sec(a) != _sec(b) or a["sec"] != b["sec"] or a["id"] == b["id"]:  # cruzar al riel o cambiar de sección no es un salto raro
             continue
         dist = round(((a["x"] - b["x"]) ** 2 + (a["y"] - b["y"]) ** 2) ** 0.5)
         if dist > SALTO:
             saltos.append({"sec": a["sec"], "de": a["label"], "a": b["label"], "dist": dist})
-    return {"secciones": secciones, "saltos": saltos, "muestras": len(muestras)}
+    fuera, sinpos = [], []
+    for m in muestras:
+        if not m.get("asentado"):
+            continue
+        if m["x"] == 0 and m["y"] == 0:
+            sinpos.append({"sec": m["sec"], "label": m["label"]})
+        elif m["y"] + m.get("h", 0) < m.get("rt", -10**6) or m["y"] > m.get("rb", 10**6):
+            fuera.append({"sec": m["sec"], "label": m["label"], "y": m["y"]})
+    return {"secciones": secciones, "saltos": saltos, "fuera_de_vista": fuera, "sin_posicion": sinpos, "muestras": len(muestras)}
 
 
 def formatear(r: dict) -> list:
@@ -52,6 +74,12 @@ def formatear(r: dict) -> list:
         out += [f"  {s['sec']}: «{s['de']}» → «{s['a']}» ({s['dist']} px)" for s in r["saltos"][:8]]
     else:
         out.append("Sin saltos raros.")
+    if r.get("fuera_de_vista"):
+        out.append(f"Foco fuera de vista (ya asentado): {len(r['fuera_de_vista'])}")
+        out += [f"  {f['sec']}: «{f['label']}» (y={f['y']})" for f in r["fuera_de_vista"][:6]]
+    if r.get("sin_posicion"):
+        out.append(f"Foco sin posición (elemento oculto): {len(r['sin_posicion'])}")
+        out += [f"  {f['sec']}: «{f['label']}»" for f in r["sin_posicion"][:4]]
     return out[:30]
 
 
@@ -68,7 +96,7 @@ return JSON.stringify(out)})()"""
 JS_FOCO = """(()=>{const raiz=document.querySelector('[style*="width: 486px"]'); const e=document.querySelector('.gpfocus'); if(!e||!raiz||!raiz.contains(e)) return null;
 const ruta=n0=>{const p=[];for(let n=n0;n&&n!==raiz;n=n.parentElement){const i=[...n.parentElement.children].indexOf(n);p.push(n.tagName.toLowerCase()+':'+i)}return p.reverse().join('>')};
 const r=e.getBoundingClientRect(); const l=(e.getAttribute('aria-label')||e.textContent||'').trim().replace(/\\\\s+/g,' ').slice(0,28)||'(sin texto)';
-return JSON.stringify({id:l+'|'+ruta(e),label:l,x:Math.round(r.left),y:Math.round(r.top)})})()"""
+const q=raiz.getBoundingClientRect(); return JSON.stringify({id:l+'|'+ruta(e),label:l,x:Math.round(r.left),y:Math.round(r.top),h:Math.round(r.height),rt:Math.round(q.top),rb:Math.round(q.bottom)})})()"""
 
 
 def _ws_class():
@@ -131,6 +159,8 @@ def grabar(segundos: float, intervalo: float = 0.15) -> dict:
                     if f["id"] != ultimo:
                         ultimo = f["id"]
                         muestras.append({"t": round(t, 2), "sec": seccion(), **f})
+                    elif muestras and not muestras[-1].get("asentado") and t - muestras[-1]["t"] >= 0.4:
+                        muestras[-1].update(f, asentado=True)  # el scroll ya terminó: esta es la posición real del foco
             except OSError as e:  # tiempo agotado o conexión caída: se sigue con lo que hay
                 print(f"  (t={int(t)} s: {e})", flush=True)
             time.sleep(intervalo)
