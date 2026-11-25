@@ -31,3 +31,7 @@ Estado al pasar el trabajo del chat de claude.ai a Claude Code en la propia Ally
 ## Cómo se trabaja (resumen del flujo)
 - Cambios pequeños, pruebas antes (`tests/py/test_*.py`, `pnpm test`), entrada en `CHANGELOG.md`, `scripts/package.sh --dev N`, instalar con `NO_RESTART=1 scripts/install.sh --dev`, reiniciar con `sudo systemctl restart plugin_loader` (avisando: recarga la interfaz de Steam), probar y reunir con `bash ~/homebrew/plugins/qam-rail-dev/informe.sh`.
 - Lo no comprobado en el equipo se escribe como «sin confirmar».
+
+## Herramientas de agentes (25-nov)
+- `AGENTS.md` es la memoria común; `CLAUDE.md` y `GEMINI.md` lo importan. Skills en `.claude/skills/`. Decisiones cerradas en `docs/decisiones.md`.
+- `scripts/captura.py` (empaquetado desde la próxima versión): PNG de las páginas de la interfaz de Steam por CEF :8080; `--x` intenta la pantalla X. Sin confirmar en la Ally; primera prueba: `python3 ~/homebrew/plugins/qam-rail-dev/captura.py QuickAccess`.
