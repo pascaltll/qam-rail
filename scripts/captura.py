@@ -7,7 +7,7 @@ Uso:  python3 ~/homebrew/plugins/qam-rail-dev/captura.py [filtro] [--x]
           y agotan el tiempo; usa `todas` para intentarlas igualmente.
   --recorrido  con el panel de QAM Rail abierto, pasa por TODAS sus secciones (Inicio, etc.) y captura cada una; al final vuelve a la que estaba.
                Añade --scroll para capturar también lo que queda fuera de la vista en cada sección (hasta 4 trozos). Sin confirmar en la Ally.
-  (por defecto) recorta a la parte derecha (panel y barra) y reduce a 0,6: unas 5 veces menos tokens por imagen al leerlas.
+  (por defecto) recorta desde el 44 % hasta la derecha (panel y barra) y reduce a 0,6: unas 5 veces menos tokens por imagen al leerlas.
   --completo   pantalla entera a tamaño real (solo si hace falta ver algo fuera del panel o letra muy pequeña).
   --secciones a,b  en --recorrido, solo esas secciones (p. ej. home,energy).
   --x     además intenta una captura de la pantalla X :0 (ImageMagick `import` o `xwd`, si están instalados; sin confirmar en gamescope).
@@ -74,8 +74,8 @@ def parse_secciones(args: list[str], todas: list[str]) -> list[str]:
 
 
 def clip_compacto(ancho: int, alto: int) -> dict:
-    """Región de captura: el 45 % derecho de la pantalla, a escala 0,6."""
-    x = int(ancho * 0.55)
+    """Región de captura: desde el 44 % de la pantalla hasta la derecha (el panel empieza hacia el 45 %), a escala 0,6."""
+    x = int(ancho * 0.44)
     return {"x": x, "y": 0, "width": ancho - x, "height": alto, "scale": 0.6}
 
 
