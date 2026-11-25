@@ -6,7 +6,7 @@ description: Navegar, ver y probar Steam Big Picture sin tocar la pantalla (CDP 
 # Navegación y pruebas en Big Picture
 
 Herramientas del repo (solo biblioteca estándar, ver `scripts/`):
-- `bp_nav.py paginas | foco | qam estado|abrir|cerrar | teclas | grafo [--pasos=N]`
+- `bp_nav.py paginas | foco | qam estado|abrir|cerrar | teclas | grafo [--pasos=N] [--max-seg=S] | parada`
 - `captura.py [--recorrido] [--completo]` para ver el resultado (compacto por defecto).
 - `steam-cpu.py [s]` para CPU por página; `informe.sh` para reunirlo todo.
 
@@ -27,3 +27,10 @@ Herramientas del repo (solo biblioteca estándar, ver `scripts/`):
 - Etiquetas y capturas pueden incluir nombres de amigos o apps: se quedan en el equipo; no se envían a otro servicio sin revisarlas.
 - No reinicies Steam ni `plugin_loader` para probar; si hace falta, pide permiso.
 - Alternativas ya existentes por si se quiere más: Playwright MCP (`--cdp-endpoint`) o Chrome DevTools MCP (`--browser-url`) contra `http://127.0.0.1:8080`; no están probados con el Chromium de Steam.
+
+## Seguridad al automatizar
+- **Interruptor**: `bp_nav.py parar` crea `~/.qam-nav-stop`; con él puesto no sale ninguna tecla ni `qam abrir|cerrar` (un archivo ilegible también cuenta como parado). **Un agente nunca ejecuta `armar` ni borra ese archivo**: solo una persona lo reactiva. Si una orden dice «PARADO», informa y detente; no lo esquives.
+- **Registro**: cada orden queda en `~/qam-grafo/ledger/<sesión>.ndjson` (hora, orden, `ok`, ms, pulsaciones, error). `ok` solo significa que la orden terminó sin excepción, no que la prueba pasara: léelo junto a la salida.
+- **`foco` dice si se ve**: «tapado», «parcial» o «fuera» (cuadrícula 3×3 con `elementFromPoint`) es un fallo de diseño aunque el foco esté bien colocado. Si avisa de que `document.activeElement` no coincide, fíate de `.gpfocus`. Si avisa de «contenedor», el foco no está en un control.
+- `foco` busca `.gpfocus` en todas las páginas CEF (en un Steam Deck con SteamOS vivía en la del menú rápido, no en «Big Picture»; en Bazzite sin confirmar).
+- `grafo --max-seg` acota el tiempo (por defecto 120 s) y guarda lo explorado si lo paran.
