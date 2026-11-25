@@ -212,4 +212,5 @@ assert w.msgs[0][0] == "Runtime.evaluate" and "ArrowDown" in w.msgs[0][1]["expre
 w = WsRegistro()
 b.foco_emulado(w, True)
 assert w.msgs == [("Emulation.setFocusEmulationEnabled", {"enabled": True})]
+assert b.DEFECTO == "keydown+emu" and b.leer_combo(b.DEFECTO) == (b.VARIANTE["v"], b.VARIANTE["emu"]) == ("keydown", True)
 print("OK test_bp_nav")

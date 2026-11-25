@@ -42,3 +42,9 @@ Estado al pasar el trabajo del chat de claude.ai a Claude Code en la propia Ally
 - Fallos visuales vistos por el revisor y sin tocar: «Aspecto OLED» y «ROG Ally mejorado» en dos líneas (Pantalla), «LetMeReShad…» cortado (Apps), bajo contraste en las opciones de escalado no elegidas (Energía), «estable» huérfano en Más.
 
 - Pendiente: tests/py/test_xerr.py falla con segfault (-11) en la Ally, tambien en 390067a; en mi entorno se omite por falta de Xvfb. Sin diagnosticar.
+
+## Navegación automática con `scripts/bp_nav.py` (25-nov)
+- Confirmado en la Ally: `.gpfocus` vive en la página «Steam Big Picture Mode» (no hace falta mirar otras). Las flechas por CDP solo mueven el foco con la variante `keydown+emu` (por defecto); `base`, `keydown`, `js` y `base+emu` no movieron nada. Primera pulsación 979 ms, las siguientes 27-30 ms (sin explicar). Sin confirmar: que `grafo` recorra bien el panel, que `qam abrir` equivalga al botón físico.
+- Con el panel cerrado el foco está en el menú de fondo de Steam (ficha de 370×170 sin texto, «tapado»), no en el panel: abre el panel antes de explorar.
+- Interruptor de parada `~/.qam-nav-stop` (`parar`/`parada`/`armar`; solo una persona ejecuta `armar`), registro en `~/qam-grafo/ledger/`, `foco` con veredicto de visibilidad (3×3). Ideas tomadas de Decky Plugin Studio (Apache-2.0), con código propio.
+- Siguiente: (1) `qam abrir` + `grafo --pasos=80` y revisar nodos sin salida, aristas sin vuelta y lentas; (2) pulsación de adquisición cuando nada tiene el foco y archivo de bloqueo entre agentes; (3) hooks en `.claude/settings.json` que impidan borrar `~/.qam-nav-stop` y proteger `systemctl restart`/`rm -rf`; (4) reglas R1-R3 sobre el código en `navAudit.test.ts`.

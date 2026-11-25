@@ -6,8 +6,9 @@ Uso:  python3 scripts/bp_nav.py <orden>
                      si una persona lo vería (cuadrícula 3×3 con elementFromPoint: visible/parcial/tapado/fuera) y si `document.activeElement` coincide.
   qam estado|abrir|cerrar   abre o cierra el panel de QAM Rail por código y comprueba el resultado (sin confirmar que abra igual que el botón físico).
   teclas [--variantes]  comprueba si las flechas del teclado, enviadas por CDP, mueven el foco (de ello depende `grafo`). Con --variantes prueba
-                     varias formas de enviarlas (base, keydown, js, y cada una con +emu = foco emulado) y dice cuál mueve el foco.
-  grafo [--pasos=60] [--max-seg=120] [--variante=keydown+emu]  explora el foco con las flechas, construye el grafo (nodo = elemento enfocado, arista = flecha → destino,
+                     varias formas de enviarlas (base, keydown, js, y cada una con +emu = foco emulado) y dice cuál mueve el foco. Por defecto se usa keydown+emu,
+                     la única que movió el foco en la Ally; sin +emu, Steam ignoraba las teclas.
+  grafo [--pasos=60] [--max-seg=120] [--variante=…]  (por defecto keydown+emu)  explora el foco con las flechas, construye el grafo (nodo = elemento enfocado, arista = flecha → destino,
                      con su retraso en ms), y avisa de: nodos sin salida, aristas sin vuelta y retrasos grandes. Guarda JSON en ~/qam-grafo/.
   parar [--motivo=…] | parada | armar   interruptor de parada: `parar` crea ~/.qam-nav-stop y ninguna pulsación ni apertura/cierre sale mientras exista
                      (un archivo ilegible también cuenta como parado). `armar` lo quita: solo lo ejecuta una persona, nunca un agente.
@@ -313,7 +314,8 @@ def conectar_foco(WS):
 
 
 VARIANTES = ("base", "keydown", "js")  # cómo se envía la tecla (ver pulsar); `teclas --variantes` busca cuál mueve el foco
-VARIANTE = {"v": "base", "emu": False}  # la que usan `teclas` y `grafo` (opción --variante=keydown+emu)
+DEFECTO = "keydown+emu"  # la única que movió el foco en la Ally (2026-11-25): keyDown completo + foco emulado; base, js y las demás sin emu no movieron nada
+VARIANTE = {"v": "keydown", "emu": True}  # la que usan `teclas` y `grafo` (opción --variante=…)
 
 
 def foco_emulado(ws, activar: bool) -> None:
@@ -451,7 +453,7 @@ def cmd_teclas(WS, probar: bool = False) -> str:
             if emu:
                 foco_emulado(ws, False)
 
-    combos = [nombre_combo(v, e) for e in (False, True) for v in VARIANTES] if probar else [nombre_combo(VARIANTE["v"], VARIANTE["emu"])]
+    combos = [DEFECTO] + [c for c in (nombre_combo(v, e) for e in (False, True) for v in VARIANTES) if c != DEFECTO] if probar else [nombre_combo(VARIANTE["v"], VARIANTE["emu"])]
     ganadora, vistos = primera_que_mueve(combos, intentar)
     for c, res in vistos.items():
         print(f"[{titulo}] {c}: " + "; ".join(f"{d} {'movió (' + str(ms) + ' ms)' if m else 'sin cambio'}" for d, m, ms in res))
@@ -558,7 +560,7 @@ def despachar(a: list[str]):
         return cmd_foco(WS)
     if a[0] == "qam" and len(a) > 1 and a[1] in ("estado", "abrir", "cerrar"):
         return cmd_qam(WS, a[1])
-    VARIANTE["v"], VARIANTE["emu"] = leer_combo(_opcion(a, "variante", "base"))
+    VARIANTE["v"], VARIANTE["emu"] = leer_combo(_opcion(a, "variante", DEFECTO))
     if a[0] == "teclas":
         return cmd_teclas(WS, "--variantes" in a)
     if a[0] == "grafo":
