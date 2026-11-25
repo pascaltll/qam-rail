@@ -27,3 +27,22 @@ describe("teclado del panel (español)", () => {
     expect(mirror("a".repeat(100), { text: "b" })).toHaveLength(80);
   });
 });
+
+import { SYMBOL_ROWS, padAction } from "../src/keyboardLayout";
+describe("teclado grande: símbolos y mando", () => {
+  it("la página de símbolos tiene un solo carácter por tecla, sin repetidos y con los dígitos", () => {
+    const flat = SYMBOL_ROWS.flat();
+    for (const c of flat) expect([...c].length).toBe(1);
+    expect(new Set(flat).size).toBe(flat.length);
+    for (const d of "0123456789") expect(flat).toContain(d);
+    for (const c of "@#$%&*()[]{}<>/\\!?.,:;'\"") expect(flat).toContain(c);
+  });
+  it("LT=Mayús, RT=símbolos, L3=Bloq, LB/RB=cursor; el resto no se toca", () => {
+    expect(padAction(7)).toEqual({ kind: "shift" });
+    expect(padAction(8)).toEqual({ kind: "symbols" });
+    expect(padAction(15)).toEqual({ kind: "caps" });
+    expect(padAction(5)).toEqual({ kind: "key", key: "Left" });
+    expect(padAction(6)).toEqual({ kind: "key", key: "Right" });
+    for (const b of [0, 1, 2, 3, 4, 9, 12, undefined]) expect(padAction(b)).toBeNull();
+  });
+});

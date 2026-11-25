@@ -1,5 +1,9 @@
 # Cambios
 
+## dev.105
+- **Teclado grande: página de símbolos y botones del mando.** Nueva página «123» (números y signos: `@ # $ % & * ( ) [ ] { } < > / \ ! ? . , : ; ' " ~ |`) con vuelta «ABC»; mando: LT = Mayús, RT = símbolos/letras, L3 = Bloq, LB/RB = cursor ←/→ (los botones llegan por la propiedad `onButtonDown` y por el evento `vgp_onbuttondown`, descartando el duplicado). Lógica pura en `keyboardLayout.ts` (`SYMBOL_ROWS`, `padAction`) con pruebas.
+- **Sin confirmar en el equipo:** que Steam entregue LT/RT/L3 a esta página (los códigos 7, 8 y 15 salen de los tipos de @decky/ui). Sin hacer todavía: que la ventana de la app se ajuste para mantener visible el campo enfocado (necesita medirse en la Ally).
+
 ## dev.104
 - **`steam-cpu.py`: qué página de la interfaz de Steam gasta CPU.** Usa la depuración CEF (puerto 8080) y mide, por página (QuickAccess, MainMenu, Steam Big Picture Mode, SharedJSContext…), el % de tiempo ocupada, cuánto en JavaScript, maquetación y estilos, y los relayouts por segundo. Uso: `python3 ~/homebrew/plugins/qam-rail-dev/steam-cpu.py 10`. `informe.sh` lo ejecuta 6 s y lo añade.
 - Aviso: en dev.103 las etiquetas de `steamwebhelper` salen como `[zyg]` para los dos procesos de interfaz (Chromium los lanza desde el zygote y comparten línea de órdenes), así que no distinguen cuál es cuál; para eso sirve `steam-cpu.py`.

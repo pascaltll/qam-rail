@@ -3,10 +3,10 @@
 // Distribución como un teclado real (filas escalonadas, 15 unidades de ancho, flechas siempre a mano, atajos plegados en "Más")
 // y manejable con el mando: X = borrar, Y = espacio, Start (menú) = Intro, B = cerrar.
 import { Focusable } from "@decky/ui";
-import { useRef, useState, type FC, type ReactNode } from "react";
+import { useEffect, useRef, useState, type FC, type ReactNode } from "react";
 
 import { kbNote } from "./keyboard";
-import { ROWS, keyChar, mirror, type Key } from "./keyboardLayout";
+import { ROWS, SYMBOL_ROWS, keyChar, mirror, padAction, type Key } from "./keyboardLayout";
 import { createRepeater } from "./keyRepeat";
 import { desktopKey, qamEvent } from "./qamDesktop";
 import { COLORS, Chip, Row } from "./ui";
@@ -41,6 +41,9 @@ export const PanelKeyboard: FC<{ notify?: (t: string) => void; onClose?: () => v
   const [alt, setAlt] = useState(false);
   const [ctrl, setCtrl] = useState(false);
   const [more, setMore] = useState(false);
+  const [symbols, setSymbols] = useState(false);
+  const rootEl = useRef<HTMLDivElement | null>(null);
+  const lastPad = useRef({ b: -1, t: 0 });
   const [buf, setBuf] = useState("");
   const [err, setErr] = useState("");
   const layer = shift || caps;
@@ -59,6 +62,29 @@ export const PanelKeyboard: FC<{ notify?: (t: string) => void; onClose?: () => v
     }).catch(() => { setErr("No se pudo escribir"); kbNote("teclado: fallo al enviar (sin respuesta del backend)"); });
   };
   const padBtn = (name: string, ev: { text?: string; key?: string }) => (): void => { kbNote(`mando: ${name}`); send(ev); };
+  /** LT/RT/L3/LB/RB. Llega por dos vías (prop y evento DOM «vgp_onbuttondown»): se descarta el duplicado de menos de 60 ms. [H] sin probar en el equipo. */
+  const onPad = (e: { detail?: { button?: number } }): void => {
+    const b = e.detail?.button;
+    const a = padAction(b);
+    if (!a) return;
+    const now = Date.now();
+    if (lastPad.current.b === b && now - lastPad.current.t < 60) return;
+    lastPad.current = { b: b as number, t: now };
+    kbNote(`mando: botón ${b} → ${a.kind}`);
+    if (a.kind === "shift") setShift((v) => !v);
+    else if (a.kind === "caps") setCaps((v) => !v);
+    else if (a.kind === "symbols") setSymbols((v) => !v);
+    else send({ key: a.key });
+  };
+  const padRef = useRef(onPad);
+  padRef.current = onPad;
+  useEffect(() => {
+    const el = rootEl.current;
+    if (!el) return undefined;
+    const h = (ev: Event) => padRef.current(ev as unknown as { detail?: { button?: number } });
+    el.addEventListener("vgp_onbuttondown", h);
+    return () => el.removeEventListener("vgp_onbuttondown", h);
+  }, []);
   /** Tecla con peso `w` (unidades de la fila). */
   const key = (w: number, node: ReactNode, k?: string): ReactNode => <W key={k}  w={w}>{node}</W>;
   /** Tecla de carácter de la distribución. */
@@ -79,6 +105,7 @@ export const PanelKeyboard: FC<{ notify?: (t: string) => void; onClose?: () => v
       onOptionsButton={padBtn("Y/opciones → espacio", { text: " " })} onOptionsActionDescription="Espacio"
       onMenuButton={padBtn("Start/menú → Intro", { key: "Return" })} onMenuActionDescription="Intro"
       onCancel={onClose ? (e: CustomEvent) => { e.stopPropagation(); onClose(); } : undefined} onCancelActionDescription={onClose ? "Cerrar teclado" : undefined}
+      {...({ onButtonDown: (e: { detail?: { button?: number } }) => padRef.current(e), ref: rootEl } as Record<string, unknown>)}
       style={{ display: "flex", flexDirection: "column", gap: GAP }}>
       <div style={{ minHeight: 30, padding: "3px 14px", borderRadius: 12, background: COLORS.track, fontSize: 14, fontFamily: "monospace", display: "flex", alignItems: "center", gap: 12 }}>
         <div style={{ flex: 1, minWidth: 0, overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis", color: err ? COLORS.danger : COLORS.text }}>
@@ -87,6 +114,17 @@ export const PanelKeyboard: FC<{ notify?: (t: string) => void; onClose?: () => v
         </div>
         {onClose && <Chip compact grow={false} onClick={onClose}>✕ Cerrar</Chip>}
       </div>
+      {symbols ? (
+        <>
+          {SYMBOL_ROWS.map((r, i) => row([...r.map((c) => key(1, <Chip compact={false} autoFocus={i === 0 && c === "1"} onClick={() => send({ text: c })}>{big(c)}</Chip>, c)), ...(i === 0 ? [rep(2, big("⌫"), "BackSpace")] : [])], `s${i}`))}
+          {row([
+            key(2, <Chip active onClick={() => setSymbols(false)}>ABC</Chip>, "abc"),
+            key(8, <Chip onClick={() => send({ text: " " })}>Espacio</Chip>, "space"),
+            act(2, "Intro", "Return"),
+            rep(1, big("←"), "Left"), rep(1, big("→"), "Right"),
+          ], "sr5")}
+        </>
+      ) : (<>
       {row([...ROWS[0].map((k) => ch(k)), rep(2, big("⌫"), "BackSpace")], "r1")}
       {row([act(1.5, "Tab", "Tab"), ...ROWS[1].map((k) => ch(k)), <Gap key="g" w={2.5} />], "r2")}
       {row([key(1.75, <Chip active={caps} onClick={() => setCaps(!caps)}>Bloq</Chip>, "caps"), ...ROWS[2].map((k) => ch(k, k[0] === "g")), act(3.25, "Intro", "Return")], "r3")}
@@ -96,8 +134,10 @@ export const PanelKeyboard: FC<{ notify?: (t: string) => void; onClose?: () => v
         key(1.5, <Chip active={alt} onClick={() => setAlt(!alt)}>AltGr</Chip>, "alt"),
         key(8, <Chip onClick={() => send({ text: " " })}>Espacio</Chip>, "space"),
         rep(1, big("←"), "Left"), rep(1, big("↑"), "Up"), rep(1, big("↓"), "Down"), rep(1, big("→"), "Right"),
+        key(1.5, <Chip onClick={() => setSymbols(true)}>123</Chip>, "sym"),
       ], "r5")}
-      {more && (
+      </>)}
+      {!symbols && more && (
         <>
           {row(SHORTCUTS.map(([label, k]) => key(1, <Chip compact onClick={() => send({ text: k, ctrl: true })}>{label}</Chip>, k)), "sc")}
           {row([["Esc", "Escape"], ["Inicio", "Home"], ["Fin", "End"], ["Re Pág", "Prior"], ["Av Pág", "Next"], ["Supr", "Delete"]].map(([label, k]) => key(1, <Chip compact onClick={() => send({ key: k })}>{label}</Chip>, k)), "nv")}
