@@ -7,7 +7,7 @@ import { openBigKeyboard } from "./bigKeyboard";
 import { Card } from "./QamSections";
 import { useTap } from "./tap";
 import { tickEvery } from "./ticker";
-import { AppGlyph, COLORS, Chip, Icon, ICONS2, Row, ToggleRow, focusRing } from "./ui";
+import { AppGlyph, COLORS, Chip, Icon, ICONS2, ToggleRow, focusRing } from "./ui";
 
 /** Ficha de app abierta: icono grande, nombre y un punto verde; una sola parada del mando, toque con respuesta inmediata. */
 const OpenTile: FC<{ name: string; icon?: string | null; glyph?: ReactNode; accent?: boolean; onTap: () => void }> = ({ name, icon, glyph, accent, onTap }) => {
@@ -62,16 +62,15 @@ export const OpenAppsStrip: FC<{ notify: (t: string) => void; after: () => void 
       </Focusable>
       <div style={{ height: 1, background: COLORS.track, margin: "2px 0" }} />
       <div style={{ fontSize: 11, color: COLORS.muted }}>Escritorio</div>
-      <Row gap={6}>
+      {/* dev.111 (experimento): una sola rejilla de 3 columnas para que Arriba/Abajo conserven la columna; sin confirmar que Steam acepte flow-children="grid". */}
+      <Focusable style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 6 }} flow-children="grid">
         {pad !== null && <Chip compact active={pad} onClick={() => void padMouse(!pad).then((p) => { setPad(p.on); notify(p.on ? "Mando como ratón: sí" : "Mando como ratón: no"); })}>{pad ? "Mando: ratón" : "Mando: normal"}</Chip>}
         {cur !== null && <Chip compact active={cur} onClick={() => void desktopCursor(!cur).then((p) => { setCur(p.on); notify(p.on ? "Puntero Xbox: sí (se aplica al mover el puntero)" : "Puntero Xbox: no (reabre la app para volver al normal)"); })}>{cur ? "Puntero Xbox: sí" : "Puntero Xbox: no"}</Chip>}
         {anim !== null && <Chip compact active={anim} onClick={() => void desktopAnim(!anim).then((p) => { setAnim(p.on); notify(p.on ? "Animación al volver: sí" : "Animación al volver: no"); })}>{anim ? "Animación: sí" : "Animación: no"}</Chip>}
-      </Row>
-      <Row gap={6}>
         {touch !== null && <Chip compact active={touch.on} onClick={() => { const [a, b] = touchNext(touch); void padTouch(a, b).then((p) => { setTouch(p); notify(`Táctil: ${touchLabel(p)}`); }); }}>{`Táctil: ${touchLabel(touch)}`}</Chip>}
         <Chip compact icon={ICONS2.terminal} onClick={() => { after(); window.setTimeout(() => { if (!openBigKeyboard()) notify("No se pudo abrir el teclado grande"); }, 350); }}>Teclado</Chip>
         <Chip compact icon={ICONS2.refresh} onClick={() => void desktopRepair().then((r) => notify(r.ok ? (r.fixed?.length ? `Reparado: ${r.fixed.join(", ")}` : "Nada que reparar") : `No se pudo reparar: ${r.error ?? "?"}`)).catch(() => notify("No se pudo reparar"))}>Reparar</Chip>
-      </Row>
+      </Focusable>
       {touch !== null && touch.on && touch.full && (
         <ToggleRow label="Tocar un texto abre el teclado" note={touch.text ? "Al tocar un campo de texto aparece el teclado grande" : "Con el dedo, solo si el táctil es completo"} on={touch.text}
           onToggle={() => void padTouch(null, null, !touch.text).then((p) => { setTouch(p); notify(p.text ? "Al tocar un texto se abre el teclado" : "Teclado al tocar texto: no"); })} />
