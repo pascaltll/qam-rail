@@ -35,3 +35,8 @@ Estado al pasar el trabajo del chat de claude.ai a Claude Code en la propia Ally
 ## Herramientas de agentes (25-nov)
 - `AGENTS.md` es la memoria común; `CLAUDE.md` y `GEMINI.md` lo importan. Skills en `.claude/skills/`. Decisiones cerradas en `docs/decisiones.md`.
 - `scripts/captura.py` (empaquetado desde la próxima versión): PNG de las páginas de la interfaz de Steam por CEF :8080; `--x` intenta la pantalla X. Probado en la Ally (25-nov): la página «Steam Big Picture Mode» captura panel y barra; QuickAccess/MainMenu están ocultas y agotan el tiempo.
+
+## Actualización dev.105-106 (25-nov)
+- dev.105: teclado grande con página «123» y LT/RT/L3/LB/RB (códigos 7, 8, 15, 5, 6). Sin confirmar en el equipo que Steam entregue LT/RT/L3. Falta que la ventana de la app se ajuste al abrir el teclado (medir antes; ver tamaños 1676x942 / 1867x1050).
+- dev.106: fichas de potencia en una línea con los vatios siempre visibles (confirmado con captura); aire bajo las pestañas. La serifa es del tema Hooandee Luminous Atlas, intencionada.
+- Fallos visuales vistos por el revisor y sin tocar: «Aspecto OLED» y «ROG Ally mejorado» en dos líneas (Pantalla), «LetMeReShad…» cortado (Apps), bajo contraste en las opciones de escalado no elegidas (Energía), «estable» huérfano en Más.
