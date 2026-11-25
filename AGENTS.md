@@ -30,6 +30,8 @@ Estado actual y pendientes: lee también `HANDOFF.md`. Lo ya decidido y que no s
 - No reinicies Steam, gamescope ni el equipo, ni toques `/usr`, `/etc` o ajustes del sistema, sin preguntar. No borres nada fuera del repo.
 - `ub-mode` (unclebob) se adoptó solo como principios de calidad, sin copiar su código (licencia desconocida; el proyecto es GPL-3.0).
 - No subas zips ni `node_modules` al repo.
+- Nada de `git add -A` ni `git commit -a`: añade solo los archivos que cambiaste. `scripts/backups/` (copias que genera la instalación) está en `.gitignore` y no se versiona. Antes de un `pull --rebase`, `git status -s` limpio; si hay cambios, commit o `git stash`, nunca `reset --hard`.
+- Automatizar la interfaz (`bp_nav.py`): si dice PARADO (existe `~/.qam-nav-stop`), informa y detente; solo una persona ejecuta `armar`.
 
 ## Cosas conocidas (sin resolver)
 - Steam gasta ~45 % de CPU en reposo con los temas de Hooandee; abrir el panel añade un pico. Falta medir con `steam-cpu.py` con/sin temas.
