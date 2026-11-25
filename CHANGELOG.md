@@ -2,6 +2,8 @@
 
 ## dev.107
 - **Botón «Cerrar columna» de los plugins: zona de toque de 48 px.** Medía 30×30 px (lo detectó el nuevo agente `revisor-navegacion` leyendo `src/PluginColumn.tsx`; comprobado en el código). El círculo se ve igual: la zona de toque es un contenedor de 48 px con margen negativo. Con el mando no hay trampa: B ya cierra la columna.
+- **Segmentos sin icono (p. ej. COLOR en Pantalla): el texto que se parte en dos líneas queda centrado.** «Aspecto OLED» salía en dos líneas pegado a la izquierda mientras Cine/Vivo/Cómodo iban centrados (visto en `03-display`). Ahora va en un `span` centrado (`Segments` en `src/ui.tsx`). Sigue partiéndose en dos líneas porque son 5 columnas iguales.
+- **No tocado, sin confirmar:** los «bajo contraste» que marcó el revisor (opciones no seleccionadas, «Conectar», «Pasar a estable»). La captura del 25-nov 07:42 sale más oscura que las anteriores (el panel se ve atenuado), así que no sirve para medir contraste; hay que recapturar con el panel en primer plano.
 - **Nuevo agente `.claude/agents/revisor-navegacion.md`** (haiku, solo lectura): audita el código por controles inalcanzables con la cruceta, trampas de foco, zonas táctiles pequeñas, duplicados de botones y errores evidentes. Sus hallazgos se comprueban antes de actuar (un segundo hallazgo, el banner de ayuda, resultó no ser fallo).
 - Sin confirmar visualmente: falta instalar y recapturar la columna de un plugin.
 

@@ -441,7 +441,7 @@ export const Segments: FC<{ opts: SegOpt[]; value: number | string | null; onPic
               background: on ? COLORS.accent : "transparent", color: on ? COLORS.onAccent : COLORS.text,
               boxShadow: on ? "0 1px 4px rgba(0,0,0,0.35)" : "none", transition: "background 140ms ease, color 140ms ease" }}>
             {o.icon && <Icon d={o.icon} size={tall ? 20 : 15} color={on ? COLORS.onAccent : COLORS.text} />}
-            {o.icon ? <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: "100%" }}>{o.label}</span> : o.label}
+            {o.icon ? <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: "100%" }}>{o.label}</span> : <span style={{ textAlign: "center", lineHeight: 1.15, maxWidth: "100%", overflow: "hidden" }}>{o.label}</span>}
           </div>
         );
       })}
