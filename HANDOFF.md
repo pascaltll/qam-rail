@@ -40,3 +40,5 @@ Estado al pasar el trabajo del chat de claude.ai a Claude Code en la propia Ally
 - dev.105: teclado grande con página «123» y LT/RT/L3/LB/RB (códigos 7, 8, 15, 5, 6). Sin confirmar en el equipo que Steam entregue LT/RT/L3. Falta que la ventana de la app se ajuste al abrir el teclado (medir antes; ver tamaños 1676x942 / 1867x1050).
 - dev.106: fichas de potencia en una línea con los vatios siempre visibles (confirmado con captura); aire bajo las pestañas. La serifa es del tema Hooandee Luminous Atlas, intencionada.
 - Fallos visuales vistos por el revisor y sin tocar: «Aspecto OLED» y «ROG Ally mejorado» en dos líneas (Pantalla), «LetMeReShad…» cortado (Apps), bajo contraste en las opciones de escalado no elegidas (Energía), «estable» huérfano en Más.
+
+- Pendiente: tests/py/test_xerr.py falla con segfault (-11) en la Ally, tambien en 390067a; en mi entorno se omite por falta de Xvfb. Sin diagnosticar.
