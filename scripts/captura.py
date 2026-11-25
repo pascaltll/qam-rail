@@ -5,6 +5,8 @@ Uso:  python3 ~/homebrew/plugins/qam-rail-dev/captura.py [filtro] [--x]
   filtro  texto que debe aparecer en el título de la página. Sin filtro: solo «Steam Big Picture Mode», la ventana principal, que ya
           incluye el panel de QAM y la barra lateral (comprobado en la Ally). Las demás páginas (QuickAccess, MainMenu…) están ocultas
           y agotan el tiempo; usa `todas` para intentarlas igualmente.
+  --recorrido  con el panel de QAM Rail abierto, pasa por TODAS sus secciones (Inicio, etc.) y captura cada una; al final vuelve a la que estaba.
+               Añade --scroll para capturar también lo que queda fuera de la vista en cada sección (hasta 4 trozos). Sin confirmar en la Ally.
   --x     además intenta una captura de la pantalla X :0 (ImageMagick `import` o `xwd`, si están instalados; sin confirmar en gamescope).
 Guarda PNG en ~/qam-capturas/ (se conservan las últimas 40) e imprime las rutas. Puede mostrar lo que hay en pantalla: no la envíes fuera sin mirarla.
 No cambia nada en Steam."""
@@ -48,6 +50,51 @@ def elegir(paginas: list[dict], filtro: str = "") -> list[dict]:
     return out
 
 
+def plan_scroll(alto_total: int, alto_visible: int, max_pasos: int = 4) -> list[int]:
+    """Posiciones de scroll para cubrir una sección más alta que la ventana (siempre incluye 0)."""
+    if alto_visible <= 0 or alto_total <= alto_visible:
+        return [0]
+    pos, y = [0], 0
+    while y + alto_visible < alto_total and len(pos) < max_pasos:
+        y = min(y + alto_visible - 40, alto_total - alto_visible)  # 40 px de solape para no perder filas
+        pos.append(y)
+    return pos
+
+
+def _evaluar(ws, expr: str):
+    return ws.call("Runtime.evaluate", {"expression": expr, "returnByValue": True}).get("result", {}).get("value")
+
+
+def recorrido(host, secciones: list[str], con_scroll: bool, capturar, dormir=time.sleep, espera: float = 1.0) -> list[str]:
+    """Recorre las secciones del panel con window.__qamRailUI (go/body) y llama a capturar(nombre) tras cada cambio.
+    `host` es la conexión CEF donde vive __qamRailUI. Devuelve las rutas guardadas."""
+    ui = "window.__qamRailUI"
+    original = _evaluar(host, f"{ui}.current()")
+    hechas = []
+    try:
+        for i, sec in enumerate(secciones, 1):
+            _evaluar(host, f"{ui}.go({json.dumps(sec)})")
+            dormir(espera)
+            posiciones = [0]
+            if con_scroll:
+                dims = _evaluar(host, f"(()=>{{const b={ui}.body();return b?JSON.stringify([b.scrollHeight,b.clientHeight]):null}})()")
+                if dims:
+                    posiciones = plan_scroll(*json.loads(dims))
+            for j, y in enumerate(posiciones):
+                if j:
+                    _evaluar(host, f"(()=>{{const b={ui}.body();if(b)b.scrollTop={int(y)};return !!b}})()")
+                    dormir(0.4)
+                ruta = capturar(f"{i:02d}-{slug(sec)}" + (f"-{j + 1}" if len(posiciones) > 1 else ""))
+                if ruta:
+                    hechas.append(ruta)
+            if len(posiciones) > 1:
+                _evaluar(host, f"(()=>{{const b={ui}.body();if(b)b.scrollTop=0;return !!b}})()")
+    finally:
+        if original:
+            _evaluar(host, f"{ui}.go({json.dumps(original)})")
+    return hechas
+
+
 def podar(carpeta: Path, mantener: int = KEEP) -> None:
     archivos = sorted(carpeta.glob("*.png"), key=lambda f: f.stat().st_mtime)
     for f in archivos[:-mantener] if mantener else archivos:
@@ -74,6 +121,45 @@ def captura_x(destino: Path) -> str | None:
     return None
 
 
+def recorrer_todo(paginas: list[dict], WS, marca: str, con_scroll: bool) -> None:
+    host = principal = None
+    for p in paginas:
+        if not p.get("webSocketDebuggerUrl"):
+            continue
+        try:
+            ws = WS(p["webSocketDebuggerUrl"])
+            es_host = _evaluar(ws, "typeof window.__qamRailUI") == "object"
+            es_principal = PRINCIPAL.lower() in (p.get("title") or "").lower()
+            host = ws if es_host else host
+            principal = ws if es_principal else principal
+            if not (es_host or es_principal):
+                ws.s.close()
+        except OSError:
+            continue
+    if not host or not principal:
+        print("Abre el panel de QAM Rail (con el panel cerrado no existe __qamRailUI) y repite." if not host else "No encuentro «Steam Big Picture Mode».")
+        return
+    principal.s.settimeout(ESPERA)
+    secciones = json.loads(_evaluar(host, "JSON.stringify(window.__qamRailUI.sections)") or "[]")
+
+    def capturar(nombre: str):
+        try:
+            datos = principal.call("Page.captureScreenshot", {"format": "png"}).get("data")
+        except OSError as e:
+            print(f"(sin imagen de {nombre}: {e})")
+            return None
+        if not datos:
+            return None
+        ruta = OUT / f"{marca}-{nombre}.png"
+        ruta.write_bytes(base64.b64decode(datos))
+        return str(ruta)
+
+    print(f"Secciones: {', '.join(secciones)}")
+    hechas = recorrido(host, secciones, con_scroll, capturar)
+    podar(OUT, 200)
+    print("\n".join(hechas) if hechas else "No se capturó nada.")
+
+
 def main() -> None:
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
     filtro = args[0] if args else ""
@@ -82,6 +168,9 @@ def main() -> None:
     paginas = json.load(urllib.request.urlopen(f"http://{HOST}:{PORT}/json/list", timeout=5))
     WS = _ws_class()
     hechas = []
+    if "--recorrido" in sys.argv:
+        recorrer_todo(paginas, WS, marca, "--scroll" in sys.argv)
+        return
     for p in elegir(paginas, filtro):
         titulo = p.get("title") or p.get("url", "")[:30]
         datos, motivo = None, ""

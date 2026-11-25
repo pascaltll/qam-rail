@@ -1,5 +1,5 @@
 """Pruebas de la parte pura de scripts/captura.py (la captura real necesita Steam)."""
-import importlib.util, os, tempfile, time
+import importlib.util, json, os, tempfile, time
 from pathlib import Path
 
 spec = importlib.util.spec_from_file_location("captura", Path(__file__).resolve().parents[2] / "scripts" / "captura.py")
@@ -27,4 +27,34 @@ with tempfile.TemporaryDirectory() as d:
         os.utime(f, (time.time() + i, time.time() + i))
     c.podar(d, 3)
     assert sorted(f.name for f in d.glob("*.png")) == ["3.png", "4.png", "5.png"]
+assert c.plan_scroll(900, 900) == [0] and c.plan_scroll(100, 0) == [0]
+assert c.plan_scroll(2000, 800) == [0, 760, 1200] and c.plan_scroll(10000, 800, 4) == [0, 760, 1520, 2280]
+
+
+class Falso:
+    """Imita la conexión CEF: guarda las expresiones y responde lo mínimo."""
+    def __init__(self, alto=None):
+        self.expr, self.alto = [], alto
+
+    def call(self, metodo, params=None):
+        e = params["expression"]
+        self.expr.append(e)
+        if ".current()" in e:
+            v = "home"
+        elif "scrollHeight" in e:
+            v = self.alto
+        else:
+            v = None
+        return {"result": {"value": v}}
+
+
+h = Falso()
+nombres = []
+r = c.recorrido(h, ["home", "audio"], False, lambda n: nombres.append(n) or n, dormir=lambda s: None)
+assert nombres == ["01-home", "02-audio"] and r == nombres
+assert h.expr[-1].endswith('.go("home")')  # vuelve a la sección original
+h = Falso(alto=json.dumps([2000, 800]))
+nombres = []
+c.recorrido(h, ["audio"], True, lambda n: nombres.append(n) or n, dormir=lambda s: None)
+assert nombres == ["01-audio-1", "01-audio-2", "01-audio-3"]
 print("OK test_captura")
