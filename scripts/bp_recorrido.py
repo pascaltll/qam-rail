@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Recorre las secciones del panel con la cruceta (por CDP), con scroll cuando se atasca. Usa bp_nav.py (mismo interruptor de parada).
-Uso: python3 scripts/bp_recorrido.py [segundos_por_sección=90] [sec1,sec2,…]
+Uso: python3 scripts/bp_recorrido.py [segundos_por_sección=90] [sec1,sec2,…] [--desplegar] [--desde="texto"] [--abajo]
 Solo flechas: nunca A/Intro. Salta Izquierda/Derecha sobre controles data-qr-h (deslizadores/segmentos): cambian valores reales.
 Guarda un JSON por sección en ~/qam-grafo/recorrido-<fecha>/. Las etiquetas pueden contener nombres de amigos o apps: no lo envíes fuera sin mirarlo."""
 import sys, json, time
@@ -9,9 +9,17 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import bp_nav as b
 
 OPUESTA = b.OPUESTA
-SEC_CAP_S = float(sys.argv[1]) if len(sys.argv) > 1 else 90
-SOLO = sys.argv[2].split(",") if len(sys.argv) > 2 else None
+_args = [a for a in sys.argv[1:] if not a.startswith("--")]
+_flags = [a for a in sys.argv[1:] if a.startswith("--")]
+SEC_CAP_S = float(_args[0]) if _args else 90
+SOLO = _args[1].split(",") if len(_args) > 1 else None
+DESPLEGAR = "--desplegar" in _flags  # abre los plegados (Avanzado, Pruebas y herramientas, grupos «▸ ver») y los vuelve a plegar al terminar
+ABAJO = "--abajo" in _flags  # prueba Abajo y los lados antes que Arriba (para explorar una mitad sin salirse hacia arriba por un camino de ida)
+DESDE = next((f.split("=", 1)[1] for f in _flags if f.startswith("--desde=")), None)  # da el foco a un control (por el principio de su texto) antes de explorar
 UI = "window.__qamRailUI"
+
+if ABAJO:
+    b.DIRS = tuple(sorted(b.DIRS, key=lambda d: d == "Up"))
 
 
 def norm(raw):
@@ -59,14 +67,57 @@ return JSON.stringify(leaf.map(e=>{{const r=e.getBoundingClientRect();return [(e
     def dims():
         return json.loads(H(f"JSON.stringify([{UI}.body().scrollHeight,{UI}.body().clientHeight,{UI}.body().scrollTop])"))
 
+    PLEGABLES = "(t=>/^(Avanzado|Pruebas y herramientas)/.test(t)||t.includes('▸ ver'))"
+
+    def desplegar():
+        """Abre con click() las cabeceras plegables de la lista cerrada. Devuelve los textos (principio) para volver a plegarlas."""
+        js = f"""(()=>{{const bd={UI}.body();const ok={PLEGABLES};const out=[];
+for(const e of bd.querySelectorAll('[data-qr="item"]')){{const r=e.getBoundingClientRect();const t=(e.innerText||'').trim().replace(/\\s+/g,' ');
+if(r.width>0&&ok(t)){{e.click();out.push(t.slice(0,24))}}}}return JSON.stringify(out)}})()"""
+        return json.loads(H(js) or "[]")
+
+    def plegar(marcas):
+        """Vuelve a plegar lo que se desplegó. Abierta, la cabecera de un Fold solo dice su título (la pista desaparece);
+        la de un grupo de apps dice «▾ ocultar»."""
+        for m in marcas:
+            js = f"""(()=>{{const bd={UI}.body();const m={json.dumps(m)};
+const fold=/^(Avanzado|Pruebas y herramientas)/.exec(m);const clave=fold?fold[1]:m.split(' ▸')[0].slice(0,18);
+for(const e of bd.querySelectorAll('[data-qr="item"]')){{const r=e.getBoundingClientRect();const t=(e.innerText||'').trim().replace(/\\s+/g,' ');
+if(r.width>0&&t.startsWith(clave)&&(fold?t===clave:t.includes('▾ ocultar'))){{e.click();return true}}}}return false}})()"""
+            H(js)
+            time.sleep(0.4)
+
+    def tomar_foco(texto):
+        js = """((txt)=>{const els=[...document.querySelectorAll('[data-qr="item"]')];
+const el=els.find(e=>e.getBoundingClientRect().width>0&&(e.innerText||'').trim().replace(/\\s+/g,' ').startsWith(txt));if(!el)return 'no encontrado';
+const k=Object.keys(el).find(k=>k.startsWith('__reactFiber$'));let f=k?el[k]:null;const nodo=v=>v&&typeof v==='object'&&typeof v.TakeFocus==='function';
+for(let i=0;f&&i<6;i++,f=f.return){if(nodo(f.stateNode)){f.stateNode.TakeFocus();return 'ok'}let h=f.memoizedState;
+for(let j=0;h&&typeof h==='object'&&j<24;j++,h=h.next){const v=h.memoizedState;if(nodo(v)){v.TakeFocus();return 'ok'}const c=v&&typeof v==='object'?v.current:null;if(nodo(c)){c.TakeFocus();return 'ok'}}}
+el.focus();return 'focus() del DOM'})(%s)""" % json.dumps(texto)
+        return b.evaluar(ws, js)
+
     def recorrer(sec):
+        marcas: list[str] = []
+        try:
+            return _recorrer(sec, marcas)
+        finally:
+            plegar(marcas)  # deja los plegados como estaban (también si hubo error)
+
+    def _recorrer(sec, marcas):
         H(f"{UI}.go({json.dumps(sec)})")
         time.sleep(1.5)
         H(f"{UI}.body().scrollTop=0")
         time.sleep(0.5)
+        if DESPLEGAR:
+            marcas.extend(desplegar())
+        if marcas:
+            time.sleep(1.0)
         rect = panel_rect()
         g = b.Grafo()
         esc, salt, cambios, noregresa = {}, set(), [], []
+        if DESDE:
+            print(f"  {sec}: foco a «{DESDE}» → {tomar_foco(DESDE)}")
+            time.sleep(0.8)
         raw = [b.firma(b.foco(ws))]
         if raw[0] is None:
             b.mover_y_medir(ws, "Down", None)
@@ -139,7 +190,7 @@ return JSON.stringify(leaf.map(e=>{{const r=e.getBoundingClientRect();return [(e
         faltan = [c[0] for c in cand if c[0] not in visit and c[0] and not any(c[0].startswith(v) or v.startswith(c[0]) for v in visit if v)]
         sh, ch, st = dims()
         H(f"{UI}.body().scrollTop=0")
-        return {"seccion": sec, "nodos": r["nodos"], "aristas": r["aristas"], "pasos": pasos, "scroll": {"alto": sh, "visible": ch, "scrolls": scrolls},
+        return {"seccion": sec, "desplegados": list(marcas), "nodos": r["nodos"], "aristas": r["aristas"], "pasos": pasos, "scroll": {"alto": sh, "visible": ch, "scrolls": scrolls},
                 "candidatos": len(cand), "no_visitados": faltan, "sin_salida": sin_salida, "sin_vuelta": r["sin_vuelta"], "lentas": r["lentas"],
                 "salen_del_panel": [[n, d, o] for (n, d), o in esc.items()], "saltadas_por_ajuste": sorted(salt), "cambios_de_seccion": cambios, "no_regresa": noregresa,
                 "aristas_lista": [[n, d, a, ms] for (n, d), (a, ms) in g.aristas.items()]}
