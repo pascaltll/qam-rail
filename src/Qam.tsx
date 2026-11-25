@@ -46,7 +46,7 @@ import { EnergyTdp } from "./QamTdp";
 import { getRegistry, type SectionId } from "./registry";
 import { clamp01, sc, type Unreg } from "./steam";
 import * as UI from "./ui";
-import { COLORS, Chip, FONT, ICONS, ICONS2, Icon, Row, ToggleRow, XSlider, colorFor, useThrottled, paneGap } from "./ui";
+import { COLORS, Chip, FONT, ICONS, ICONS2, Icon, Row, ToggleRow, XSlider, setBodyDir, colorFor, useThrottled, paneGap } from "./ui";
 
 // Riel fijo: mismo orden y sitio en ambos modos (solo cambia el contenido de Inicio).
 const SECTIONS: Array<{ id: SectionId; label: string; icon: string }> = [
@@ -308,6 +308,9 @@ export const QamApp: FC<{ log: (m: string) => void; onNative: (tab?: number) => 
     }
     takeFocus(all[to]);
   };
+  const bodyDirRef = useRef(onBodyDir);
+  bodyDirRef.current = onBodyDir;
+  useEffect(() => { setBodyDir((e) => bodyDirRef.current(e)); return () => setBodyDir(null); }, []);
   const sectionRef = useRef(section);
   sectionRef.current = section;
   const hostedRef = useRef(hosted);

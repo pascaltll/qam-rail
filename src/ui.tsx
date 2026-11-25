@@ -27,6 +27,20 @@ export const FONT = '"Motiva Sans", "Noto Sans", Arial, Helvetica, sans-serif, "
 const DIR_LEFT = 11;
 const DIR_RIGHT = 12;
 
+type DirEvt = { detail?: { button?: number }; stopPropagation?: () => void; preventDefault?: () => void };
+let bodyDir: ((e: DirEvt) => void) | null = null;
+/** El panel registra aquí su manejador de la cruceta (modelo de filas). */
+export const setBodyDir = (f: ((e: DirEvt) => void) | null): void => { bodyDir = f; };
+/** Controles que usan Izquierda/Derecha para su valor (data-qr-h): Arriba/Abajo siguen yendo al modelo de filas del panel.
+ *  Sin confirmar con el mando real: con teclas por CDP estos controles no dejaban salir con Arriba/Abajo. Devuelve true si lo reenvió. */
+export const passVertical = (e: DirEvt): boolean => {
+  const b = e.detail?.button;
+  if ((b !== 9 && b !== 10) || !bodyDir) return false;
+  bodyDir(e);
+  e.stopPropagation?.(); // si además burbujeara, el panel no lo procesa dos veces
+  return true;
+};
+
 export const Icon: FC<{ d: string; size?: number; color?: string }> = ({ d, size = 20, color = COLORS.text }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
     <path d={d} />
@@ -126,10 +140,11 @@ export const XSlider: FC<{
       noFocusRing
       onGamepadFocus={() => setFocused(true)}
       onGamepadBlur={() => setFocused(false)}
-      onGamepadDirection={(e: { detail?: { button?: number } }) => {
+      onGamepadDirection={(e: DirEvt) => {
         const b = e.detail?.button;
         if (b === DIR_LEFT) nudge(-1);
         else if (b === DIR_RIGHT) nudge(1);
+        else passVertical(e);
       }}
     >
       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -434,9 +449,9 @@ export const Segments: FC<{ opts: SegOpt[]; value: number | string | null; onPic
     <Focusable data-qr="item" data-qr-h="1" data-qr-seg="1" noFocusRing onActivate={next}
       onGamepadFocus={() => setFocused(true)} onGamepadBlur={() => { setFocused(false); flush(); }}
       onOKActionDescription="Elegir"
-      onGamepadDirection={(e: { detail?: { button?: number } }) => {
+      onGamepadDirection={(e: DirEvt) => {
         const b = e.detail?.button;
-        if (b === DIR_LEFT) move(-1); else if (b === DIR_RIGHT) move(1);
+        if (b === DIR_LEFT) move(-1); else if (b === DIR_RIGHT) move(1); else passVertical(e);
       }}
       style={{ display: "grid", gridTemplateColumns: `repeat(${Math.max(1, cols)}, minmax(0, 1fr))`, gap: 2, padding: 3, borderRadius: tall ? 18 : 20, background: COLORS.track, ...focusRing(focused) }}>
       {opts.map((o) => {

@@ -5,7 +5,7 @@ import { useRef, useState, type FC, type ReactNode } from "react";
 import { useTdp, type UseTdp } from "./tdpControl";
 import { tiers } from "./powerTiers";
 import { isActivePreset, type TdpView } from "./tdpModel";
-import { COLORS, Chip, ICONS, Icon, Keep, Row, cardStyle, focusRing, useDrag } from "./ui";
+import { COLORS, Chip, ICONS, Icon, Keep, Row, cardStyle, focusRing, passVertical, useDrag } from "./ui";
 
 const ERROR = "#ff8d8d";
 const DIR_LEFT = 11;
@@ -44,10 +44,11 @@ export const PowerBar: FC<{
       noFocusRing
       onGamepadFocus={() => setFocused(true)}
       onGamepadBlur={() => setFocused(false)}
-      onGamepadDirection={(e: { detail?: { button?: number } }) => {
+      onGamepadDirection={(e: { detail?: { button?: number }; stopPropagation?: () => void; preventDefault?: () => void }) => {
         const b = e.detail?.button;
         if (b === DIR_LEFT) nudge(-1);
         else if (b === DIR_RIGHT) nudge(1);
+        else passVertical(e);
       }}
       style={{ position: "relative", height: big ? 26 : 22, borderRadius: 8, ...focusRing(focused) }}
     >
