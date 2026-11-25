@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Recorre las secciones del panel con la cruceta (por CDP), con scroll cuando se atasca. Usa bp_nav.py (mismo interruptor de parada).
-Uso: python3 scripts/bp_recorrido.py [segundos_por_sección=90] [sec1,sec2,…] [--desplegar] [--desde="texto"] [--abajo]
+Uso: python3 scripts/bp_recorrido.py [segundos_por_sección=90] [sec1,sec2,…] [--desplegar] [--desde="texto"] [--abajo] [--pestana=Plugins|Steam]
 Solo flechas: nunca A/Intro. Salta Izquierda/Derecha sobre controles data-qr-h (deslizadores/segmentos): cambian valores reales.
 Guarda un JSON por sección en ~/qam-grafo/recorrido-<fecha>/. Las etiquetas pueden contener nombres de amigos o apps: no lo envíes fuera sin mirarlo."""
 import sys, json, time
@@ -15,6 +15,7 @@ SEC_CAP_S = float(_args[0]) if _args else 90
 SOLO = _args[1].split(",") if len(_args) > 1 else None
 DESPLEGAR = "--desplegar" in _flags  # abre los plegados (Avanzado, Pruebas y herramientas, grupos «▸ ver») y los vuelve a plegar al terminar
 ABAJO = "--abajo" in _flags  # prueba Abajo y los lados antes que Arriba (para explorar una mitad sin salirse hacia arriba por un camino de ida)
+PESTANA = next((f.split("=", 1)[1] for f in _flags if f.startswith("--pestana=")), None)  # solo en «apps»: entra en la pestaña «Plugins» o «Steam» (click en su chip) y al terminar vuelve a «Apps»
 DESDE = next((f.split("=", 1)[1] for f in _flags if f.startswith("--desde=")), None)  # da el foco a un control (por el principio de su texto) antes de explorar
 UI = "window.__qamRailUI"
 
@@ -87,6 +88,12 @@ if(r.width>0&&t.startsWith(clave)&&(fold?t===clave:t.includes('▾ ocultar'))){{
             H(js)
             time.sleep(0.4)
 
+    def pestana(nombre):
+        """Click en el chip de pestaña (solo cambia el estado de la interfaz). Devuelve True si lo encontró."""
+        js = f"""(()=>{{const m={json.dumps(nombre)};for(const e of {UI}.body().querySelectorAll('[data-qr="item"]')){{
+if(e.getBoundingClientRect().width>0&&(e.innerText||'').trim()===m){{e.click();return true}}}}return false}})()"""
+        return bool(H(js))
+
     def tomar_foco(texto):
         js = """((txt)=>{const els=[...document.querySelectorAll('[data-qr="item"]')];
 const el=els.find(e=>e.getBoundingClientRect().width>0&&(e.innerText||'').trim().replace(/\\s+/g,' ').startsWith(txt));if(!el)return 'no encontrado';
@@ -101,13 +108,18 @@ el.focus();return 'focus() del DOM'})(%s)""" % json.dumps(texto)
         try:
             return _recorrer(sec, marcas)
         finally:
-            plegar(marcas)  # deja los plegados como estaban (también si hubo error)
+            plegar(marcas)
+            if PESTANA and sec == "apps":
+                pestana("Apps")  # deja los plegados como estaban (también si hubo error)
 
     def _recorrer(sec, marcas):
         H(f"{UI}.go({json.dumps(sec)})")
         time.sleep(1.5)
         H(f"{UI}.body().scrollTop=0")
         time.sleep(0.5)
+        if PESTANA and sec == "apps":
+            print(f"  apps: pestaña «{PESTANA}» → {'ok' if pestana(PESTANA) else 'no encontrada'}")
+            time.sleep(1.5)
         if DESPLEGAR:
             marcas.extend(desplegar())
         if marcas:

@@ -3,7 +3,7 @@ import { useEffect, useState, type FC, type ReactNode } from "react";
 import type { RunningGame } from "./game";
 import { PowerCard } from "./QamTdp";
 import { lowPower, useTdp, type UseTdp } from "./tdpControl";
-import { COLORS, Deferred, Icon, Row } from "./ui";
+import { COLORS, Deferred, Icon } from "./ui";
 
 const small = { fontSize: 12, get color() { return COLORS.muted; } };
 const fmt = (n: number) => (Math.round(n * 10) / 10).toString().replace(".", ",");
@@ -34,10 +34,9 @@ export const HomeNormal: FC<{
   return (
     <>
       <PowerCard t={t} variant="compact" />
-      <Row gap={10}>
-        <div style={{ flex: 1, minWidth: 0 }}>{bright}</div>
-        <div style={{ flex: 1, minWidth: 0 }}>{vol}</div>
-      </Row>
+      {/* Una barra por fila: con el mando Izquierda/Derecha cambian el valor, así que la vecina de la misma fila no se alcanzaba. */}
+      {bright}
+      {vol}
       {toggles}
       {/* Segundo tiempo: plugins y apps se montan tras el primer fotograma. */}
       <Deferred id="home-normal-rest">
@@ -66,10 +65,9 @@ export const HomeGame: FC<{
         {t.drawW !== null && <div style={{ ...small, whiteSpace: "nowrap" }}><b style={{ color: COLORS.text }}>{fmt(t.drawW)} W</b> en uso</div>}
       </div>
       <PowerCard t={t} variant="full" showDraw={false} />
-      <Row gap={10}>
-        <div style={{ flex: 1, minWidth: 0 }}>{bright}</div>
-        <div style={{ flex: 1, minWidth: 0 }}>{vol}</div>
-      </Row>
+      {/* Una barra por fila: con el mando Izquierda/Derecha cambian el valor, así que la vecina de la misma fila no se alcanzaba. */}
+      {bright}
+      {vol}
       {/* Segundo tiempo: lo que lee de Panel y de Steam se monta tras el primer fotograma. */}
       <Deferred id="home-game-rest">
         {kind?.(t)}

@@ -485,10 +485,8 @@ export const QamApp: FC<{ log: (m: string) => void; onNative: (tab?: number) => 
       // IMAGEN Y SONIDO: cómo se ve y se oye. Brillo y volumen también aquí (quien entra, los busca).
       body = (
         <>
-          <Row gap={10}>
-            <div style={{ flex: 1, minWidth: 0 }}>{brightCard}</div>
-            <div style={{ flex: 1, minWidth: 0 }}>{volCard}</div>
-          </Row>
+          {brightCard}
+          {volCard}
           <DisplaySection part="image" gameKey={game ? game.key : null} notify={notify} night={night} onNativePerf={() => onNative(TAB.perf)} onPanel={openPanel} />
         </>
       );
